@@ -63,3 +63,5 @@ goes once its mistake is a compile error):
 | names existing installs depend on never change (bundle ID, Keychain, data dir, db, config path, binary, key contexts, action namespaces, `BLYGGER_*` names DevFlags reads) | `crates/blyg-app/src/never_rename_tests.rs` |
 | e2e signs in only through `studio_login` and waits out a 429 only through `retry_429` | `crates/blyg-core/tests/it/e2e/sign_in_path.rs` (`one_sign_in_path`, runs in the normal `cargo test`) |
 | no entries are written into `CHANGELOG.md` between releases (a change adds a fragment in `changes/unreleased/`) | `scripts/changelog-stitch.py check`, run by `blyg-core/tests/it/changelog_stitch.rs` (`the_repos_fragments_pass_check`) |
+| tests assert time only through `wait::Budget`, in ignored `timing_…` reports run by CI's non-blocking `timing` job (macOS only; Windows timing isn't measured); tests guarding an algorithm count work | `blyg-core/tests/it/timing_scan.rs` |
+| blyg-core's test-only hooks (`test-support`) are enabled only in `[dev-dependencies]` | `blyg-core/tests/it/crate_graph.rs` (`test_support_is_only_a_dev_dependency`) |

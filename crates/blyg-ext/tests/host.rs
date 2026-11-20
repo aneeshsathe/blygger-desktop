@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
@@ -650,16 +651,23 @@ fn an_unanswered_initialize_or_a_newer_protocol_fails_the_start() {
     assert!(message.contains("protocol 99"), "{message}");
 }
 
+/// The grace before a kill is ten minutes here: `shutdown` returning at
+/// all, inside the wait's deadline, means the extension answered it.
 #[test]
 fn shutdown_is_honoured_without_a_kill() {
-    let env = setup(&[], &[], &[]);
+    let env = setup_with(&[], &[], &[], |c| {
+        c.timing.shutdown = Duration::from_secs(600);
+    });
     env.started();
-    let t = Instant::now();
-    env.host.shutdown();
-    assert!(
-        t.elapsed() < Duration::from_secs(3),
-        "answered shutdown, wasn't killed after the grace"
-    );
+    let done = Arc::new(AtomicBool::new(false));
+    let (host, done2) = (env.host.clone(), done.clone());
+    std::thread::spawn(move || {
+        host.shutdown();
+        done2.store(true, Ordering::SeqCst);
+    });
+    blyg_core::wait::until("the extension to answer shutdown", || {
+        done.load(Ordering::SeqCst)
+    });
     env.wait_for("Stopped", |e| {
         matches!(e, ExtEvent::Stopped { message: None, .. })
     });

@@ -1131,16 +1131,13 @@ mod tests {
     }
 
     #[test]
-    fn finding_formulas_is_linear() {
-        // Lone dollars that close nothing: one pass, however many there are.
+    fn lone_dollars_close_nothing() {
+        // Lone dollars that close nothing: one pass, however many there are
+        // (timed against a budget by blyg-core's `timing_render_…` report).
         let src = "$a ".repeat(200_000);
-        let t = std::time::Instant::now();
         assert!(spans(&src).is_empty());
-        assert!(t.elapsed().as_secs() < 5, "{:?}", t.elapsed());
         // The same through the Markdown engine.
-        let t = std::time::Instant::now();
         assert!(!crate::render_markdown(&src).contains("<math"));
-        assert!(t.elapsed().as_secs() < 5, "{:?}", t.elapsed());
     }
 
     #[test]

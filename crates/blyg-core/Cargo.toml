@@ -10,6 +10,10 @@ default = ["keychain"]
 # Real OS token storage: the macOS Keychain, or Windows Credential Manager.
 # Tests never construct `KeychainTokenStore`.
 keychain = ["dep:keyring"]
+# Test-only hooks (`Store::count_work`): enabled only in a crate's
+# [dev-dependencies] (blyg-core's own, below; blyg-app's), never in
+# [dependencies] (`tests/it/crate_graph.rs`).
+test-support = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +34,8 @@ keyring = { version = "3.6", features = ["apple-native", "windows-native"], opti
 blyg-render = { path = "../blyg-render" }
 
 [dev-dependencies]
+# Its own test-support feature, for the integration tests (tests/perf.rs).
+blyg-core = { path = ".", features = ["test-support"] }
 tempfile = "3"
 # Gzip bodies for the compressed-response tests (ureq already links it).
 flate2 = "1"
