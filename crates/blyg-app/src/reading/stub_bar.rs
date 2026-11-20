@@ -35,6 +35,10 @@ pub(crate) fn reply_hint(md: &str, id: &str) -> String {
     }
 }
 
+/// --- maths --- The studio's note when a selection takes in a formula.
+pub(crate) const ACROSS_FORMULA: &str =
+    "A passage can’t include a formula. Quote the whole post, or the prose either side of it.";
+
 /// A passage selected in the editor preview, as the page reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
@@ -98,6 +102,9 @@ pub fn pick_passage(
     id: &str,
 ) -> Option<(usize, String)> {
     let page = page?;
+    if pick.across_formula {
+        return None; // --- maths --- refused, as publish would refuse it
+    }
     if pick.gen_ != page.gen_ || page.src != text {
         return None; // the preview is behind the draft
     }
@@ -289,6 +296,23 @@ impl MainView {
             )
             .on_click(cx.listener(|this, _, window, cx| this.stub_choose_passage(window, cx))),
         );
+        // --- maths --- (studio 0.62) a selection that cuts through a formula.
+        let across = !chosen
+            && self
+                .reading
+                .stub
+                .as_ref()
+                .is_some_and(|p| p.pick.across_formula);
+        if across {
+            row = row.child(
+                div()
+                    .id("stub-formula")
+                    .debug_selector(|| "stub-formula".into())
+                    .w_full()
+                    .text_color(p.accent)
+                    .child(ACROSS_FORMULA),
+            );
+        }
         let pill = chosen.then(|| {
             div()
                 .id("stub-only")
@@ -367,6 +391,7 @@ mod tests {
             gen_,
             index,
             text: text.into(),
+            across_formula: false,
         }
     }
 
@@ -429,6 +454,12 @@ mod tests {
         let out = blyg_render::stub_quote::with_stub_quote_nth(&md, ID, Some("Second words."), 1);
         assert!(out.ends_with(&format!("![[{ID}]]\n> Second words.\n\nMy end.")));
         assert!(out.starts_with(&format!("![[{ID}]]\n\nMy point.")));
+        // --- maths --- the same selection, cutting through a formula.
+        let across = StubPick {
+            across_formula: true,
+            ..pick(4, 3, "Second words.")
+        };
+        assert_eq!(pick_passage(&across, page, &md, ID), None);
     }
 
     #[test]

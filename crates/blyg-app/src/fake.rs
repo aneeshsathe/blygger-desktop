@@ -33,6 +33,9 @@ pub mod upkeep_seed;
 // --- discover --- the sample blygger.com directory
 #[path = "fake_discover.rs"]
 pub mod discover_seed;
+// --- maths ---
+#[path = "fake_maths.rs"]
+pub mod maths_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -322,7 +325,8 @@ impl FakeBackend {
                 "Marginalia were comment threads before paper had a word for it.",
             ),
         ];
-        let rd = reading_seed::seed(now);
+        let mut rd = reading_seed::seed(now);
+        maths_seed::add(&mut rd, now); // --- maths ---
         let mut items = Vec::new();
         let mut versions = HashMap::new();
         for (id, kind, status, version, age, body) in seed {
