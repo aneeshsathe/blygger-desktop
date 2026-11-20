@@ -6,15 +6,33 @@ documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 break things.
 
-To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
-`version` in the root `Cargo.toml`, commit, and merge to `main`: the release
-workflow sees the untagged version, tags the commit, and publishes that
-section as the release notes. Add the release's section to
+Changes don't edit this file: each adds a fragment in `changes/unreleased/`
+(its README has the format). To cut a release, run
+`scripts/changelog-stitch.py stitch x.y.z`: it writes the fragments into a
+new `[x.y.z] - YYYY-MM-DD` section below `[Unreleased]` and deletes them.
+Then bump `version` in the root `Cargo.toml`, commit, and merge to `main`:
+the release workflow sees the untagged version, tags the commit, and
+publishes that section as the release notes. Add the release's section to
 `site/src/releases.md` (what the app's "What's new" opens). If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
 ## [Unreleased]
+
+Pending changes are fragments in `changes/unreleased/`; the release stitches
+them in here.
+
+## [0.27.1] - 2026-11-20
+
+A security update: the library that cleans HTML from blygs you follow is updated past four advisories. The rest is development process.
+
+### Security
+- **Desktop: safer cleaning of HTML from other blygs.** Burrow cleans the HTML of posts it shows from blygs you follow before displaying them. The library that does it, ammonia, is updated from 4.2.0 to 4.2.5, which fixes four advisories, one of them a way to slip script past the cleaning (RUSTSEC-2026-0533, RUSTSEC-2021-0157, RUSTSEC-2021-0158). rustls, rustls-webpki and webpki-roots, used for HTTPS, are updated past their advisories too.
+
+### Development
+- **Changelog fragments.** A change adds `changes/unreleased/<slug>.md` instead of editing `CHANGELOG.md`, so parallel branches no longer conflict over it; `scripts/changelog-stitch.py stitch <version>` writes them into the release's section and deletes them. The workspace tests check the fragments' format.
+- **One gate, run by CI and by hand.** `scripts/check.sh` runs what CI runs; every CI step calls it. A `cargo deny` job checks licences and sources on every PR, and RustSec advisories when dependencies change, weekly and on main. A PR that only adds or changes screenshots skips the Rust jobs. There's a PR template.
+- **New checks.** Unsafe code is forbidden outside `blyg-app`; `std::process::Command` only in modules that say why; one reviewed list of the files with those exceptions; every silenced lint gives a reason; every crate takes the lint config; a personal-data scan; a test pinning the names existing installs depend on; backticked paths in the developer docs must exist; e2e signs in and waits out a 429 in one place.
 
 ## [0.27.0] - 2026-11-19
 

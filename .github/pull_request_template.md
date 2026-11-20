@@ -42,5 +42,5 @@ What could break and for whom. Say yes or no to each:
 - tests use real SQLite and a real local studio, not a mock server or the fake backend
 - real-studio e2e for server-facing changes (scripts/e2e-local.sh)
 - for UI changes: a screenshot from skills/verify-burrow
-- docs: SPEC, site, CHANGELOG [Unreleased]; tour at release time
+- docs: SPEC, site, a changelog fragment in changes/unreleased/; tour at release time
 -->
