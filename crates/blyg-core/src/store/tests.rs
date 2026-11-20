@@ -81,6 +81,234 @@ fn search_unicode_case_folding() {
     assert_eq!(s.search("äRGER")[0].local_id, a);
 }
 
+fn ids_of(items: Vec<Item>) -> Vec<LocalId> {
+    items.into_iter().map(|i| i.local_id).collect()
+}
+
+/// Typing a search a key at a time (the short keys read the snapshot, so
+/// the longer ones resolve their trigram hits against it: `fts_in`):
+/// every prefix typed, and every backspace, finds exactly what a store
+/// that never searched before finds (reading the rows: `fts_rows`), in
+/// the same order.
+#[test]
+fn search_typed_a_key_at_a_time_finds_what_a_fresh_search_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    for md in [
+        "Garden notes, spring",
+        "the GARDEN in winter: notes",
+        "gardening",
+        "Ärger im Garten",
+        "a garden \"quoted\" note",
+        "nothing to see",
+        "",
+    ] {
+        s.create_draft(Kind::Fragment, md, 0).unwrap();
+    }
+    for typed in ["garden notes", "Ärger", "\"quoted\" n", "gart"] {
+        let mut q = String::new();
+        let mut steps: Vec<String> = Vec::new();
+        for c in typed.chars() {
+            q.push(c);
+            steps.push(q.clone());
+        }
+        // ...then backspace back to one character.
+        while q.chars().count() > 1 {
+            q.pop();
+            steps.push(q.clone());
+        }
+        for q in steps {
+            let fresh = Store::open(&path).unwrap();
+            assert_eq!(ids_of(s.search(&q)), ids_of(fresh.search(&q)), "{q:?}");
+        }
+    }
+}
+
+/// A search against the snapshot sees every commit: an edit or delete
+/// here, a write from another connection (the sync worker's), on a file
+/// store and an in-memory one. (`items()` before each search makes the
+/// snapshot current, so the search resolves against it.)
+#[test]
+fn search_against_the_snapshot_sees_edits_and_syncs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    let a = s.create_draft(Kind::Fragment, "garden a", 0).unwrap();
+    let b = s.create_draft(Kind::Fragment, "lake b", 0).unwrap();
+    s.items();
+    assert_eq!(ids_of(s.search("gar")), vec![a.clone()]);
+    // An edit makes b match.
+    s.save(&b, "garden b", 0).unwrap();
+    s.items();
+    let hits = ids_of(s.search("gard"));
+    assert!(hits.contains(&b), "{hits:?}");
+    // Another connection adds c and removes a.
+    let other = Store::open(&path).unwrap();
+    let c = other.create_draft(Kind::Fragment, "garden c", 0).unwrap();
+    s.items();
+    let hits = ids_of(s.search("garde"));
+    assert!(hits.contains(&c), "{hits:?}");
+    other.delete_item(&a).unwrap();
+    s.items();
+    let hits = ids_of(s.search("garden"));
+    assert!(!hits.contains(&a) && hits.len() == 2, "{hits:?}");
+    // And an edit that makes a hit stop matching.
+    s.save(&b, "gone", 0).unwrap();
+    s.items();
+    assert_eq!(ids_of(s.search("garden")), vec![c.clone()]);
+
+    let m = store();
+    let x = m.create_draft(Kind::Fragment, "garden x", 0).unwrap();
+    let y = m.create_draft(Kind::Fragment, "lake y", 0).unwrap();
+    assert_eq!(ids_of(m.search("ga")), vec![x.clone()]);
+    m.save(&y, "garden y", 0).unwrap();
+    m.items();
+    assert!(ids_of(m.search("gar")).contains(&y));
+    m.delete_item(&x).unwrap();
+    m.items();
+    assert_eq!(ids_of(m.search("gard")), vec![y]);
+}
+
+/// A snapshot taken before a write, and a trigram query that already
+/// sees it (a hit the snapshot lacks, one it still holds, an edit the
+/// index hasn't caught up with): the search drops nothing and keeps
+/// nothing gone, and finds what a fresh store finds.
+#[test]
+fn a_search_against_a_snapshot_older_than_the_store_finds_what_a_fresh_store_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    let a = s.create_draft(Kind::Fragment, "garden a", 0).unwrap();
+    let b = s.create_draft(Kind::Fragment, "lake b", 0).unwrap();
+    let other = Store::open(&path).unwrap();
+    type Write<'a> = Box<dyn Fn(&Store) + 'a>;
+    let writes: Vec<(&str, Write)> = vec![
+        (
+            "added",
+            Box::new(|o| {
+                o.create_draft(Kind::Fragment, "garden c", 0).unwrap();
+            }),
+        ),
+        ("edited", Box::new(|o| o.save(&b, "garden b", 0).unwrap())),
+        ("deleted", Box::new(|o| o.delete_item(&a).unwrap())),
+    ];
+    for (what, write) in writes {
+        let snap = s.snapshot().unwrap();
+        write(&other);
+        let fresh = Store::open(&path).unwrap();
+        assert_eq!(
+            ids_of(s.fts_in("garden", &snap).unwrap()),
+            ids_of(fresh.search("garden")),
+            "{what}"
+        );
+    }
+
+    // In memory: the only connection's own write.
+    let m = store();
+    let x = m.create_draft(Kind::Fragment, "garden x", 0).unwrap();
+    let y = m.create_draft(Kind::Fragment, "lake y", 0).unwrap();
+    let snap = m.snapshot().unwrap();
+    m.save(&y, "garden y", 0).unwrap();
+    m.delete_item(&x).unwrap();
+    assert_eq!(ids_of(m.fts_in("garden", &snap).unwrap()), vec![y]);
+}
+
+/// What deleting, withdrawing, a sync dropping a post and an edit leave in
+/// the trigram tables never sends a search to the slow path (reading
+/// each matching row, about 80 VM steps a hit): once the snapshot is
+/// current, a search still costs a few steps a hit. A delete takes the
+/// row out of `items_fts` and `items_fts_stale` in the same statement
+/// (`items_ad`); a withdrawal and an edit keep the row (an edit notes it
+/// in `items_fts_stale`, and the snapshot holds it).
+#[test]
+fn a_search_after_deletes_withdrawals_syncs_and_edits_stays_on_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let wire = |i: usize, status: &str, md: String| WireItem {
+        id: format!("S{i}"),
+        kind: "fragment".into(),
+        status: status.into(),
+        version: 1,
+        created: "2030-01-01T00:00:00Z".into(),
+        updated: format!("2030-01-01T00:{:02}:{:02}Z", i / 60, i % 60),
+        content_md: md,
+        ..Default::default()
+    };
+    let n = 200;
+    let all: Vec<WireItem> = (0..n)
+        .map(|i| wire(i, "public", format!("a garden post, number {i}")))
+        .collect();
+    s.merge_all(&all).unwrap();
+    let draft = s.create_draft(Kind::Fragment, "a garden draft", 0).unwrap();
+    let sid = |i: usize| s.local_id_for_server(&format!("S{i}")).unwrap();
+
+    // Deleted here: a draft, and a synced post.
+    s.delete_item(&draft).unwrap();
+    s.delete_item(&sid(4)).unwrap();
+    // Edited (noted in items_fts_stale), then deleted while still noted.
+    s.save(&sid(5), "a garden, edited", 0).unwrap();
+    s.save(&sid(6), "a garden, edited then deleted", 0).unwrap();
+    s.delete_item(&sid(6)).unwrap();
+    // A pull: S2 withdrawn, S3 gone from the server (dropped here).
+    let pulled: Vec<WireItem> = all
+        .iter()
+        .filter(|w| w.id != "S3" && w.id != "S4" && w.id != "S6")
+        .map(|w| match w.id.as_str() {
+            "S2" => wire(2, "withdrawn", String::new()),
+            _ => w.clone(),
+        })
+        .collect();
+    s.merge_all(&pulled).unwrap();
+    assert!(s.local_id_for_server("S3").is_none(), "the pull dropped S3");
+
+    s.items();
+    let work = s.count_work();
+    let found = s.search("garden");
+    let steps = work.take();
+    let hits = found.len() as u64;
+    assert_eq!(hits, n as u64 - 4, "S2 withdrawn, S3, S4 and S6 gone");
+    assert_eq!(ids_of(found), ids_of(s.fts_rows("garden").unwrap()));
+    let limit = hits * 20 + 500;
+    assert!(
+        steps <= limit,
+        "{steps} VM steps for {hits} hits (limit {limit}): the search read every row"
+    );
+}
+
+/// Resolving the trigram hits against the snapshot gives exactly what
+/// reading the matching rows gives, in the same order: posts edited since
+/// they were indexed, and posts whose dates tie.
+#[test]
+fn trigram_hits_resolved_against_the_snapshot_match_reading_the_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let mut ids = Vec::new();
+    for i in 0..30 {
+        let md = match i % 3 {
+            0 => format!("Garden {i}"),
+            1 => format!("the GARDEN path {i}"),
+            _ => format!("lake {i}"),
+        };
+        ids.push(s.create_draft(Kind::Fragment, &md, 0).unwrap());
+    }
+    // Edited, not yet re-indexed: one starts matching, one stops.
+    s.save(&ids[2], "a garden now", 0).unwrap();
+    s.save(&ids[0], "no longer", 0).unwrap();
+    // Dates that tie: the order falls back to what comes after them.
+    s.conn()
+        .execute("UPDATE items SET updated = '2026-01-01T00:00:00.000Z'", [])
+        .unwrap();
+    for q in ["garden", "GARDEN", "den p", "arden 1", "lake"] {
+        let snap = s.snapshot().unwrap();
+        assert_eq!(
+            ids_of(s.fts_in(q, &snap).unwrap()),
+            ids_of(s.fts_rows(q).unwrap()),
+            "{q:?}"
+        );
+    }
+}
+
 #[test]
 fn save_coalesces_into_one_op() {
     let s = store();
