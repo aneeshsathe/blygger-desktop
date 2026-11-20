@@ -51,6 +51,9 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         Key::Discover => &["ShowDiscover"],
         Key::Nearby => &["ToggleNearby"],
         Key::QuietWriting => &["ToggleQuietWriting"],
+        // --- 0.27.0 --- ⌘⏎ (then ⏎) reaches the confirm step.
+        Key::Tangle => &["Publish"],
+        Key::Formula => &["InsertFormula"],
         // ⇧⌘B shows or hides the pane; the step waits for it to close.
         Key::CloseBrowser => &["ToggleBrowser"],
         Key::LineageMap | Key::LineageRing => &["ShowLineage"],

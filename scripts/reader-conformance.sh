@@ -30,6 +30,8 @@ SPEC_COMMIT=510c76c953f7caab3207ed443e4edf8294ffd559 # branch conformance-0.4
 # The baseline was last checked (2026-11-13) with BLYG_SPEC_DIR at blygger-spec
 # d248bc4 (protocol 0.4 r15, decision #102's fixtures), which is not on
 # SPEC_REPO yet: move the pin once it is.
+# Studio target: blygger-studio v0.65.0 (contract 5.14.0, Burrow 0.27.0);
+# its rendering is 0.64.1's, the parity fixtures' reference (docs/RENDER.md).
 
 die() { printf 'reader-conformance: %s\n' "$*" >&2; exit 2; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

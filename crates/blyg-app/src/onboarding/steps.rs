@@ -161,6 +161,12 @@ pub enum Key {
     QuietWriting,
     /// The open post's ⋯ More menu is showing.
     MoreMenu,
+    // --- 0.27.0 ---
+    /// The tangle confirm step is showing ("This will publish N new items
+    /// and this thread"): ⌘⏎, then ⏎ on the publish sheet.
+    Tangle,
+    /// Edit › Format › Formula (⌃⌘M) ran.
+    Formula,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -307,6 +313,12 @@ pub enum Setup {
     /// --- 0.26.0 --- The published sample post open (its lineage line
     /// under it), with Settings open over it at Quiet writing.
     QuietWriting,
+    /// --- 0.27.0 --- A new thread draft holding a `![[+ …]]` passage and a
+    /// `[[+ …]]` idea, its preview beside it.
+    Tangle,
+    /// A new draft with a formula in it, its preview beside it, and this
+    /// TeX selected.
+    Maths(&'static str),
 }
 
 /// One step of the tour.
@@ -1000,6 +1012,46 @@ pub const STEPS: &[Step] = &[
         pause_ms: 800,
         settle: true,
         stay: false,
+    },
+    // --- 0.27.0 --- tangling and formulas (studio 0.62–0.64.1).
+    Step {
+        id: "tangle",
+        since: "0.27.0",
+        title: ui_text("New items from a thread"),
+        caption: ui_text(
+            "In a thread, ![[+ …]] around a passage (from a line's start to a line's end) \
+                  makes it a post of its own, which the thread quotes; [[+ an idea]] in a \
+                  sentence makes one the thread links. The preview marks each as a new item. \
+                  Press ⌘⏎, then ⏎: Burrow lists what it will publish first, and ⏎ there \
+                  publishes all, esc goes back.",
+        ),
+        keys: &[Key::Tangle],
+        key_label: ui_text("⌘⏎"),
+        region: Region::Whole,
+        button: Some("Publish"),
+        setup: Setup::Tangle,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "maths",
+        since: "0.27.0",
+        title: ui_text("Formulas"),
+        caption: ui_text(
+            "Write LaTeX between dollars: $x^2$ in a sentence, $$…$$ on lines of their own \
+                  ($5 and $10 stay money). The preview draws each one, a broken one shows red, \
+                  and publishing waits until it parses. ⌃⌘M (Edit › Format › Formula) makes \
+                  the selection a formula; ⌃⌘B and ⌃⌘I make it bold or italic.",
+        ),
+        keys: &[Key::Formula],
+        key_label: ui_text("⌃⌘M"),
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Maths("A = \\pi r^2"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
     },
     Step {
         id: "echoed-quote",
@@ -1875,6 +1927,8 @@ pub const TOURS: &[Tour] = &[
             "loose-ends",
             "quiet-writing",
             "quotes",
+            "tangle",
+            "maths",
             "mentions",
         ],
     },
@@ -2126,6 +2180,8 @@ mod tests {
             Key::Discover,
             Key::MentionsFeed,
             Key::MoreMenu, // --- 0.26.0 ---
+            Key::Tangle,   // --- 0.27.0 ---
+            Key::Formula,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
@@ -2212,6 +2268,7 @@ mod tests {
             ids(news_run(&["0.26.0"])),
             ["quiet-writing", "more-menu", END]
         );
+        assert_eq!(ids(news_run(&["0.27.0"])), ["tangle", "maths", END]);
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);
         assert_eq!(tour_of("author-site"), Some(3));

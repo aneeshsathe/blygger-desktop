@@ -5,6 +5,71 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.27.0
+
+Burrow catches up with blygger-studio 0.64 and 0.65: new posts made from a
+thread as you write it, formulas, clearer Background, and links from other
+blygs kept apart from responses.
+
+### New items from a thread
+
+In a thread, put `![[+ ` before a passage and `]]` after it, and publishing
+makes the passage a post of its own, which the thread then quotes. Write
+`[[+ an idea]]` in a sentence, and it becomes a new post the thread links to.
+The preview marks each one as a **new item**. Before anything goes out,
+Burrow lists the new items and asks: ⏎ publishes them all, the new items
+first, and esc goes back to your text. Afterwards your text shows the links
+your blyg made. See [New items from a thread](writing.md#new-items-from-a-thread-tangling).
+
+### Formulas
+
+Write LaTeX between dollars: `$x^2$` in a sentence, `$$…$$` on lines of
+their own. The preview draws them, and shows one that doesn't parse in red;
+publishing waits until it's fixed. `$5 and $10` stays money. Select some text
+and press **⌃⌘M** to make it a formula, and **⌃⌘B** or **⌃⌘I** for bold or
+italic (Edit › Format; Alt+M, Alt+B and Alt+I on Windows). Formulas in posts
+you read are drawn too. Everything your blyg understands beyond plain
+Markdown is now on one page: [Writing syntax](syntax.md).
+
+### Background says why
+
+- Three new rules, in **Settings** (⌘,) on the **BACKGROUND** row: **Parts
+  published with a thread**, **Posts with no words of their own** and
+  **Republished unchanged**. Turn any of them off to see those posts in your
+  lists again. By keys: ⇥ to the rules, ←/→ to pick, space to turn one off
+  or on. Each says ✓ when on and ○ … off when off, and a toast confirms.
+- A post a rule moved there says why on a small badge, such as
+  “published with ‘A morning on the harbour wall’”.
+- A thread published with its parts says **+2 parts**: click it, or press
+  **p**, to unfold them under its card, and click one or press **1**–**9**
+  to open it.
+
+### Links from other blygs
+
+When someone's post links to yours, your blyg now gets a link notice. It
+isn't a response, so it never shows on your page or among your responses:
+Responses (⇧⌘M) lists it after them, under **Linked from · only you see
+these**.
+
+Responses works from the keyboard now: j/k move, **h** hides or unhides,
+**r** replies and **o** or ⏎ opens.
+
+### Previews match your blyg
+
+- A quote with a label leads its attribution line with the label.
+- A quote inside a quote gets its own smaller line.
+- `/* notes to self */` don't appear in the preview, as they never appear on
+  the page, and a comment mistake shows as a ⚠ line at the end.
+
+### Ready for studio 0.65 and later
+
+- Burrow asks your blyg "has this changed?" instead of reading lists again,
+  so syncs are lighter, and it keeps working when studio 0.67 retires the
+  old change counters.
+- If your blyg lives under a path (`example.com/blyg/`) and studio 0.65
+  refuses an old sign-in, Burrow says why. Sign in again; nothing you wrote is
+  lost.
+
 ## Burrow 0.26.0
 
 A lighter Burrow: two experiments and the web app are gone, the writing

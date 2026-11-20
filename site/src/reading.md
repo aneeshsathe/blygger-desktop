@@ -80,10 +80,40 @@ studio's ⋯ menu does:
   there, except any you moved to Foreground yourself; **⇈ Blyg to
   Foreground** brings them back.
 
-Your choice beats the blyg's, which beats the rules. **Settings › Reading ›
-Background** has the rules, saved on your blyg: withdrawn posts are always
-in Background, and **Your own minor changes** can be turned off. On an older
-studio there are no chips or rules, and Background lists withdrawn posts.
+Your choice beats the blyg's, which beats the rules. The rules are in
+**Settings** (⌘,), on the **BACKGROUND** row under CHANGELOG, and are saved
+on your blyg. Withdrawn posts are always in Background. On blygger-studio
+0.64 and later, each of these can be turned off:
+
+- **Parts published with a thread:** items a thread names that were
+  published with it, within 15 minutes. The thread lists them as “+N parts”.
+- **Posts with no words of their own:** only quotes of other posts, nothing
+  the author wrote.
+- **Republished unchanged:** a new version with the same text and the same
+  quotes.
+- **Your own minor changes:** a version of yours the change classifier calls
+  a typo, minor or refresh.
+
+Settings shows only the rules your blyg offers (blygger-studio 0.61 has just
+the last). On an older studio there are no chips or rules, and Background
+lists withdrawn posts.
+
+**By keys:** in Settings, ⇥ past THEME reaches the rules, ←/→ pick one, and
+space or ⏎ turns it off or on. A rule that's on reads “✓ Republished
+unchanged”, one that's off “○ Republished unchanged off”, and a toast says what changed:
+“Parts published with a thread are back in your lists”.
+
+**Why is it here?** A post a rule put in Background says why, on a small
+badge: “published with ‘A morning on the harbour wall’” (the thread it came
+with), “no words of its own” or “republished unchanged”.
+
+**+N parts.** When someone publishes a thread together with the items it
+quotes (with tangling, say), the parts go to Background and the thread says
+“+2 parts”: on its row, and under its card in the Stream, where a click
+unfolds them. Under the open thread, “−2 parts” folds them again. Click a part
+to open it. By keys, **p** folds or unfolds the parts (of the open thread,
+else of the selected card), and **1**–**9** open a listed part. Turn **Parts published with a thread** off to see the parts in
+your lists again.
 
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
@@ -546,6 +576,14 @@ generated, and the post ends with a short note: the mark is the publisher's
 own disclosure, and Burrow can't verify it. Text without a mark may have been
 generated too; a mark only says what the publisher chose to disclose.
 
+## Formulas
+
+Posts from blygger-studio 0.62 and later can hold mathematics. The Reader and
+the stream's side pane draw each formula from the TeX its author wrote, and
+nothing else from inside it is kept, so a formula can't carry anything
+hidden. The Stream's cards show a formula as its TeX. To write your own, see
+[Writing syntax](syntax.md#mathematics).
+
 ## Lineage
 
 Beside each post's name, in the stream and in Reader, a small **glyph** shows
@@ -628,6 +666,16 @@ verified responses to your own posts, grouped by post: who quoted, replied to
 or forked which post, and when. (Reading's **Mentions** source is different:
 the posts you hold that mention you, to read.) You can hide one, and your own
 posts list their mentions under them in ⌘Y and in the reading pane.
+
+**Linked from.** When someone's post links to yours with `[[id]]` (on
+blygger-studio 0.64 and later), your blyg gets a **link notice**. A link isn't
+a response, so it never shows on your post's page or among its responses.
+Responses lists a post's notices after its responses, under **Linked from ·
+only you see these**: “Ada linked to this”, with ↗, Reply and Hide, as
+responses have.
+
+**Responses by keys:** j/k (or ↓/↑) move through the responses and notices,
+**h** hides or unhides one, **r** replies, and **o** or ⏎ opens it ↗.
 
 **Sent** beside **Received** lists the Webmentions your blyg sent for your
 posts: which version of which post, the page it pointed at, and where the
