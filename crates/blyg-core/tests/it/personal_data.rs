@@ -248,10 +248,8 @@ fn scan(path: &str, text: &str, allow: &Allow) -> Vec<(Kind, String)> {
     found
 }
 
-/// Folders not scanned: screenshots (binary images) and the clickable HTML
-/// mocks, which CI skips too (`docs/prototype/` holds invented sample
-/// content only).
-const NOT_SCANNED: &[&str] = &["docs/screenshots/", "docs/prototype/"];
+/// Folders not scanned: the screenshots (binary images, which CI skips too).
+const NOT_SCANNED: &[&str] = &["docs/screenshots/"];
 
 /// The files git lists under `root`, tracked or not yet added (but not
 /// ignored); `None` without git or a checkout.
