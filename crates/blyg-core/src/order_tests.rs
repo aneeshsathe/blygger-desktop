@@ -298,7 +298,7 @@ fn the_pace_layered_feed_climbs_an_edit_one_place() {
     a.version = 2;
     a.updated = Some("2026-11-01T13:00:00Z".into());
     a.observed_at = "2026-11-01T13:00:00Z".into();
-    let pos = feed_positions([&a, &b, &c], |_| None);
+    let pos = feed_positions([&a, &b, &c], |_| None, |_| false);
     let mut keys: Vec<&Key> = pos.keys().collect();
     keys.sort_by_key(|k| pos[*k]);
     let ids: Vec<&str> = keys.iter().map(|k| k.1.as_str()).collect();

@@ -203,7 +203,7 @@ fn a_row_without_a_changelog_counts_as_its_first_and_latest_versions() {
         "2027-01-01T00:00:00Z", // future-dated: clamped
         "2026-11-02T08:00:00Z",
     );
-    let vs = row_versions(&r, None);
+    let vs = row_versions(&r, None, false);
     assert_eq!(vs.len(), 2);
     assert_eq!((vs[0].version, vs[1].version), (1, 3));
     assert_eq!(vs[0].at, parse_ts_ms("2026-11-01T10:00:00Z").unwrap());
@@ -220,7 +220,27 @@ fn a_row_without_a_changelog_counts_as_its_first_and_latest_versions() {
         reasons: vec!["near-same".into()],
         ..Default::default()
     });
-    assert!(row_versions(&r, None)[1].maintenance);
+    assert!(row_versions(&r, None, false)[1].maintenance);
+}
+
+/// Studio `importedVersions`: an l0 item (an RSS or other plain feed's,
+/// `row.l0`) lends no quotes, whatever its text names.
+#[test]
+fn an_l0_row_lends_no_quotes() {
+    let r = row(
+        "t",
+        2,
+        "2026-11-01T10:00:00Z",
+        "2026-11-01T12:00:00Z",
+        "2026-11-02T00:00:00Z",
+    );
+    assert!(
+        row_versions(&r, None, true)
+            .iter()
+            .all(|v| v.quotes.is_empty())
+    );
+    let h = history([&r], |_| None, |_| true);
+    assert!(h[0].versions.iter().all(|v| v.quotes.is_empty()));
 }
 
 /// With a cached changelog, its versions and pins (the blyg's own pins:
@@ -240,7 +260,7 @@ fn a_cached_changelog_gives_every_version_and_its_pins() {
         {"version": 3, "at": "2026-11-01T13:00:00Z", "note": null, "pinned": false, "current": false},
     ]))
     .unwrap();
-    let vs = row_versions(&r, Some(&log));
+    let vs = row_versions(&r, Some(&log), false);
     assert_eq!(vs.iter().map(|v| v.version).collect::<Vec<_>>(), [1, 2]);
     assert!(vs[0].pinned && !vs[1].pinned);
     assert_eq!(vs[0].quotes.len(), 2, "a pinned version carries the quotes");
@@ -262,7 +282,7 @@ fn history_lists_each_row_once_in_key_order() {
         "2026-11-01T11:00:00Z",
         "2026-11-01T11:00:00Z",
     );
-    let h = history([&a, &b, &a], |_| None);
+    let h = history([&a, &b, &a], |_| None, |_| false);
     assert_eq!(
         h.iter().map(|i| i.key.1.as_str()).collect::<Vec<_>>(),
         ["a", "b"]

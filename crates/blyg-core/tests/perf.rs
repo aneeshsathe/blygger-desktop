@@ -174,6 +174,48 @@ fn timing_reading_list_at_scale() {
     budget.done();
 }
 
+/// The pace-layered Feed's rebuild at the scale of a big reading list:
+/// about 4,000 rows and a few hundred cached changelogs (the posts opened),
+/// read from the store and replayed (`order::feed_positions`). Burrow runs
+/// it whenever the reading list reloads, off the UI thread.
+#[test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_pace_layered_feed_at_scale() {
+    use blyg_core::RemoteVersion;
+    const FEED_ROWS: usize = 4_000;
+    const LOGS: usize = 300;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let rows = synth::reading(FEED_ROWS, 7);
+    for r in rows.iter().step_by(FEED_ROWS / LOGS).take(LOGS) {
+        let log: Vec<RemoteVersion> = (1..=r.version.max(2))
+            .map(|v| {
+                serde_json::from_value(serde_json::json!({
+                    "version": v, "at": r.created, "note": "a note", "pinned": v == 1,
+                    "current": v == r.version,
+                }))
+                .unwrap()
+            })
+            .collect();
+        store.put_changelog(&r.origin, &r.remote_id, &log).unwrap();
+    }
+    let mut budget = Budget::default();
+    let logs = budget.time("cached_changelogs (300)", 8.0, || store.cached_changelogs());
+    assert_eq!(logs.len(), LOGS);
+    let pos = budget.time("feed_positions (4k rows)", 16.0, || {
+        blyg_core::order::feed_positions(
+            &rows,
+            |r| {
+                logs.get(&(r.origin.clone(), r.remote_id.to_string()))
+                    .cloned()
+            },
+            |_| false,
+        )
+    });
+    assert_eq!(pos.len(), rows.len());
+    budget.done();
+}
+
 /// A realistic mixed document of at least `target` characters: quotes
 /// (unresolved here), TK, links, fuzzy links, lists, a table, code, videos.
 fn document(target: usize) -> String {
