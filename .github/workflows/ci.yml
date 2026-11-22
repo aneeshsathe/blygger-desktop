@@ -96,6 +96,32 @@ jobs:
       - name: Test (Windows wording)
         run: scripts/check.sh wording
 
+  # The web app, built as the release builds it (release.yml attaches it
+  # as Burrow-web-<version>.zip), so a break shows here, not at release.
+  # Its own job, so it runs beside the tests instead of after them.
+  web:
+    name: web app (wasm-release)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      # wasm-bindgen-cli is built from source once and kept in the cache
+      # (it was ~1.5 min of every run).
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-directories: ~/blyg-web-tools
+
+      - name: Build the web app
+        run: |
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          BLYG_WEB_TOOLS="$HOME/blyg-web-tools" ./crates/blyg-web/serve.sh --build-only
+
   # Windows is a supported platform: the same checks (and, in the
   # windows-package job, a release build). Tests that need macOS are
   # cfg(target_os = "macos"); see "Keeping Windows building" in
