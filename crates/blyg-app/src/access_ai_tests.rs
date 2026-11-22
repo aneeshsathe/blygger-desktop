@@ -218,6 +218,43 @@ fn server_ai_changes_a_model_and_a_switch_and_saves(cx: &mut TestAppContext) {
     assert!(toast(&view, cx).starts_with("AI settings saved"));
 }
 
+/// The sheet sends only what was changed in it: a setting changed in
+/// Studio after the sheet read them survives a save here.
+#[gpui_kit::test]
+fn server_ai_keeps_a_change_made_elsewhere_since_it_opened(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.dispatch_action(ShowServerAi);
+    settle(cx, |cx| {
+        view.read_with(
+            cx,
+            |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
+        )
+    });
+    // Studio, meanwhile: a new house style and change-notes model.
+    let mut elsewhere = blyg_core::access_ai::ServerAiSettings {
+        style_prompt: Some("Short. Warm.".into()),
+        ..Default::default()
+    };
+    *elsewhere.model_mut(AiFunction::Changelog) = Some("claude-sonnet-5-5".into());
+    fake.save_server_ai_settings(&elsewhere).unwrap();
+    // Here: TK's model only.
+    keys(cx, "right");
+    keys(cx, "cmd-enter");
+    settle(cx, |cx| view.read_with(cx, |v, _| !v.sheet.is_open()));
+    let s = fake.server_ai_settings().unwrap();
+    assert_eq!(s.model(AiFunction::Tk), Some("claude-haiku-4-5"));
+    assert_eq!(
+        s.style_prompt.as_deref(),
+        Some("Short. Warm."),
+        "Studio's style kept"
+    );
+    assert_eq!(
+        s.model(AiFunction::Changelog),
+        Some("claude-sonnet-5-5"),
+        "Studio's model kept"
+    );
+}
+
 /// Open the public post and type an edit, so it has a v2 to publish.
 fn edit_public(cx: &mut VisualTestContext) {
     keys(cx, "down");

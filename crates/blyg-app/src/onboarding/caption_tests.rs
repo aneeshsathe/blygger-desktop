@@ -77,6 +77,7 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         | Key::MentionsFeed
         | Key::FeedOrder // clicks (`feed::render_feed_controls`, the sources)
         | Key::RawTab
+        | Key::AgenticTab
         | Key::MoreMenu
         | Key::Parts // `p`: reading_key_down
         | Key::ConflictAnswered => &[],

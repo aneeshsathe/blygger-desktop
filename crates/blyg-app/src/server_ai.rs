@@ -7,6 +7,13 @@
 //! These run on the blyg, for the blyg. Burrow's own AI (Settings › AI,
 //! `blyg-ai`) runs from this computer and is configured there.
 //!
+//! Studio 0.69 adds the text helpers model (Catch up's summary on the
+//! blyg), the Agentic feed tab's name (`agenticTitle`), and, under the
+//! change classifier, judging other blygs' changes (`bgModelImported`, its
+//! optional instruction `bgInstruction`, and `bgFlagDisagreement`; Studio
+//! has these under Settings › Background, Burrow beside the classifier
+//! they need). A row shows only where the studio has its key.
+//!
 //! Keys: ↑/↓ choose a row, ←/→ change its model (or flip its switch, as
 //! Space does), ⌘⏎ saves, esc closes. "other…" types any model id.
 //!
@@ -28,23 +35,65 @@ gpui_kit::actions!(
 /// The one line that tells this sheet from Settings › AI.
 pub const DIFFERENCE: &str = "These models run on your blyg, for things your blyg does: TK filled on the server, change notes, the change classifier. Burrow's own AI (Settings › AI) runs from this computer and is set up there.";
 
+// --- dictionary --- Blyg › Dictionary… (studio 0.69), a sheet beside this one.
+#[path = "dictionary.rs"]
+pub(crate) mod dictionary;
+
 /// A row of the sheet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     Model(AiFunction),
     AutoNotes,
     CategoryInNote,
+    /// `bgModelImported` (studio 0.69).
+    JudgeImported,
+    /// `bgFlagDisagreement` (studio 0.69).
+    FlagDisagreement,
 }
 
 /// The rows, in order.
-pub const ROWS: [Row; 6] = [
+pub const ROWS: [Row; 9] = [
     Row::Model(AiFunction::Tk),
     Row::Model(AiFunction::Changelog),
     Row::AutoNotes,
     Row::Model(AiFunction::Classify),
     Row::CategoryInNote,
+    Row::JudgeImported,
+    Row::FlagDisagreement,
+    Row::Model(AiFunction::Helpers),
     Row::Model(AiFunction::Feed),
 ];
+
+/// A row's place in [`ROWS`].
+fn ix(r: Row) -> usize {
+    ROWS.iter().position(|x| *x == r).unwrap_or(0)
+}
+
+/// Whether the sheet shows `row`: the studio 0.69 rows only where the studio
+/// has their keys, the keep-in-view switch only with an instruction (as
+/// Studio's Settings shows them).
+pub fn row_shown(row: Row, s: &ServerAiSettings) -> bool {
+    match row {
+        Row::Model(AiFunction::Helpers) => s.model_helpers.is_some(),
+        Row::JudgeImported => s.judging().offered,
+        Row::FlagDisagreement => s.judging().flag,
+        _ => true,
+    }
+}
+
+/// The next shown row from `from`, `step` ±1 (stays put at either end).
+fn next_shown(from: usize, step: i32, s: &ServerAiSettings) -> usize {
+    let mut at = from as i32;
+    loop {
+        at += step;
+        if at < 0 || at >= ROWS.len() as i32 {
+            return from;
+        }
+        if row_shown(ROWS[at as usize], s) {
+            return at as usize;
+        }
+    }
+}
 
 pub enum AiLoad {
     Loading,
@@ -58,12 +107,18 @@ pub struct ServerAiSheet {
     pub focus: FocusHandle,
     pub style: Entity<TextareaState>,
     pub feed: Entity<TextareaState>,
+    /// `agenticTitle`: the Agentic feed tab's name.
+    pub agentic_title: Entity<InputState>,
+    /// `bgInstruction`: the classifier's routing instruction.
+    pub instruction: Entity<TextareaState>,
     /// The typed model id of the row in "other…".
     pub other: Entity<InputState>,
     pub load: AiLoad,
     pub models: AiModels,
     /// As read, then as edited (saved on ⌘⏎).
     pub settings: ServerAiSettings,
+    /// As read: a save sends only what differs from it.
+    pub loaded: ServerAiSettings,
     pub sel: usize,
     /// The function whose model is being typed.
     pub other_for: Option<AiFunction>,
@@ -92,7 +147,7 @@ impl crate::app::sheet::SheetView for ServerAiSheet {
 
 impl ServerAiSheet {
     pub fn inputs(&self) -> Vec<&Entity<InputState>> {
-        vec![&self.other]
+        vec![&self.other, &self.agentic_title]
     }
 }
 
@@ -151,6 +206,7 @@ impl MainView {
         d.on_action(
             cx.listener(|this, _: &ShowServerAi, window, cx| this.open_server_ai(window, cx)),
         )
+        .map(|d| self.dictionary_actions(d, cx)) // --- dictionary ---
     }
 
     /// Blyg › AI on Your Blyg…: open it (or close it).
@@ -160,6 +216,9 @@ impl MainView {
         }
         let style = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
         let feed = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
+        let agentic_title =
+            cx.new(|cx| InputState::new(window, cx).placeholder(blyg_core::agentic::DEFAULT_TITLE));
+        let instruction = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
         let other = cx.new(|cx| {
             InputState::new(window, cx).placeholder("a model id, e.g. claude-sonnet-5-5")
         });
@@ -175,10 +234,13 @@ impl MainView {
             focus,
             style,
             feed,
+            agentic_title,
+            instruction,
             other,
             load: AiLoad::Loading,
             models: AiModels::default(),
             settings: ServerAiSettings::default(),
+            loaded: ServerAiSettings::default(),
             sel: 0,
             other_for: None,
             busy: false,
@@ -207,6 +269,14 @@ impl MainView {
                         );
                         style.update(cx, |e, cx| e.set_value(st, window, cx));
                         feed.update(cx, |e, cx| e.set_value(fp, window, cx));
+                        let (title, ins) = (s.agentic_title.clone(), s.instruction.clone());
+                        let (t, i) = (
+                            set.agentic_title.clone().unwrap_or_default(),
+                            set.bg_instruction.clone().unwrap_or_default(),
+                        );
+                        title.update(cx, |e, cx| e.set_value(t, window, cx));
+                        ins.update(cx, |e, cx| e.set_value(i, window, cx));
+                        s.loaded = set.clone();
                         s.settings = set;
                         s.models = models;
                         s.load = AiLoad::Ready;
@@ -249,6 +319,17 @@ impl MainView {
                 if let Some(on) = s.settings.change_category_in_note.as_mut() {
                     *on = !*on;
                 }
+            }
+            Row::JudgeImported => {
+                if s.settings.judging().can_judge
+                    && let Some(on) = s.settings.bg_model_imported.as_mut()
+                {
+                    *on = !*on;
+                }
+            }
+            Row::FlagDisagreement => {
+                let on = s.settings.judging().flag_on;
+                s.settings.bg_flag_disagreement = Some(!on);
             }
             Row::Model(f) => {
                 let Some(cur) = s.settings.model(f).map(str::to_string) else {
@@ -306,6 +387,15 @@ impl MainView {
         if out.feed_prompt.is_some() {
             out.feed_prompt = Some(s.feed.read(cx).value().to_string());
         }
+        if out.agentic_title.is_some() {
+            out.agentic_title = Some(s.agentic_title.read(cx).value().to_string());
+        }
+        if out.bg_instruction.is_some() {
+            out.bg_instruction = Some(s.instruction.read(cx).value().to_string());
+        }
+        // Only what was changed here: a change made in Studio since the
+        // sheet read them stays.
+        let out = out.changes_from(&s.loaded);
         s.busy = true;
         s.error = None;
         cx.notify();
@@ -316,6 +406,7 @@ impl MainView {
             let _ = this.update_in(cx, |v, window, cx| match r {
                 Ok(()) => {
                     v.close_sheet(window, cx);
+                    v.agentic_refresh(true, cx); // --- agentic feed --- its name
                     v.show_toast(
                         "AI settings saved",
                         Some("Your blyg uses them from now on".into()),
@@ -348,11 +439,11 @@ impl MainView {
             }
             "escape" => self.close_sheet(window, cx),
             "up" => {
-                s.sel = sel.saturating_sub(1);
+                s.sel = next_shown(sel, -1, &s.settings);
                 cx.notify();
             }
             "down" => {
-                s.sel = (sel + 1).min(ROWS.len() - 1);
+                s.sel = next_shown(sel, 1, &s.settings);
                 cx.notify();
             }
             "left" => self.server_ai_step(sel, -1, window, cx),
@@ -577,6 +668,7 @@ impl MainView {
                 .child(gpui_kit::base::input::Textarea::new(e))
         };
         let helps = s.settings.helpers();
+        let judging = s.settings.judging();
         let mut rows = div()
             .id("server-ai-rows")
             .max_h(px(470.))
@@ -585,7 +677,12 @@ impl MainView {
             .flex_col();
         rows = rows
             .child(section("TK GENERATION"))
-            .child(row(0, "Model", model_value(AiFunction::Tk), true))
+            .child(row(
+                ix(Row::Model(AiFunction::Tk)),
+                "Model",
+                model_value(AiFunction::Tk),
+                true,
+            ))
             .children(other_box(AiFunction::Tk))
             .when(s.settings.style_prompt.is_some(), |d| {
                 d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
@@ -594,10 +691,15 @@ impl MainView {
                 .child(area(&s.style, 56.))
             })
             .child(section("CHANGE NOTES"))
-            .child(row(1, "Model", model_value(AiFunction::Changelog), true))
+            .child(row(
+                ix(Row::Model(AiFunction::Changelog)),
+                "Model",
+                model_value(AiFunction::Changelog),
+                true,
+            ))
             .children(other_box(AiFunction::Changelog))
             .child(row(
-                2,
+                ix(Row::AutoNotes),
                 "Draft automatically",
                 switch(s.settings.auto_change_notes),
                 helps.draft,
@@ -606,10 +708,15 @@ impl MainView {
                 "When a new version has no note, the publish sheet drafts one. You see it, and edit it, before anything is published; a note published exactly as drafted is marked as generated.",
             ))
             .child(section("CHANGE CLASSIFIER"))
-            .child(row(3, "Decision model", model_value(AiFunction::Classify), true))
+            .child(row(
+                ix(Row::Model(AiFunction::Classify)),
+                "Decision model",
+                model_value(AiFunction::Classify),
+                true,
+            ))
             .children(other_box(AiFunction::Classify))
             .child(row(
-                4,
+                ix(Row::CategoryInNote),
                 "Start the note with it",
                 switch(s.settings.change_category_in_note),
                 helps.classify,
@@ -617,8 +724,71 @@ impl MainView {
             .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
                 "Off unless you choose a model. It labels each new version typo, minor or major before you publish; you can change or clear the label. Readers see it only as words in your change note.",
             ))
-            .child(section("AGENTIC FEED · saved now, not used yet"))
-            .child(row(5, "Model", model_value(AiFunction::Feed), true))
+            // --- studio 0.69 --- judging other blygs' changes (Studio:
+            // Settings › Background), shown as Studio shows it.
+            .when(judging.offered, |d| {
+                d.child(row(
+                    ix(Row::JudgeImported),
+                    "Judge other blygs' changes",
+                    switch(s.settings.bg_model_imported),
+                    judging.can_judge,
+                ))
+                .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
+                    if judging.can_judge {
+                        "One classifier call per new version Background's rules leave open, ten every quarter hour, under your daily AI budget; over it, the rules decide. A typo or minor label sends it to Background. Only the two texts are sent, unless you write an instruction below."
+                    } else {
+                        "Choose a decision model above first."
+                    },
+                ))
+            })
+            .when(judging.instruction, |d| {
+                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
+                    "Your instruction (optional). While written, each version's note is read too, and a note calling a big change minor keeps the post in view, marked.",
+                ))
+                .child(area(&s.instruction, 48.))
+            })
+            .when(judging.flag, |d| {
+                d.child(row(
+                    ix(Row::FlagDisagreement),
+                    "Keep in view if the note understates it",
+                    switch(Some(judging.flag_on)),
+                    true,
+                ))
+            })
+            .when(row_shown(Row::Model(AiFunction::Helpers), &s.settings), |d| {
+                d.child(section("TEXT HELPERS"))
+                    .child(row(
+                        ix(Row::Model(AiFunction::Helpers)),
+                        "Model",
+                        model_value(AiFunction::Helpers),
+                        true,
+                    ))
+                    .children(other_box(AiFunction::Helpers))
+                    .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
+                        "Small writing jobs you and your agents ask your blyg for, such as Catch up's summary. Each is written once for the versions it reads and kept. None uses the change-notes model.",
+                    ))
+            })
+            .child(section("AGENTIC FEED"))
+            .when(s.settings.agentic_title.is_some(), |d| {
+                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
+                    "Tab name: what you call it in Reading, and the heading of each edition",
+                ))
+                .child(
+                    crate::theme_ext::field_box(div(), theme)
+                        .mx(px(8.))
+                        .mt(px(2.))
+                        .px(px(10.))
+                        .py(px(6.))
+                        .text_size(px(13.))
+                        .child(gpui_kit::base::input::Input::new(&s.agentic_title)),
+                )
+            })
+            .child(row(
+                ix(Row::Model(AiFunction::Feed)),
+                "Model · not used yet",
+                model_value(AiFunction::Feed),
+                true,
+            ))
             .children(other_box(AiFunction::Feed))
             .when(s.settings.feed_prompt.is_some(), |d| {
                 d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(

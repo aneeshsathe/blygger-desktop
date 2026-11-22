@@ -215,7 +215,7 @@ pub fn in_source(
         Source::Mentions => false,
         // --- shelf sync --- listed in the shelf's order by `State::refilter`.
         Source::Smart(Smart::Shelf) => false,
-        // --- reader order --- the Agentic feed has nothing to list yet.
+        // --- agentic feed --- listed in the edition's order by `State::refilter`.
         Source::Smart(Smart::Agentic) => false,
         Source::Smart(Smart::Raw) => true,
     }

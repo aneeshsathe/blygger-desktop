@@ -532,6 +532,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),
                 MenuItem::action("AI on Your Blyg…", app::server_ai::ShowServerAi),
+                // --- dictionary ---
+                MenuItem::action("Dictionary…", app::server_ai::dictionary::ShowDictionary),
                 MenuItem::action("Site…", app::site::ShowSite), // --- site ---
                 // --- upkeep ---
                 MenuItem::action("Stale Quotes…", app::upkeep::ShowStaleQuotes),

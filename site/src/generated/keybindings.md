@@ -129,6 +129,7 @@
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |
 | AI on your blyg: a model per function, house style, change notes, the change classifier | Blyg › AI on Your Blyg… |
+| Your blyg's dictionary: the words its spellcheck accepts, shared with Studio; add and take out your own | Blyg › Dictionary… |
 | The blyg's public site: theme, typeface, front page, menus, avatar, collection feeds, studio updates and extensions | Blyg › Site… |
 | Stale quotes: your threads whose quoted posts have newer versions; refresh them | Blyg › Stale Quotes… |
 | Signals: your likes, dislikes and private activity log (never published) | Blyg › Signals… |

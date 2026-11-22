@@ -120,6 +120,12 @@ impl Default for Seed {
                 feed_prompt: Some(String::new()),
                 auto_change_notes: Some(false),
                 change_category_in_note: Some(true),
+                // --- studio 0.69 ---
+                model_helpers: Some("claude-haiku-4-5".into()),
+                agentic_title: Some("Morning paper".into()),
+                bg_model_imported: Some(true),
+                bg_instruction: Some("Keep anything about tide tables in view.".into()),
+                bg_flag_disagreement: Some(true),
             },
             models: AiModels {
                 providers: vec![

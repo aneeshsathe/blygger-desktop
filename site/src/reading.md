@@ -60,9 +60,14 @@ right.
   versions. So the pace-layered order is worked out on this Mac from the
   versions Burrow has seen, and can differ slightly from your blyg's home
   page.
-- **Agentic feed** will be where an assistant organizes your reading:
-  what you should see, and how. It isn't built yet, upstream either; its
-  prompt is already in Settings (AI, *Agentic feed prompt*).
+- **Agentic feed** is where an assistant organizes your reading. On
+  blygger-studio 0.69 an assistant writes an **edition** on your blyg: a
+  title and lede, then sections (a lead, sections, briefs), each post with
+  its headline, a short summary and why it's there. The tab shows it under
+  the name your blyg gives it (set in Blyg › AI on Your Blyg…); j/k step
+  through its posts, ⏎ opens one, and a post not on this Mac yet says so and
+  arrives with the next sync. Burrow reads editions and never writes one.
+  Before the first, the tab says "No edition yet."
 - **Raw** is what came in from the blygs you read, newest first, as it
   arrived: nothing moved to Background, nothing folded under a thread,
   withdrawn posts included. Your own posts aren't in it.
@@ -687,10 +692,13 @@ that reply to or quote any of them (side branches). A post this Mac doesn't
 hold shows what the quoting post cited of it, and opening it fetches it then,
 never before. It goes back at most eight steps and 60 posts.
 
-**s** asks your AI provider for a short summary, in order and by author,
-shown at the top of the sheet as **AI summary**. It's for you to read: it
-never goes into a post. esc stops it. With no provider set up, the panel says
-so and links to Settings › AI.
+**s** asks for a short summary, in order and by author, shown at the top of
+the sheet as **AI summary**. On blygger-studio 0.69 with a text helpers model
+(Blyg › AI on Your Blyg…), your blyg writes it, once per set of versions, and
+the label ends "on your blyg"; otherwise, or with Whole conversation on, your
+own AI provider writes it. It's for you to read: it never goes into a post.
+esc stops it. With neither set up, the panel says so and links to
+Settings › AI.
 
 ## Reading time and inspect
 

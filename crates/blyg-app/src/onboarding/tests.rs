@@ -877,6 +877,14 @@ fn do_step(e: &mut Env, id: &str) {
                 cx,
             )
         }),
+        "agentic-edition" => e.view.update(e.cx, |v, cx| {
+            v.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Agentic,
+                ),
+                cx,
+            )
+        }),
         "shelf-lens" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(
