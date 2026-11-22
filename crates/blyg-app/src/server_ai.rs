@@ -117,6 +117,8 @@ pub struct ServerAiSheet {
     pub models: AiModels,
     /// As read, then as edited (saved on ⌘⏎).
     pub settings: ServerAiSettings,
+    /// As read: a save sends only what differs from it.
+    pub loaded: ServerAiSettings,
     pub sel: usize,
     /// The function whose model is being typed.
     pub other_for: Option<AiFunction>,
@@ -238,6 +240,7 @@ impl MainView {
             load: AiLoad::Loading,
             models: AiModels::default(),
             settings: ServerAiSettings::default(),
+            loaded: ServerAiSettings::default(),
             sel: 0,
             other_for: None,
             busy: false,
@@ -273,6 +276,7 @@ impl MainView {
                         );
                         title.update(cx, |e, cx| e.set_value(t, window, cx));
                         ins.update(cx, |e, cx| e.set_value(i, window, cx));
+                        s.loaded = set.clone();
                         s.settings = set;
                         s.models = models;
                         s.load = AiLoad::Ready;
@@ -389,6 +393,9 @@ impl MainView {
         if out.bg_instruction.is_some() {
             out.bg_instruction = Some(s.instruction.read(cx).value().to_string());
         }
+        // Only what was changed here: a change made in Studio since the
+        // sheet read them stays.
+        let out = out.changes_from(&s.loaded);
         s.busy = true;
         s.error = None;
         cx.notify();

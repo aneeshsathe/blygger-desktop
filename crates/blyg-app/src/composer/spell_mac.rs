@@ -101,6 +101,16 @@ impl SpellEngine for MacSpell {
         })
     }
 
+    fn unlearn(&self, word: &str) {
+        autoreleasepool(|_| {
+            let checker = NSSpellChecker::sharedSpellChecker();
+            let ns = NSString::from_str(word);
+            if checker.hasLearnedWord(&ns) {
+                checker.unlearnWord(&ns);
+            }
+        })
+    }
+
     fn ignore(&self, word: &str) {
         autoreleasepool(|_| {
             NSSpellChecker::sharedSpellChecker()

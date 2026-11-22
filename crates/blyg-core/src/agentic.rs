@@ -14,8 +14,12 @@
 //!   section left empty is dropped. `null` before the first edition.
 //! - `PUT /api/agentic/{feed}` is the assistant's, not Burrow's: Burrow
 //!   reads editions and never writes one.
-//! - Offered when `GET /api/capabilities` lists [`GET_OPERATION`]
-//!   ([`serves`]); never judged by the contract version.
+//! - The feed list follows [`LIST_OPERATION`] ([`serves_feeds`]), an
+//!   edition [`GET_OPERATION`] ([`serves`]), in `GET /api/capabilities`;
+//!   never judged by the contract version.
+//! - An edition is an outside assistant's writing, so [`parse_edition`]
+//!   bounds it: each text clipped ([`SHORT_MAX`], [`TEXT_MAX`]), at most
+//!   [`SECTIONS_MAX`] sections of [`ENTRIES_MAX`] entries.
 //!
 //! Every word the assistant wrote (headlines, summaries, notes, reasons,
 //! the lede) is shown as the assistant's own and disclosed as generated.
@@ -41,6 +45,20 @@ pub const TITLE_MAX: usize = 40;
 pub fn serves(capabilities: &Value) -> bool {
     crate::helpers::lists(capabilities, GET_OPERATION)
 }
+
+/// Whether it offers the feed list (`GET /api/agentic`).
+pub fn serves_feeds(capabilities: &Value) -> bool {
+    crate::helpers::lists(capabilities, LIST_OPERATION)
+}
+
+/// A title, name, headline or model's most characters, as read.
+pub const SHORT_MAX: usize = 200;
+/// A lede, note, summary or reason's most characters, as read.
+pub const TEXT_MAX: usize = 1_000;
+/// An edition's most sections, as read.
+pub const SECTIONS_MAX: usize = 40;
+/// A section's most entries, as read.
+pub const ENTRIES_MAX: usize = 200;
 
 /// The tab's name from `agenticTitle`: empty restores [`DEFAULT_TITLE`].
 pub fn title_or_default(title: &str) -> String {
@@ -215,11 +233,12 @@ impl Edition {
 
     /// Every entry's key, once each, in the edition's order: what the tab lists.
     pub fn keys(&self) -> Vec<(SubId, RemoteId)> {
+        let mut seen = std::collections::HashSet::new();
         let mut out: Vec<(SubId, RemoteId)> = Vec::new();
         for s in self.layout.iter().flat_map(|l| &l.sections) {
             for p in &s.entries {
                 let k = p.key();
-                if !out.contains(&k) {
+                if seen.insert(k.clone()) {
                     out.push(k);
                 }
             }
@@ -253,34 +272,34 @@ pub fn parse_edition(v: &Value) -> Option<Edition> {
 fn layout(l: &Value) -> Layout {
     let agent = l.get("agent");
     Layout {
-        title: str_of(l, "title"),
-        lede: str_of(l, "lede"),
+        title: short(l, "title"),
+        lede: text(l, "lede"),
         agent: Agent {
             name: agent
                 .and_then(|a| a.get("name"))
                 .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            model: agent.and_then(|a| str_of(a, "model")),
+                .map(|n| clip(n, SHORT_MAX))
+                .unwrap_or_default(),
+            model: agent.and_then(|a| short(a, "model")),
         },
         generated_at: str_of(l, "generatedAt"),
         sections: l
             .get("sections")
             .and_then(Value::as_array)
-            .map(|a| a.iter().map(section).collect())
+            .map(|a| a.iter().take(SECTIONS_MAX).map(section).collect())
             .unwrap_or_default(),
     }
 }
 
 fn section(s: &Value) -> Section {
     Section {
-        title: str_of(s, "title").unwrap_or_default(),
+        title: short(s, "title").unwrap_or_default(),
         kind: SectionKind::parse(s.get("kind").and_then(Value::as_str)),
-        note: str_of(s, "note"),
+        note: text(s, "note"),
         entries: s
             .get("entries")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(placed).collect())
+            .map(|a| a.iter().filter_map(placed).take(ENTRIES_MAX).collect())
             .unwrap_or_default(),
     }
 }
@@ -301,12 +320,33 @@ fn placed(p: &Value) -> Option<Placed> {
             .and_then(Value::as_u64)
             .and_then(|v| u32::try_from(v).ok()),
         held_version: held_version.and_then(|v| u32::try_from(v).ok()),
-        headline: str_of(p, "headline"),
-        summary: str_of(p, "summary"),
-        reason: str_of(p, "reason"),
+        headline: short(p, "headline"),
+        summary: text(p, "summary"),
+        reason: text(p, "reason"),
         present: Present::parse(p.get("present").and_then(Value::as_str)),
         group: str_of(p, "group"),
     })
+}
+
+/// A short field, clipped to [`SHORT_MAX`].
+fn short(v: &Value, k: &str) -> Option<String> {
+    str_of(v, k).map(|s| clip(&s, SHORT_MAX))
+}
+
+/// A text field, clipped to [`TEXT_MAX`].
+fn text(v: &Value, k: &str) -> Option<String> {
+    str_of(v, k).map(|s| clip(&s, TEXT_MAX))
+}
+
+/// At most `n` characters, a clipped one ending in an ellipsis.
+fn clip(s: &str, n: usize) -> String {
+    match s.char_indices().nth(n) {
+        Some(_) => {
+            let keep: String = s.chars().take(n.saturating_sub(1)).collect();
+            format!("{keep}…")
+        }
+        None => s.to_string(),
+    }
 }
 
 /// A non-empty string field (null, absent and blank read as `None`).

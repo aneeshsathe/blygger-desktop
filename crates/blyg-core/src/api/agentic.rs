@@ -16,7 +16,7 @@ impl Api {
 
     /// `GET /api/agentic`. `Ok(None)`: not offered here.
     pub fn agentic_feeds(&self) -> Result<Option<Vec<Feed>>> {
-        if !self.serves_agentic()? {
+        if !self.offers_op(crate::agentic::LIST_OPERATION)? {
             return Ok(None);
         }
         match Self::optional(self.call("GET", "/api/agentic", None))? {

@@ -406,6 +406,37 @@ impl ServerAiSettings {
         serde_json::Value::Object(m)
     }
 
+    /// Only what differs from `loaded` (what the sheet read): a save sends
+    /// that and nothing else, so a setting changed elsewhere since (Studio)
+    /// is left alone. Compared as sent (trimmed).
+    pub fn changes_from(&self, loaded: &ServerAiSettings) -> ServerAiSettings {
+        fn text(now: &Option<String>, was: &Option<String>) -> Option<String> {
+            let t = |o: &Option<String>| o.as_deref().map(str::trim).map(str::to_string);
+            (t(now) != t(was)).then(|| now.clone()).flatten()
+        }
+        fn flag(now: Option<bool>, was: Option<bool>) -> Option<bool> {
+            (now != was).then_some(now).flatten()
+        }
+        let mut out = ServerAiSettings {
+            style_prompt: text(&self.style_prompt, &loaded.style_prompt),
+            feed_prompt: text(&self.feed_prompt, &loaded.feed_prompt),
+            auto_change_notes: flag(self.auto_change_notes, loaded.auto_change_notes),
+            change_category_in_note: flag(
+                self.change_category_in_note,
+                loaded.change_category_in_note,
+            ),
+            agentic_title: text(&self.agentic_title, &loaded.agentic_title),
+            bg_model_imported: flag(self.bg_model_imported, loaded.bg_model_imported),
+            bg_instruction: text(&self.bg_instruction, &loaded.bg_instruction),
+            bg_flag_disagreement: flag(self.bg_flag_disagreement, loaded.bg_flag_disagreement),
+            ..ServerAiSettings::default()
+        };
+        for f in AiFunction::ALL {
+            *out.model_mut(f) = text(&self.model(f).map(str::to_string), &loaded.model(f).map(str::to_string));
+        }
+        out
+    }
+
     /// What the sheet may show of judging other blygs' changes.
     pub fn judging(&self) -> Judging {
         let set = |m: &Option<String>| m.as_deref().is_some_and(|m| !m.trim().is_empty());

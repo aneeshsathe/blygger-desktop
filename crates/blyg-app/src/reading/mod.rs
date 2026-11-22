@@ -823,6 +823,7 @@ impl MainView {
         r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.background.set_rows(&r.rows); // --- background --- "+N parts"
+        r.agentic.refresh_cards(&r.rows); // --- agentic feed --- built once per change
         self.feed_rebuild(cx); // --- reader order ---
         let r = &mut self.reading;
         r.refilter();
@@ -866,6 +867,8 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
+                let r = &mut self.reading;
+                r.agentic.refresh_cards(&r.rows); // --- agentic feed ---
                 self.reading.background.served = self.backend.background_served(); // --- background ---
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();

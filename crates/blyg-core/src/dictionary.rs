@@ -10,8 +10,8 @@
 //!   source's whole list (an empty list removes it). A stale revision is
 //!   409 `revision-conflict`; a word that breaks the rules
 //!   ([`word_problem`]) is a 400 naming it.
-//! - Offered when `GET /api/capabilities` lists both [`GET_OPERATION`] and
-//!   [`PUT_OPERATION`] ([`serves`]).
+//! - Read when `GET /api/capabilities` lists [`GET_OPERATION`] ([`serves`]),
+//!   written when it lists [`PUT_OPERATION`] ([`serves_write`]).
 //!
 //! Burrow's spellcheck accepts every source's words ([`Accepted`]), and
 //! "Learn Spelling" adds to [`OWNER`] as well as to the system's list, as
@@ -35,10 +35,25 @@ pub const WORD_MAX: usize = 64;
 /// A source's most words (studio's `SOURCE_WORDS_MAX`).
 pub const SOURCE_WORDS_MAX: usize = 20_000;
 
-/// Whether a capabilities answer offers the dictionary.
+/// Whether a capabilities answer offers the dictionary to read (a
+/// read-only token still gets the accepted words).
 pub fn serves(capabilities: &Value) -> bool {
     crate::helpers::lists(capabilities, GET_OPERATION)
-        && crate::helpers::lists(capabilities, PUT_OPERATION)
+}
+
+/// Whether it offers changing a source's words.
+pub fn serves_write(capabilities: &Value) -> bool {
+    crate::helpers::lists(capabilities, PUT_OPERATION)
+}
+
+/// Whether a failed send keeps the queued edits ([`Pending`]), as the
+/// outbox keeps a change: whatever a later try can mend (offline, 429,
+/// 5xx, a list that kept changing), an ended sign-in (the next sign-in
+/// sends them), and conflicts that kept coming. A refusal drops them; its
+/// error says why.
+pub fn keeps_queue(e: &crate::backend::CoreError) -> bool {
+    use crate::backend::CoreError;
+    crate::api::is_transient(e) || matches!(e, CoreError::Unauthorized | CoreError::RevisionConflict)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -9,7 +9,9 @@
 //! dictionary is read when the window opens, when this sheet opens, and
 //! again after a while on Reading's refreshes ([`READ_EVERY`]). A word
 //! learned or edited offline is kept on this computer
-//! (`blyg_core::dictionary::Pending`) and sent by the next read.
+//! (`blyg_core::dictionary::Pending`) and sent by the next read; one the
+//! blyg refuses is said in a toast. A word taken out here is unlearned
+//! from the system's list too. A failed read isn't counted as a read.
 //!
 //! Keys: type a word and ⏎ adds it; ↑/↓ choose one of your words, ⌘⌫
 //! takes it out; esc closes. A blyg without a dictionary (its capabilities
@@ -112,30 +114,51 @@ impl MainView {
         if fresh && !force {
             return;
         }
-        cx.set_global(LastRead(Some(Instant::now())));
-        let backend = self.backend.clone();
-        let learn = backend.clone();
+        let me = cx.entity().downgrade();
         crate::composer::set_on_learn(
-            std::sync::Arc::new(move |word: String| {
-                let b = learn.clone();
-                // A learned word goes on to the blyg off the UI thread.
-                // Offline, the backend keeps it and the next read sends it;
-                // a blyg without a dictionary leaves the system's alone.
-                let _ = std::thread::Builder::new()
-                    .name("blygger-dictionary-learn".into())
-                    .spawn(move || {
-                        if let Err(e) = b.edit_dictionary(&Edit::Add(word)) {
-                            eprintln!("blygger: the blyg's dictionary didn't take the word: {e}");
-                        }
-                    });
+            std::sync::Arc::new(move |word: String, cx: &mut App| {
+                if let Some(v) = me.upgrade() {
+                    v.update(cx, |v, cx| v.dictionary_learn(word, cx));
+                }
             }),
             cx,
         );
+        let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.dictionary() });
         cx.spawn(async move |_, cx| {
-            if let Ok(Some(d)) = task.await {
-                cx.update(|cx| crate::composer::set_accepted(Accepted::from(&d), cx));
-            }
+            let read = task.await;
+            cx.update(|cx| {
+                // Only a read that came back counts: a failed one is tried
+                // again at the next refresh.
+                if let Ok(d) = &read {
+                    cx.set_global(LastRead(Some(Instant::now())));
+                    if let Some(d) = d {
+                        crate::composer::set_accepted(Accepted::from(d), cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Learn Spelling's word, on to the blyg's dictionary off the UI
+    /// thread. Offline (or a later try can mend it), the backend keeps it
+    /// and the next read sends it, quietly; a refusal is said.
+    pub(crate) fn dictionary_learn(&mut self, word: String, cx: &mut Context<Self>) {
+        let backend = self.backend.clone();
+        let w = word.clone();
+        let task = cx.background_spawn(async move { backend.edit_dictionary(&Edit::Add(w)) });
+        cx.spawn(async move |this, cx| {
+            let r = task.await;
+            let _ = this.update(cx, |v, cx| match r {
+                Ok(d) => crate::composer::set_accepted(Accepted::from(&d), cx),
+                Err(e) if blyg_core::dictionary::keeps_queue(&e) => {}
+                Err(e) => v.show_toast(
+                    format!("Your blyg's dictionary didn't take “{word}”"),
+                    Some(format!("{e}. It's still learned on this computer.").into()),
+                    cx,
+                ),
+            });
         })
         .detach();
     }
@@ -274,6 +297,8 @@ impl MainView {
         let Some(w) = d.owner_words().get(ix).cloned() else {
             return;
         };
+        // Out of the system's learned list too, or it'd still pass here.
+        crate::composer::unlearned(&w, cx);
         self.dictionary_edit(Edit::Remove(w), window, cx);
     }
 
@@ -339,7 +364,8 @@ impl MainView {
             )
             .child(muted(
                 "Words your blyg's spellcheck accepts, in Burrow, in Studio and in every other \
-                 client. Learn Spelling in the editor adds a word here too."
+                 client. Learn Spelling in the editor adds a word here too, and taking one \
+                 out here unlearns it on this computer."
                     .into(),
             ));
         let d = match &s.load {

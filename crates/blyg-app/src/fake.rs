@@ -3232,6 +3232,10 @@ impl Backend for FakeBackend {
     ) -> Result<blyg_core::dictionary::Dictionary> {
         simulate_latency(self.timing.publish);
         self.remote_guard()?;
+        // The blyg's own rules: it refuses a word that breaks them.
+        if let Some(p) = blyg_core::dictionary::word_problem(&edit.word()) {
+            return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
+        }
         let mut st = self.lock();
         let d = &mut st.dictionary;
         let mine = blyg_core::dictionary::apply(d.owner_words(), edit);

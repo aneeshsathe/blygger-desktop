@@ -15,6 +15,8 @@
 //! A blyg without editions (its capabilities don't list `getAgentic`) shows
 //! the tab empty, saying what it's for.
 
+use std::collections::HashMap;
+
 use blyg_core::ReadingItem;
 use blyg_core::agentic::{
     DEFAULT_FEED, Edition, Layout, Placed, Present, SectionKind, grouped, title_or_default,
@@ -33,9 +35,9 @@ pub const ASSISTANT_BADGE: &str = "✦ written by your assistant";
 pub fn empty_note(title: &str) -> String {
     format!(
         "No edition yet. {title} is an assistant who organizes your reading for you, as a \
-         digest in sections. Your blyg's own assistant isn't built yet; an outside assistant \
-         with a token can write one now (PUT /api/agentic/default). Its brief is the Agentic \
-         feed prompt in Blyg › AI on Your Blyg…"
+         digest in sections: an assistant writes it on your blyg, and it shows here. Your \
+         blyg's own assistant isn't built yet; an outside assistant you've given a token can \
+         write one now. Its brief is the Agentic feed prompt in Blyg › AI on Your Blyg…"
     )
 }
 
@@ -53,12 +55,58 @@ pub struct Agentic {
     pub error: Option<String>,
     /// Bumped by each read: only the latest one's answer lands.
     reads: u64,
+    /// Each entry's card, by section then entry, built when the edition or
+    /// the rows change ([`Agentic::refresh_cards`]), never while drawing.
+    cards: Vec<Vec<Card>>,
+    /// Where each key's first card is.
+    card_at: HashMap<Key, (usize, usize)>,
+    /// Cards built so far (tests count work by it).
+    built: usize,
 }
 
 impl Agentic {
     pub fn set_edition(&mut self, e: Option<Edition>) {
         self.keys = e.as_ref().map(Edition::keys).unwrap_or_default();
         self.edition = e;
+        self.cards.clear();
+        self.card_at.clear();
+    }
+
+    /// Build every card from the rows held now: once per edition or rows
+    /// change. The rows are indexed once, so it's linear in both.
+    pub fn refresh_cards(&mut self, rows: &[ReadingItem]) {
+        self.cards.clear();
+        self.card_at.clear();
+        let Some(l) = self.edition.as_ref().and_then(|e| e.layout.as_ref()) else {
+            return;
+        };
+        let held: HashMap<Key, &ReadingItem> = rows.iter().map(|r| (vm::key(r), r)).collect();
+        for (si, s) in l.sections.iter().enumerate() {
+            let mut out = Vec::with_capacity(s.entries.len());
+            for (ei, p) in s.entries.iter().enumerate() {
+                let k = p.key();
+                out.push(card(p, held.get(&k).copied()));
+                self.card_at.entry(k).or_insert((si, ei));
+            }
+            self.built += out.len();
+            self.cards.push(out);
+        }
+    }
+
+    /// The card for `key` as last built.
+    pub fn card_for(&self, key: &Key) -> Option<&Card> {
+        let (si, ei) = *self.card_at.get(key)?;
+        self.cards.get(si)?.get(ei)
+    }
+
+    /// The card at a section's entry, as last built.
+    fn card_at(&self, si: usize, ei: usize) -> Option<&Card> {
+        self.cards.get(si)?.get(ei)
+    }
+
+    /// Cards built so far.
+    pub fn cards_built(&self) -> usize {
+        self.built
     }
 
     pub fn set_title(&mut self, t: Option<String>) {
@@ -246,6 +294,8 @@ impl MainView {
                                 .map(|f| f.title.clone()),
                         );
                         a.set_edition(edition);
+                        let r = &mut v.reading;
+                        r.agentic.refresh_cards(&r.rows);
                     }
                     // Keep what was shown; say the read failed.
                     (Err(e), _) | (_, Err(e)) => a.error = Some(e.to_string()),
@@ -336,8 +386,8 @@ impl MainView {
                 col = col.child(said(note.clone(), 12.));
             }
             for g in grouped(&s.entries) {
-                let lead = &s.entries[g.lead];
-                let also: Vec<&Placed> = g.also.iter().map(|&i| &s.entries[i]).collect();
+                let lead = (g.lead, &s.entries[g.lead]);
+                let also: Vec<(usize, &Placed)> = g.also.iter().map(|&i| (i, &s.entries[i])).collect();
                 col = col.child(self.render_agentic_card(
                     (si, n),
                     lead,
@@ -351,25 +401,34 @@ impl MainView {
         col.into_any_element()
     }
 
-    fn agentic_row(&self, key: &Key) -> Option<&ReadingItem> {
-        self.reading.rows.iter().find(|r| &vm::key(r) == key)
+    /// The card at section `si`'s entry `ei`: as built on the last change,
+    /// else (an edition that landed before its rows) built here.
+    fn agentic_card(&self, si: usize, ei: usize, p: &Placed) -> std::borrow::Cow<'_, Card> {
+        match self.reading.agentic.card_at(si, ei) {
+            Some(c) => std::borrow::Cow::Borrowed(c),
+            None => {
+                let k = p.key();
+                let row = self.reading.rows.iter().find(|r| vm::key(r) == k);
+                std::borrow::Cow::Owned(card(p, row))
+            }
+        }
     }
 
     fn render_agentic_card(
         &self,
         id: (usize, usize),
-        lead: &Placed,
-        also: &[&Placed],
+        (lead_ix, lead): (usize, &Placed),
+        also: &[(usize, &Placed)],
         brief: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette.on_page();
         let key = lead.key();
-        let c = card(lead, self.agentic_row(&key));
+        let c = self.agentic_card(id.0, lead_ix, lead);
         let selected = self.reading.sel.as_ref() == Some(&key);
         let open = |key: Key| {
             cx.listener(move |this: &mut MainView, _: &ClickEvent, window, cx| {
-                if this.agentic_row(&key).is_some() {
+                if this.reading.agentic.card_for(&key).is_some_and(|c| c.held) {
                     this.set_pane(super::sources_vm::Pane::List, cx);
                     this.open_reading(key.clone(), window, cx);
                 }
@@ -435,9 +494,9 @@ impl MainView {
                     .child(format!("✦ {r}")),
             );
         }
-        for (i, o) in also.iter().enumerate() {
+        for (i, (oi, o)) in also.iter().enumerate() {
             let ok = o.key();
-            let oc = card(o, self.agentic_row(&ok));
+            let oc = self.agentic_card(id.0, *oi, o);
             d = d.child(
                 div()
                     .id(SharedString::from(format!(

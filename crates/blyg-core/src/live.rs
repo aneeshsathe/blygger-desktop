@@ -17,6 +17,10 @@ use crate::model::*;
 use crate::store::Store;
 use crate::sync::{Engine, Msg, SyncOptions, is_hopper_conflict, spawn};
 
+/// --- dictionary --- Held while the queued dictionary edits
+/// (`dictionary::PENDING_META`) are read and written back.
+static DICTIONARY_QUEUE: Mutex<()> = Mutex::new(());
+
 pub struct LiveBackend {
     engine: Arc<Engine>,
     /// Unauthenticated reads of other blygs' public surface. Holds no token.
@@ -269,9 +273,10 @@ impl LiveBackend {
     /// --- dictionary --- Send the queued edits (studio 0.69): read the
     /// dictionary, apply them onto the owner's words, write back from that
     /// revision; a 409 is another client's write, merged onto and sent
-    /// again (three tries). The queue is cleared once stored, kept while the
-    /// blyg can't be reached, and dropped when the blyg keeps no dictionary
-    /// or refuses the words (the error says why).
+    /// again (three tries). The queue is cleared once stored, kept on what
+    /// a later try can mend (`dictionary::keeps_queue`: offline, 429, 5xx,
+    /// an ended sign-in, conflicts that kept coming), and dropped when the
+    /// blyg keeps no dictionary or refuses the words (the error says why).
     fn send_dictionary(
         &self,
         queued: &crate::dictionary::Pending,
@@ -297,13 +302,16 @@ impl LiveBackend {
                 {
                     PutDictionary::Stored(now) => return Ok(Some(now)),
                     PutDictionary::Conflict(Some(now)) => d = now,
-                    PutDictionary::Conflict(None) => break,
+                    // No longer offered: nothing to send to.
+                    PutDictionary::Conflict(None) => return Ok(None),
                 }
             }
+            // Three conflicts in a row: kept, and the next read tries again.
             Err(CoreError::RevisionConflict)
         })();
         // An edit queued meanwhile (another thread) stays for the next send.
-        if !matches!(sent, Err(CoreError::Offline))
+        let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        if !matches!(&sent, Err(e) if crate::dictionary::keeps_queue(e))
             && store.meta(PENDING_META).as_deref() == Some(queued.to_meta().as_str())
         {
             store.delete_meta(PENDING_META)?;
@@ -2516,9 +2524,15 @@ impl Backend for LiveBackend {
             return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
         }
         let store = &self.engine.store;
-        let mut queued = Pending::parse(store.meta(PENDING_META).as_deref());
-        queued.push(edit.clone());
-        store.set_meta(PENDING_META, &queued.to_meta())?;
+        // One read-change-write of the queue at a time (two quick Learn
+        // Spellings on their own threads would otherwise drop one).
+        let queued = {
+            let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queued = Pending::parse(store.meta(PENDING_META).as_deref());
+            queued.push(edit.clone());
+            store.set_meta(PENDING_META, &queued.to_meta())?;
+            queued
+        };
         self.send_dictionary(&queued)?
             .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))
     }
