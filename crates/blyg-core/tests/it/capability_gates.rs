@@ -207,6 +207,29 @@ fn a_studio_that_ignores_the_lens_filter_is_asked_once_per_contract() {
     assert_eq!(lens_reads(&env), 2, "a new contract is asked again");
 }
 
+/// On a contract Burrow doesn't know, plain rows may be a renamed field,
+/// not an old studio: "no lens" isn't remembered there, and the next
+/// session asks again.
+#[test]
+fn a_newer_contracts_plain_rows_arent_remembered() {
+    let plain = serde_json::json!({
+        "imported": { "subscriptionId": "S1", "remoteId": "R1" }
+    });
+    let env = env_at("7.0.0", &[]);
+    env.mock.state().background_lens = Some(vec![plain]);
+    let opts = || SyncOptions {
+        start_worker: false,
+        ..fast()
+    };
+    let b = env.open(opts());
+    b.sync_now().unwrap();
+    assert!(!b.background_served());
+    drop(b);
+    let b = env.open(opts());
+    b.sync_now().unwrap();
+    assert_eq!(lens_reads(&env), 2, "asked again");
+}
+
 /// An empty answer is a lens with nothing in it: a studio with Background
 /// and nothing there yet (the common case on a new blyg) keeps Background.
 /// An older studio that ignored the filter answers empty only when it holds

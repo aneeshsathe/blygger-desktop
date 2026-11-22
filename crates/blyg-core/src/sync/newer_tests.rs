@@ -6,9 +6,68 @@
 
 use crate::api::auth::Credential;
 use crate::api::{Api, Prune};
-use crate::shelf::{BASE_META, Entry, Remote, SERVED_META, SyncState, WRITES_META};
+use crate::shelf::{
+    BASE_META, Entry, Remote, SERVED_META, SyncState, TAKEN_OFF_META, WRITES_META,
+};
 use crate::store::{OpKind, Store};
 use crate::sync::{Engine, SyncOptions};
+
+/// Removals made while the blyg doesn't serve Saved aren't recorded, and a
+/// record left from before is dropped when Saved is first found served with
+/// no base: an entry another device still has survives the first sync.
+#[test]
+fn removals_before_saved_was_served_dont_remove_it_elsewhere() {
+    let e = engine();
+    e.store.set_lists_prune(Prune::Allowed);
+    let (a, b, c) = (
+        Entry::new("s1", "A"),
+        Entry::new("s1", "B"),
+        Entry::new("s1", "C"),
+    );
+    e.set_shelf_served(false);
+    e.store.set_entry_on_shelf(&b, true).unwrap();
+    e.store.set_entry_on_shelf(&a, false).unwrap();
+    assert_eq!(e.store.meta(TAKEN_OFF_META), None, "not served: no record");
+    // A record from an earlier spell of Saved sync, with no base since.
+    e.store
+        .set_meta(TAKEN_OFF_META, &serde_json::to_string(&[c.clone()]).unwrap())
+        .unwrap();
+    e.set_shelf_served(true);
+    assert_eq!(e.store.meta(TAKEN_OFF_META), None, "first served: cleared");
+    let server = Remote {
+        entries: vec![a.clone(), c.clone()],
+        revision: 1,
+    };
+    e.show_shelf_union(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(shelf.contains(&a) && shelf.contains(&c), "{shelf:?}");
+    assert!(shelf.contains(&b));
+}
+
+/// A sync on a check from an earlier pull that would take an entry off
+/// here reads the contract again first; when that read fails (the API here
+/// is a closed port) nothing comes off, and nothing is sent.
+#[test]
+fn a_stale_check_reads_the_contract_before_saved_drops_an_entry() {
+    let (a, b) = (Entry::new("s1", "A"), Entry::new("s1", "B"));
+    let base = serde_json::to_string(&[a.clone(), b.clone()]).unwrap();
+    let server = Remote {
+        entries: vec![a.clone()],
+        revision: 6,
+    };
+    for writes in ["1", "0"] {
+        let e = engine();
+        e.store.set_lists_prune(Prune::Allowed);
+        e.store.set_meta(WRITES_META, writes).unwrap();
+        e.store.set_entry_on_shelf(&b, true).unwrap();
+        e.store.set_meta(BASE_META, &base).unwrap();
+        e.store.contract_stale();
+        let _ = e.sync_shelf_with(server.clone());
+        let shelf = e.store.shelf_wire();
+        assert!(shelf.contains(&b), "writes={writes}: B kept: {shelf:?}");
+        assert_eq!(e.store.meta(BASE_META), Some(base.clone()), "nothing agreed");
+    }
+}
 
 /// A blyg that offers the shelf, with A shelved here and the change queued.
 fn engine() -> Engine {
