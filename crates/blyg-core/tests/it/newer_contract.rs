@@ -197,6 +197,8 @@ fn sub_ids(b: &LiveBackend) -> Vec<String> {
 fn a_newer_contracts_subscription_list_removes_nothing_on_any_path() {
     let env = env_at("7.0.0");
     add_s2(&env);
+    // `wholeBlyg` is sent (and refused by the mock's 5.0.0 schema).
+    env.mock.state().unchecked.push("/api/subscriptions".into());
     let b = open(&env);
     b.sync_now().unwrap();
     assert_eq!(sub_ids(&b), ["S1", "S2"]);
@@ -209,7 +211,10 @@ fn a_newer_contracts_subscription_list_removes_nothing_on_any_path() {
     assert!(sub_ids(&b).contains(&"S2".to_string()), "a rename kept S2");
     let new = b.subscribe("https://new.example/", None).unwrap();
     let ids = sub_ids(&b);
-    assert!(ids.contains(&"S2".to_string()), "a subscribe kept S2: {ids:?}");
+    assert!(
+        ids.contains(&"S2".to_string()),
+        "a subscribe kept S2: {ids:?}"
+    );
     assert!(ids.contains(&new.id.to_string()), "and added {}", new.id);
 }
 

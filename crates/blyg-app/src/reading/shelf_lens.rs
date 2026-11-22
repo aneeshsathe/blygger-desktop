@@ -36,9 +36,7 @@ pub fn state_note(s: SyncState) -> &'static str {
         SyncState::Local => "On this computer only: your blyg doesn't keep Saved.",
         SyncState::Synced => "Synced with your blyg.",
         SyncState::Waiting => "Changed here · syncing with your blyg…",
-        SyncState::HeldNewer => {
-            "Changed here · kept on this computer until Burrow is updated."
-        }
+        SyncState::HeldNewer => "Changed here · kept on this computer until Burrow is updated.",
         SyncState::HeldReadOnly => {
             "Changed here · kept on this computer: this sign-in can't change Saved on your blyg."
         }

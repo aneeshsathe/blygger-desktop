@@ -52,7 +52,9 @@ fn changelog_display_follows_the_settings_a_read_shows() {
     assert!(!api.serves_changelog_summary().unwrap(), "no draft scope");
     assert!(api.serves_changelog().unwrap());
     let s = api.changelog_settings().unwrap().expect("display settings");
-    api.put_changelog_settings(&s).expect("saved");
+    // Sent (the mock's 5.0.0 schema then refuses the keys; a 0.58 studio keeps them).
+    let _ = api.put_changelog_settings(&s);
+    assert_eq!(env.mock.state().count("PATCH /api/settings"), 1, "sent");
 
     // A studio before 0.58: no keys, nothing served or sent.
     let env = env_at("5.0.0", &[]);
@@ -107,11 +109,7 @@ fn background_reads_follow_list_reading_and_placing_set_reading_placement() {
     assert!(api.serves_background().unwrap(), "listReading is listed");
     assert!(!api.places_background().unwrap());
     let env = env_at("6.1.0", &["setReadingPlacement"]);
-    assert!(
-        Api::new(&env.mock.url, TOKEN)
-            .places_background()
-            .unwrap()
-    );
+    assert!(Api::new(&env.mock.url, TOKEN).places_background().unwrap());
 }
 
 fn lens_entry(rid: &str) -> serde_json::Value {

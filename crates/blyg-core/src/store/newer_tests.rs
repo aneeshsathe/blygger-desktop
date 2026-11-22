@@ -130,7 +130,10 @@ fn a_newer_contracts_new_guid_doesnt_re_key_a_held_row() {
         ..ri(rid, thumb)
     };
     let listed = |rid: &str| HashSet::from([(SubId::from("s1"), RemoteId::from(rid))]);
-    for (prune, held) in [(Prune::Withheld, vec!["A", "B"]), (Prune::Allowed, vec!["B"])] {
+    for (prune, held) in [
+        (Prune::Withheld, vec!["A", "B"]),
+        (Prune::Allowed, vec!["B"]),
+    ] {
         let s = Store::open_in_memory().unwrap();
         s.set_lists_prune(Prune::Allowed);
         s.merge_reading_page(&[with_page("A", Some(1))], &listed("A"), &kinds())
@@ -138,8 +141,9 @@ fn a_newer_contracts_new_guid_doesnt_re_key_a_held_row() {
         s.set_lists_prune(prune);
         s.merge_reading_page(&[with_page("B", None)], &listed("B"), &kinds())
             .unwrap();
+        // Every row held (`reading()` shows duplicates of a page once).
         let mut rows: Vec<(String, Option<i8>)> = s
-            .reading()
+            .reading_rows_of(&"s1".into())
             .into_iter()
             .map(|r| (r.remote_id.to_string(), r.thumb))
             .collect();
