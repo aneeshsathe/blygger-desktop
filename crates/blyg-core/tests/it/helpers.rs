@@ -17,6 +17,7 @@ fn a_summary_reads_with_its_model_sources_and_cache_mark() {
         "summary": "Ada asked about tides; Ben answered with tables.",
         "model": "invented-model-1",
         "at": "2026-11-21T07:00:00.000Z",
+        // CatchUpSummary.sources: each the "id", "version" and "origin" of a post it read.
         "sources": [
             { "id": "01aaa", "version": 1, "origin": "https://ada.blyg.example.com/" },
             { "id": "01bbb", "version": null }

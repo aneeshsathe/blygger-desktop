@@ -30,6 +30,7 @@ fn offline_at(dir: &std::path::Path, url: &str) -> blyg_core::LiveBackend {
 
 fn sample() -> Dictionary {
     parse(&json!({
+        // Each source is a DictionarySource: its name and its "words".
         "sources": [
             { "source": "owner", "words": ["blyg", "Burrow", "impyrt"] },
             { "source": "maritime", "words": ["bollard", "kedge"] }

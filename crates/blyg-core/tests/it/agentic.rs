@@ -39,6 +39,7 @@ fn edition() -> Value {
             "generatedAt": "2026-11-21T06:55:00.000Z",
             // Each entry is an AgenticResolvedEntry: the assistant's reference
             // and words, and its "entry", the reading entry it resolved to.
+            // Each section is an AgenticSection; its "entries" are listed in order.
             "sections": [
                 { "title": "Lead", "kind": "lead", "note": null, "entries": [
                     { "sub": "sub-a", "remoteId": "r1", "version": 2,
