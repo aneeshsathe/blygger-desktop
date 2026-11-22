@@ -377,6 +377,80 @@ fn clicking_a_block_moves_the_caret_and_the_caret_scrolls_the_preview(cx: &mut T
     );
 }
 
+/// A new line shifts every block after the caret, so until the render
+/// catches up, the last render's line map names the wrong block. Pressing
+/// ⏎ twice at the end of a paragraph put the caret on the line the next
+/// block used to start on, and the preview scrolled down to that block,
+/// then back up when the render landed. Now it waits for the render.
+#[gpui_kit::test]
+fn a_new_line_waits_for_the_render_before_scrolling_the_preview(cx: &mut TestAppContext) {
+    let (view, fake, log, cx) = setup(cx, true);
+    open_sample(&view, &fake, cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
+    frame(cx);
+    send(&view, SurfaceEvent::Ready, cx);
+    let sample = crate::fake::studio_sample();
+    // Line 2 is the paragraph; line 3 is blank and the quote starts on 4.
+    let para = sample.lines().nth(2).unwrap();
+    assert!(para.starts_with("Low tide"));
+    assert!(sample.lines().nth(4).unwrap().starts_with("![["));
+    let map = view.read_with(cx, |v, _| {
+        v.studio.latest.as_ref().unwrap().1.line_map.clone()
+    });
+    let para_block = super::Studio::block_for_line(&map, 2).unwrap();
+    let quote_block = super::Studio::block_for_line(&map, 4).unwrap();
+    assert_ne!(para_block, quote_block);
+    view.update_in(cx, |v, window, cx| {
+        v.mode = Mode::Edit;
+        v.editor.update(cx, |s, cx| {
+            s.focus(window, cx);
+            s.set_cursor_position(
+                gpui_kit::base::input::Position {
+                    line: 2,
+                    character: para.encode_utf16().count() as u32,
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    cx.run_until_parked();
+    let before = log.borrow().evals().len();
+
+    cx.simulate_keystrokes("enter enter");
+    cx.run_until_parked();
+    view.read_with(cx, |v, cx| {
+        assert_eq!(v.editor.read(cx).cursor_position().line, 4, "two new lines");
+    });
+    let scrolled = |log: &Rc<RefCell<Log>>| -> Vec<String> {
+        log.borrow()
+            .evals()
+            .into_iter()
+            .skip(before)
+            .filter(|e| e.contains("scrollTo("))
+            .map(str::to_string)
+            .collect()
+    };
+    assert!(
+        !scrolled(&log).contains(&super::webview::scroll_js(quote_block)),
+        "no jump to the next block before the render: {:?}",
+        scrolled(&log)
+    );
+
+    // The render lands: the caret is still in the paragraph's block.
+    cx.executor().advance_clock(Duration::from_millis(200));
+    cx.run_until_parked();
+    let map = view.read_with(cx, |v, _| {
+        v.studio.latest.as_ref().unwrap().1.line_map.clone()
+    });
+    assert_eq!(super::Studio::block_for_line(&map, 4), Some(para_block));
+    assert!(
+        !scrolled(&log).contains(&super::webview::scroll_js(quote_block)),
+        "{:?}",
+        scrolled(&log)
+    );
+}
+
 #[gpui_kit::test]
 fn a_sheet_hides_the_native_view(cx: &mut TestAppContext) {
     let (view, _, log, cx) = setup(cx, true);
