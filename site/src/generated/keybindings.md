@@ -109,6 +109,32 @@
 | ⏎ | Macro Post sheet: post |  |
 | esc | Macro Preview or Post sheet: cancel |  |
 
+### On the Publish sheet (also while you type the version note)
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌥1 | Publish sheet: tick or untick the first site's cross-post chip |  |
+| ⌥2 | Publish sheet: tick or untick the second site's cross-post chip |  |
+| ⌥3 | Publish sheet: tick or untick the third site's cross-post chip |  |
+| ⌥4 | Publish sheet: tick or untick the fourth site's cross-post chip |  |
+| ⌥5 | Publish sheet: tick or untick the fifth site's cross-post chip |  |
+| ⌥6 | Publish sheet: tick or untick the sixth site's cross-post chip |  |
+| ⌥7 | Publish sheet: tick or untick the seventh site's cross-post chip |  |
+| ⌥8 | Publish sheet: tick or untick the eighth site's cross-post chip |  |
+| ⌥9 | Publish sheet: tick or untick the ninth site's cross-post chip |  |
+
+### In the Reader's list
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘A | Reader: pick every post the list shows (r marks them read, u unread) |  |
+
+### In the About window
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘W | About window: close it |  |
+
 ### In the menus, without a key
 
 | What it does | Menu |

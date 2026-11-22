@@ -1207,6 +1207,20 @@ mod macros {
             super::super::auto_crosspost::chip_label(1, "Bluesky", false)
         });
         assert_eq!(win, "Alt+2 ☐ Bluesky");
+        // Past the ninth site, no key.
+        let tenth = super::super::auto_crosspost::chip_label(9, "Bluesky", false);
+        assert_eq!(tenth, "☐ Bluesky");
+        // The line under them names the keys the keymap binds.
+        let hint = |p, n| spelled_as(p, || super::super::auto_crosspost::keys_hint(n));
+        assert!(hint(Platform::Mac, 3).starts_with("⌥1–⌥3 tick one."));
+        assert!(hint(Platform::Windows, 12).starts_with("Alt+1–Alt+9 tick one."));
+        assert!(hint(Platform::Windows, 1).starts_with("Alt+1 ticks it."));
+        let bound: Vec<&str> = crate::keymap::mac_table()
+            .into_iter()
+            .filter(|k| k.scope == crate::keymap::Scope::PublishSheet)
+            .map(|k| k.key)
+            .collect();
+        assert_eq!(bound, super::super::auto_crosspost::CHIP_KEYS);
     }
 
     /// The chips' keys win over everything else the keymap binds to them

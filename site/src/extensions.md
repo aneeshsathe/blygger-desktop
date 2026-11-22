@@ -225,7 +225,7 @@ extension-setting = cross-post farcaster-max-bytes=1024
 
 A post can start its cross-posts by itself when you publish it. In the
 **Publish** sheet (⌘⏎), tick the sites under **Then cross-post to** (each
-chip shows its key: ⌥1, ⌥2…, typed while you write the version note), or press
+chip shows its key: ⌥1, ⌥2… up to ⌥9, which work while you write the version note; Alt+1, Alt+2… on Windows), or press
 ⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
 (and the same for the other sites) to turn it on. The palette row then reads
 **on**, and choosing it again turns it off. The choice belongs to that post

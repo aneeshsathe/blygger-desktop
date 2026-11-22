@@ -69,7 +69,14 @@ use crate::app::discard::{DeleteDraft, DiscardChanges, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
 // --- about ---
-use crate::about::ShowAbout;
+use crate::about::{CloseAbout, ShowAbout};
+// --- auto cross-post --- the Publish sheet's chips
+use crate::app::extensions::auto_crosspost::{
+    CHIP_KEYS, CrossPostChip1, CrossPostChip2, CrossPostChip3, CrossPostChip4, CrossPostChip5,
+    CrossPostChip6, CrossPostChip7, CrossPostChip8, CrossPostChip9,
+};
+// --- read/unread ---
+use crate::app::reading::marks::PickAll;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
 // --- notes ---
@@ -126,6 +133,23 @@ pub const BROWSER: &str = "Blygger > Browser";
 pub const MACRO_SHEET: &str = crate::app::browser::automation::SHEET_CONTEXT;
 /// --- browser macros --- The Preview sheet's text box.
 pub const MACRO_SHEET_INPUT: &str = "MacroSheet > Input";
+/// --- auto cross-post --- The Publish sheet (its note field included).
+pub const PUBLISH_SHEET: &str = crate::app::sheet::publish::CONTEXT;
+/// --- read/unread --- The reading screen's body.
+pub const READING: &str = crate::app::reading::CONTEXT;
+/// The About window.
+pub const ABOUT: &str = crate::about::CONTEXT;
+
+/// Main-window keys the Publish sheet's own keys take over while it is open
+/// (Windows spelling: (key, the main-window action it hides)). GPUI tries a
+/// binding in a deeper key context first, and the sheet's context is inside
+/// the main window's, so these are deliberate; any other overlap fails
+/// `publish_sheet_keys_hide_only_what_they_list`. On Windows the reading
+/// layout is Alt+1 / Alt+2 (macOS ⌥⌘1 / ⌥⌘2), the first two chips' keys;
+/// switching the reading layout under a sheet would do nothing useful.
+#[cfg(test)]
+pub const PUBLISH_SHEET_HIDES: &[(&str, &str)] =
+    &[("alt-1", "StreamMode"), ("alt-2", "ReaderMode")];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -139,10 +163,20 @@ pub enum Scope {
     /// --- browser macros --- `MacroSheet > Input`: the Preview's text box
     /// (out-ranks gpui-base's and the main window's keys there).
     MacroSheetInput,
+    /// --- auto cross-post --- `PublishSheet`: the Publish sheet, its note
+    /// field included. Deeper than the main window, so its keys win there
+    /// while it is open (`PUBLISH_SHEET_HIDES`).
+    PublishSheet,
+    /// --- read/unread --- `Reading`: the reading screen's body. Its text
+    /// fields' own keys (gpui-base's `Input`, deeper) win while they have
+    /// the keyboard: ⌘A in the search field selects the query.
+    Reading,
+    /// `About`: the About window (its own window: only global keys reach it).
+    About,
 }
 
 impl Scope {
-    fn context(self) -> Option<&'static str> {
+    pub(crate) fn context(self) -> Option<&'static str> {
         match self {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
@@ -150,16 +184,23 @@ impl Scope {
             Scope::Browser => Some(BROWSER), // --- browser ---
             Scope::MacroSheet => Some(MACRO_SHEET),
             Scope::MacroSheetInput => Some(MACRO_SHEET_INPUT),
+            Scope::PublishSheet => Some(PUBLISH_SHEET),
+            Scope::Reading => Some(READING),
+            Scope::About => Some(ABOUT),
         }
     }
 
     /// Where the key is live, for clash checks: everything in the main
-    /// window counts as one place.
+    /// window counts as one place. The Publish sheet is a place of its own:
+    /// what it takes over from the main window is listed
+    /// (`PUBLISH_SHEET_HIDES`) and checked.
     #[cfg(test)]
     fn place(self) -> &'static str {
         match self {
             Scope::Browser => "browser pane", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::PublishSheet => "publish sheet",
+            Scope::About => "about window",
             _ => "main window",
         }
     }
@@ -1127,6 +1168,81 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         // --- end browser macros ---
+        // --- auto cross-post --- the Publish sheet's "Then cross-post to"
+        // chips, the first nine sites (`auto_crosspost::CHIP_KEYS`).
+        kb!(
+            CHIP_KEYS[0],
+            PublishSheet,
+            CrossPostChip1,
+            "Publish sheet: tick or untick the first site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[1],
+            PublishSheet,
+            CrossPostChip2,
+            "Publish sheet: tick or untick the second site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[2],
+            PublishSheet,
+            CrossPostChip3,
+            "Publish sheet: tick or untick the third site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[3],
+            PublishSheet,
+            CrossPostChip4,
+            "Publish sheet: tick or untick the fourth site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[4],
+            PublishSheet,
+            CrossPostChip5,
+            "Publish sheet: tick or untick the fifth site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[5],
+            PublishSheet,
+            CrossPostChip6,
+            "Publish sheet: tick or untick the sixth site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[6],
+            PublishSheet,
+            CrossPostChip7,
+            "Publish sheet: tick or untick the seventh site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[7],
+            PublishSheet,
+            CrossPostChip8,
+            "Publish sheet: tick or untick the eighth site's cross-post chip",
+            None
+        ),
+        kb!(
+            CHIP_KEYS[8],
+            PublishSheet,
+            CrossPostChip9,
+            "Publish sheet: tick or untick the ninth site's cross-post chip",
+            None
+        ),
+        // --- end auto cross-post ---
+        // --- read/unread --- (the search field's own ⌘A is the field's)
+        kb!(
+            "cmd-a",
+            Reading,
+            PickAll,
+            "Reader: pick every post the list shows (r marks them read, u unread)",
+            None
+        ),
+        kb!("cmd-w", About, CloseAbout, "About window: close it", None),
         // --- notes --- (esc, which closes the drawer, is the drawer's own key)
         kb!(
             "cmd-shift-n",
@@ -1901,7 +2017,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-z", "Undo", None),
     ("ctrl-y", "Redo", None),
     ("ctrl-shift-z", "Redo", None),
-    ("ctrl-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("ctrl-a", "Select all", Some("PickAll")),
     // The input-language hotkey on many setups; GPUI never sees it.
     ("ctrl-shift-0", "Switch input language", None),
 ];
@@ -1911,7 +2028,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
 #[cfg(all(test, not(target_os = "windows")))]
 pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-q", "Quit", Some("Quit")),
-    ("cmd-w", "Close window", None),
+    // The About window's own close.
+    ("cmd-w", "Close window", Some("CloseAbout")),
     ("cmd-h", "Hide app", None),
     ("cmd-alt-h", "Hide others", None),
     ("cmd-m", "Minimize", None),
@@ -1933,7 +2051,8 @@ pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-x", "Cut", None),
     ("cmd-z", "Undo", None),
     ("cmd-shift-z", "Redo", None),
-    ("cmd-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("cmd-a", "Select all", Some("PickAll")),
 ];
 
 /// Toolbar buttons with no key on purpose: Withdraw is permanent, so it's
@@ -1965,6 +2084,9 @@ pub fn list() -> String {
             Scope::MainInput => "text fields",
             Scope::Browser => "browser", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::PublishSheet => "publish sheet",
+            Scope::Reading => "reader",
+            Scope::About => "about window",
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -2180,10 +2302,17 @@ mod tests {
             .iter()
             // --- browser macros --- The sheets' keys out-rank Input on
             // purpose (their own `MacroSheet > Input` rows).
+            // --- read/unread --- The Reader's ⌘A yields to its text fields'
+            // own select all on purpose; About has no text fields.
             .filter(|k| {
                 !matches!(
                     k.scope,
-                    Scope::Global | Scope::Browser | Scope::MacroSheet | Scope::MacroSheetInput
+                    Scope::Global
+                        | Scope::Browser
+                        | Scope::MacroSheet
+                        | Scope::MacroSheetInput
+                        | Scope::Reading
+                        | Scope::About
                 )
             })
         {
@@ -2205,6 +2334,48 @@ mod tests {
                     "{} needs a MainInput binding to out-rank Input",
                     k.key
                 );
+            }
+        }
+    }
+
+    /// --- auto cross-post --- The Publish sheet's keys take over main-window
+    /// keys only where `PUBLISH_SHEET_HIDES` says so, on both platforms'
+    /// tables (Windows' Alt+1 / Alt+2 reading layout went unseen while the
+    /// chips were keyed outside the keymap), and every listed one is real.
+    /// That the sheet's binding wins is shown in GPUI by
+    /// `extensions::tests::macros::the_chip_keys_tick_chips_on_the_*_key_table`.
+    #[test]
+    fn publish_sheet_keys_hide_only_what_they_list() {
+        for p in [Platform::Mac, Platform::Windows] {
+            let table = table_for(p);
+            let behind: Vec<&Keybind> = table
+                .iter()
+                // Global keys count too: their place is the main window.
+                .filter(|k| !k.key.is_empty() && k.scope.place() == "main window")
+                .collect();
+            let mut hidden = Vec::new();
+            for k in table.iter().filter(|k| k.scope == Scope::PublishSheet) {
+                for b in behind
+                    .iter()
+                    .filter(|b| normalize(b.key) == normalize(k.key))
+                {
+                    hidden.push((k.key, b.action));
+                }
+            }
+            for (key, action) in &hidden {
+                assert!(
+                    p == Platform::Windows && PUBLISH_SHEET_HIDES.contains(&(*key, *action)),
+                    "{p:?}: the Publish sheet's {key} hides {action}: pick another key, or \
+                     list it in PUBLISH_SHEET_HIDES"
+                );
+            }
+            if p == Platform::Windows {
+                for (key, action) in PUBLISH_SHEET_HIDES {
+                    assert!(
+                        hidden.contains(&(*key, *action)),
+                        "PUBLISH_SHEET_HIDES lists {key} ({action}), which it no longer hides"
+                    );
+                }
             }
         }
     }

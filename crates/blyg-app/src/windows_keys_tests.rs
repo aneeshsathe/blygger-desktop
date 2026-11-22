@@ -9,21 +9,8 @@
 
 use gpui_kit::{App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate};
 
-use crate::keymap::{self, Keybind, Scope};
+use crate::keymap;
 use crate::platform_text::Platform;
-
-/// The key context a row's scope binds in.
-fn context(k: &Keybind) -> Option<String> {
-    let c = match k.scope {
-        Scope::Global => return None,
-        Scope::Main => keymap::MAIN,
-        Scope::MainInput => keymap::MAIN_INPUT,
-        Scope::Browser => keymap::BROWSER,
-        Scope::MacroSheet => keymap::MACRO_SHEET,
-        Scope::MacroSheetInput => keymap::MACRO_SHEET_INPUT,
-    };
-    Some(c.to_string())
-}
 
 /// Bind the key table as `p` binds it (after `gpui_kit::init`, as the app
 /// does). Windows' keyboard mapper only respells Shift+digit keys for the
@@ -35,8 +22,8 @@ pub(crate) fn bind_keys_as(p: Platform, cx: &mut App) {
         let Some(action) = k.new_action.filter(|_| !k.key.is_empty()) else {
             continue;
         };
-        let predicate = context(&k).map(|c| {
-            KeyBindingContextPredicate::parse(&c)
+        let predicate = k.scope.context().map(|c| {
+            KeyBindingContextPredicate::parse(c)
                 .unwrap_or_else(|e| panic!("context {c}: {e}"))
                 .into()
         });

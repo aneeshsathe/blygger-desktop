@@ -44,6 +44,12 @@ fn render() -> String {
             Scope::MacroSheet,
             "On a browser macro's Preview and Post sheets",
         ),
+        (
+            Scope::PublishSheet,
+            "On the Publish sheet (also while you type the version note)",
+        ),
+        (Scope::Reading, "In the Reader's list"),
+        (Scope::About, "In the About window"),
     ];
     let rows = mac_table();
     for (scope, heading) in groups {
