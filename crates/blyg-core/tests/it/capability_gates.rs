@@ -182,6 +182,23 @@ fn whole_blyg_is_tried_and_a_refusal_remembered() {
     assert_eq!(env.mock.state().count("POST /api/subscriptions"), 1);
 }
 
+/// Studio 0.69: the dictionary's read follows `getDictionary` (a read-only
+/// sign-in still gets the accepted words), its write `putDictionarySource`;
+/// the Agentic feed list follows `listAgenticFeeds`, an edition `getAgentic`.
+#[test]
+fn studio_069_reads_and_writes_follow_their_own_operations() {
+    let env = env_at("next", &["getDictionary", "getAgentic"]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(api.serves_dictionary().unwrap(), "read");
+    assert!(!api.serves_dictionary_write().unwrap(), "no write");
+    assert!(api.serves_agentic().unwrap());
+    assert_eq!(api.agentic_feeds().unwrap(), None, "no listAgenticFeeds");
+    let env = env_at("6.2.0", &[]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(!api.serves_dictionary().unwrap(), "never by version");
+    assert!(!api.serves_agentic().unwrap());
+}
+
 /// Every operation a gate looks for is one the newest contract names: a
 /// typo would hide the feature on every studio.
 #[test]
@@ -191,6 +208,13 @@ fn the_gated_operations_are_the_contracts() {
         blyg_core::contacts::CONTACTS_OPERATION,
         blyg_core::changelog::CHANGELOG_OPERATION,
         blyg_core::changelog::SETTINGS_OPERATION,
+        // --- studio 0.69 --- reads: the edition, the feed list, the
+        // dictionary, the summary; a write: the dictionary's words.
+        blyg_core::agentic::GET_OPERATION,
+        blyg_core::agentic::LIST_OPERATION,
+        blyg_core::dictionary::GET_OPERATION,
+        blyg_core::dictionary::PUT_OPERATION,
+        blyg_core::helpers::SUMMARIZE_OPERATION,
     ]
     .into_iter()
     .chain(blyg_core::outbound::GROUPS_OPERATIONS.iter().copied());
