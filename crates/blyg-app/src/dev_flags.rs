@@ -722,7 +722,7 @@ mod tests {
     #[test]
     fn every_blygger_name_has_a_class() {
         let pinned = include_str!("never_rename_tests.rs")
-            .split("const NAMES")
+            .split("const NAMES: &[&str] = &[")
             .nth(1)
             .and_then(|rest| rest.split("];").next())
             .unwrap();
