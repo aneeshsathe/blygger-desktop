@@ -1957,7 +1957,11 @@ mod tests {
         assert!(!takes_whole_blyg("5"));
         assert!(!takes_whole_blyg("4.9.0"));
         assert!(!takes_whole_blyg("next"));
-        assert_eq!(contract(Some("6.0.0")), Contract::TooNew("6.0.0".into()));
+        // Contract 6 (studio 0.67) only drops `GET /changes`, which sync
+        // already does without: a studio on 0.67+ must still sync.
+        assert_eq!(contract(Some("6.0.0")), Contract::Supported);
+        assert_eq!(contract(Some("6.1.0")), Contract::Supported);
+        assert_eq!(contract(Some("7.0.0")), Contract::TooNew("7.0.0".into()));
         // Not a version: not something this Burrow knows how to speak.
         assert_eq!(contract(Some("next")), Contract::TooNew("next".into()));
     }
