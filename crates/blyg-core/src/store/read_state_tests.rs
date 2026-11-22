@@ -318,6 +318,22 @@ fn a_clear_from_another_device_is_taken_once_this_read_was_confirmed() {
     assert_eq!(row(&s, "s1", "C").read_version, Some(1));
 }
 
+/// On a contract newer than Burrow knows, a confirmed read the server now
+/// reports unread may be a field it moved: kept here, and not pushed back.
+#[test]
+fn a_newer_contracts_unread_clears_nothing_here() {
+    let s = seeded();
+    s.mark_many_read(&pairs(&[("s1", "A")]), false).unwrap();
+    s.reconcile_read_state(&server(&[("s1", "A", Some(2))]), true)
+        .unwrap();
+    s.set_lists_prune(crate::api::Prune::Withheld);
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan, Default::default());
+    assert_eq!(row(&s, "s1", "A").read_version, Some(2), "still read");
+}
+
 #[test]
 fn a_read_the_server_lacks_is_queued_with_when_it_happened() {
     let s = seeded();

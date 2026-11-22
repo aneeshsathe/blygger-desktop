@@ -179,6 +179,30 @@ fn a_hopper_gone_from_the_server_takes_its_ops_along() {
     assert!(row_hoppers(&s, "B").is_empty());
 }
 
+/// On a contract newer than Burrow knows, a read that lacks a hopper (or a
+/// membership) keeps it, with its waiting ops; what it lists still lands.
+#[test]
+fn a_newer_contracts_hoppers_remove_nothing() {
+    let s = seeded();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
+    s.set_lists_prune(crate::api::Prune::Withheld);
+    s.replace_hoppers(&[]).unwrap();
+    assert_eq!(s.hoppers().len(), 1, "H1 kept");
+    assert_eq!(hopper_ops(&s).len(), 1, "its op kept");
+    assert_eq!(row_hoppers(&s, "A"), ["H1"]);
+    s.replace_hoppers(&[fetched(hopper("H2", "New", 1), &[("s1", "B")])])
+        .unwrap();
+    let ids: Vec<String> = s.hoppers().into_iter().map(|h| h.id).collect();
+    assert!(ids.contains(&"H1".to_string()) && ids.contains(&"H2".to_string()));
+    assert_eq!(row_hoppers(&s, "A"), ["H1"], "A's membership kept");
+    assert_eq!(row_hoppers(&s, "B"), ["H1", "H2"]);
+    // A known contract again: the same read is the truth.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s.replace_hoppers(&[]).unwrap();
+    assert!(s.hoppers().is_empty());
+}
+
 #[test]
 fn deleting_a_hopper_lets_go_of_the_posts_only() {
     let s = seeded();

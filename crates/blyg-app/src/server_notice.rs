@@ -108,6 +108,10 @@ impl MainView {
 }
 
 #[cfg(test)]
+#[path = "newer_notice_tests.rs"]
+mod newer_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
 

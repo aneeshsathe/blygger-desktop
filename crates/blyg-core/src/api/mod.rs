@@ -1914,6 +1914,10 @@ fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
 }
 
 #[cfg(test)]
+#[path = "contract_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

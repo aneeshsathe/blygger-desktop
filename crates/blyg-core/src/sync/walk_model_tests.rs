@@ -20,6 +20,9 @@
 //! - (e) a post new at the head is merged by the first or second request
 //!   of the next foreground pull.
 //!
+//! - (g) on a contract newer than this Burrow knows (`Prune::Withheld`),
+//!   nothing is ever removed, whatever the server dropped.
+//!
 //! and once the server goes quiet:
 //! - (a) the client accepts the server's `reading` revision and holds
 //!   exactly its rows within a bounded time (the safety net's longest
@@ -37,6 +40,7 @@ use std::time::Duration;
 use proptest::prelude::*;
 
 use super::*;
+use crate::api::Prune;
 use crate::api::wire::ChangeState;
 use crate::sync::{SyncOptions, next_full_every};
 
@@ -144,6 +148,8 @@ struct Client {
     whole_at: Option<i64>,
     subs: u64,
     budget: u32,
+    /// What the studio's contract lets its lists remove here.
+    prune: Prune,
 }
 
 /// What one pull did.
@@ -210,7 +216,7 @@ struct Sim {
 }
 
 impl Sim {
-    fn new(rows: &[(u8, u32)], page_size: usize, budget: u32) -> Sim {
+    fn new(rows: &[(u8, u32)], page_size: usize, budget: u32, prune: Prune) -> Sim {
         let now = 10 * 24 * 3600 * SEC;
         let mut s = Server {
             rows: BTreeMap::new(),
@@ -245,6 +251,7 @@ impl Sim {
             whole_at: None,
             subs: 0,
             budget,
+            prune,
         };
         Sim { s, c, now }
     }
@@ -380,6 +387,7 @@ impl Sim {
                 self.c.mark,
                 self.c.budget,
                 reads_sent,
+                self.c.prune,
             )
             .expect("something to read");
             loop {
@@ -427,8 +435,8 @@ impl Sim {
                         self.stop(r);
                         break;
                     }
-                    Step::Done { whole } => {
-                        if whole {
+                    Step::Done { whole, prune } => {
+                        if prune {
                             let keys = &r.walk.keys;
                             let before: Vec<Key> = self.c.local.keys().cloned().collect();
                             self.c.local.retain(|k, _| keys.contains(k));
@@ -480,6 +488,14 @@ impl Sim {
             log.requests,
             self.c.budget
         );
+        // (g) a newer contract's lists remove nothing.
+        if self.c.prune == Prune::Withheld {
+            assert!(
+                log.removed.is_empty(),
+                "(g) removed {:?} on a newer contract's word",
+                log.removed
+            );
+        }
         // (c) nothing removed but by a complete walk, and only rows gone.
         if !log.removed.is_empty() {
             assert_eq!(log.done, Some(true), "(c) removed outside a complete walk");
@@ -491,7 +507,7 @@ impl Sim {
             }
         }
         // (b) a complete walk leaves exactly the server's rows.
-        if log.done == Some(true) {
+        if log.done == Some(true) && self.c.prune == Prune::Allowed {
             let held: BTreeSet<_> = self.c.local.keys().collect();
             let served: BTreeSet<_> = self.s.rows.keys().collect();
             assert_eq!(held, served, "(b) a complete walk left a different set");
@@ -521,10 +537,17 @@ impl Sim {
     }
 
     fn converged(&self) -> bool {
+        let rows = match self.c.prune {
+            Prune::Allowed => self.c.local == self.s.rows,
+            // Every server row as served; the ones it dropped stay here.
+            Prune::Withheld => self
+                .s
+                .rows
+                .iter()
+                .all(|(k, r)| self.c.local.get(k) == Some(r)),
+        };
         // A revision is only comparable within its epoch.
-        self.c.epoch == Some(self.s.epoch)
-            && self.c.seen == Some(self.s.rev)
-            && self.c.local == self.s.rows
+        self.c.epoch == Some(self.s.epoch) && self.c.seen == Some(self.s.rev) && rows
     }
 
     /// The worker's cadence while nothing changes: soon while a walk has a
@@ -654,7 +677,12 @@ fn history(
 }
 
 fn check(rows: &[(u8, u32)], page_size: usize, budget: u32, evs: &[(Ev, u8)]) {
-    Sim::new(rows, page_size, budget).run(evs);
+    Sim::new(rows, page_size, budget, Prune::Allowed).run(evs);
+}
+
+/// [`check`] against a studio on a contract newer than this Burrow knows.
+fn check_newer(rows: &[(u8, u32)], page_size: usize, budget: u32, evs: &[(Ev, u8)]) {
+    Sim::new(rows, page_size, budget, Prune::Withheld).run(evs);
 }
 
 proptest! {
@@ -668,6 +696,15 @@ proptest! {
         (rows, page_size, budget, evs) in history(60, 40)
     ) {
         check(&rows, page_size, budget, &evs);
+    }
+
+    /// (g): deletions, unsubscribes and restores on the server never
+    /// remove a row here while the contract is newer than Burrow's.
+    #[test]
+    fn model_a_newer_contract_never_prunes(
+        (rows, page_size, budget, evs) in history(60, 40)
+    ) {
+        check_newer(&rows, page_size, budget, &evs);
     }
 }
 
@@ -717,4 +754,18 @@ fn model_a_new_post_shows_while_a_walk_is_under_way() {
         1,
         &[pull(), (Ev::Head { sub: 0 }, 0), pull()],
     );
+}
+
+/// (g), by example: the server drops every row, and a whole walk of a newer
+/// contract's list keeps them all.
+#[test]
+fn model_a_newer_contracts_empty_list_removes_nothing() {
+    let mut sim = Sim::new(&[(0, 10), (1, 20), (2, 30)], 2, 4, Prune::Withheld);
+    sim.pull(false, None);
+    assert_eq!(sim.c.local.len(), 3);
+    sim.apply(&Ev::Restore { keep: 200 });
+    assert!(sim.s.rows.is_empty(), "the server dropped them all");
+    let log = sim.pull(false, None);
+    assert_eq!(log.done, Some(true), "a whole walk reached the end");
+    assert_eq!(sim.c.local.len(), 3, "and removed nothing");
 }

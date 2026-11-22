@@ -1640,3 +1640,6 @@ mod loose_tests; // --- loose ends ---
 
 #[cfg(test)]
 mod fts_tests; // text-index upkeep
+
+#[cfg(test)]
+mod newer_tests;
