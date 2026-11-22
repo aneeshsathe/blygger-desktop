@@ -36,7 +36,15 @@ impl Engine {
         let Some(seen) = self.store.meta(crate::background::NO_LENS_META) else {
             return false;
         };
-        matches!(self.api.contract_version(), Ok(Some(v)) if v == seen)
+        self.lens_memory_key().is_some_and(|v| v == seen)
+    }
+
+    /// What a "no lens" finding is remembered under: the blyg's
+    /// `contractVersion` as served, compared whole, never parsed. It only
+    /// says when to ask again (the API changed); the answer of the lens
+    /// itself decides whether Background is there.
+    fn lens_memory_key(&self) -> Option<String> {
+        self.api.contract_version().ok().flatten()
     }
 
     /// Whether the blyg serves Background, as of the last check.
@@ -64,7 +72,7 @@ impl Engine {
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
             Ok(None) => {
                 // Remembered for this contract, across sessions.
-                if let Ok(Some(v)) = self.api.contract_version() {
+                if let Some(v) = self.lens_memory_key() {
                     self.store.set_meta(crate::background::NO_LENS_META, &v)?;
                 }
                 self.store.set_background_served(false)?;

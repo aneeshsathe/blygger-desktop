@@ -58,6 +58,11 @@ const ALLOWED: &[Allowed] = &[
         why: "a sync starts with the major check, through `contract`",
     },
     Allowed {
+        file: "blyg-core/src/sync/background.rs",
+        func: "lens_memory_key",
+        why: "a cache key, compared whole: a studio whose lens read answered plain rows is asked again once its contract changes; the lens's own answer decides Background",
+    },
+    Allowed {
         file: "blyg-core/src/sync/newer.rs",
         func: "recheck_contract",
         why: "the major check again mid-session, before a list removes anything",

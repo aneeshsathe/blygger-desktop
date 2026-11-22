@@ -343,6 +343,9 @@ impl MainView {
         if matches!(self.reading.background.rules, Load::Loading) {
             return;
         }
+        // Whether the rules may be turned, as of now (Settings may open
+        // before Reading has been shown).
+        self.reading.background.placing = self.backend.background_placing();
         if !matches!(self.reading.background.rules, Load::Ready(_)) {
             self.reading.background.rules = Load::Loading;
         }
