@@ -70,6 +70,13 @@ const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
             "</blockquote><blockquote",
         )],
     ),
+    // #114 (twenty-first revision, §16.15; studio 0.69's sanitizer): an
+    // ordered list keeps an integer `start` (the spec's reader case
+    // `whole-list-start-kept`). The fixtures are 0.64.1's, which dropped it.
+    (
+        "tr_sanitize_markdown",
+        &[("<ol><li>three", "<ol start=\"3\"><li>three")],
+    ),
     // #102 (2): the reserved form with a label is reserved too.
     (
         "label_directive_malformed",

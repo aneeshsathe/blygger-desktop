@@ -143,6 +143,14 @@ fn safe_url(raw: &str, image: bool) -> bool {
     }
 }
 
+/// What studio 0.69 keeps of an `ol`'s `start`: `/^-?\d{1,9}$/` on the
+/// trimmed value.
+fn integer_start(value: &str) -> bool {
+    let v = value.trim();
+    let digits = v.strip_prefix('-').unwrap_or(v);
+    (1..=9).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// `sanitizeHtml`. A `math` element is never kept: each top-level formula
 /// is redrawn from its TeX annotation, or dropped without one (`math.rs`).
 pub(crate) fn sanitize_html(html: &str) -> String {
@@ -179,6 +187,10 @@ pub(crate) fn sanitize_html(html: &str) -> String {
                     safe_url(&value, false)
                 } else if key == "src" && tag == "img" {
                     safe_url(&value, true)
+                } else if key == "start" && tag == "ol" {
+                    // An ordered list's first number (studio 0.69, #114,
+                    // spec §16.15): an integer, nothing else.
+                    integer_start(&value)
                 } else {
                     ATTRIBUTES.contains(&key.as_str())
                         || key.starts_with("data-blyg-")
@@ -213,7 +225,7 @@ mod tests {
         );
         assert_eq!(
             sanitize_html("<ol start=\"3\">\n<li>a</li></ol><button>b</button>"),
-            "<ol>\n<li>a</li></ol>b"
+            "<ol start=\"3\">\n<li>a</li></ol>b"
         );
         assert_eq!(
             sanitize_html("<a href=\"java&#x09;script:x\">j</a><a href=\"tel:1\">t</a>"),

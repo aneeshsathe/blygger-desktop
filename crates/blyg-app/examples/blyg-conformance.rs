@@ -193,7 +193,8 @@ fn render(case: &Value) -> Value {
     ));
 
     let mount = s(me, "origin").trim_end_matches('/').to_string();
-    let resolver = StoreResolver::new(items.clone(), held.clone(), &[], &mount);
+    let resolver =
+        StoreResolver::new(items.clone(), held.clone(), &[], &mount).publishing(Some(self_id));
     let opts = RenderOpts {
         data_line: false,
         provenance: false,
