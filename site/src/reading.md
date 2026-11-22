@@ -716,7 +716,11 @@ hashes, and its JSON).
 verified responses to your own posts, grouped by post: who quoted, replied to
 or forked which post, and when. (Reading's **Mentions** source is different:
 the posts you hold that mention you, to read.) You can hide one, and your own
-posts list their mentions under them in ⌘Y and in the reading pane.
+posts list their mentions under them in ⌘Y and in the reading pane. Click a
+response's name to read the post that responded in the reader, as a blyg
+link in a post opens; ↗ opens its web page where links go (the browser pane,
+or your default browser). Click **On “…”** above a group to open your own
+post, the one those responses point at.
 
 **Linked from.** When someone's post links to yours with `[[id]]` (on
 blygger-studio 0.64 and later), your blyg gets a **link notice**. A link isn't
