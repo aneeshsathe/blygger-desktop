@@ -865,6 +865,18 @@ fn do_step(e: &mut Env, id: &str) {
         "mentions-feed" => e.view.update(e.cx, |v, cx| {
             v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
         }),
+        // --- 0.28.0 --- clicks on Chronological and on Raw (their own calls).
+        "feed-order" => e.view.update(e.cx, |v, cx| {
+            v.set_reader_order(blyg_core::order::ReaderOrder::Newest, cx)
+        }),
+        "raw-tab" => e.view.update(e.cx, |v, cx| {
+            v.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Raw,
+                ),
+                cx,
+            )
+        }),
         "shelf-lens" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(

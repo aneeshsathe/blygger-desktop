@@ -240,3 +240,71 @@ fn own_posts_without_a_date_or_server_id_still_sort_totally() {
         vec![Some("01A02".to_string()), None, Some("01A01".to_string())]
     );
 }
+
+// ---- the Feed's order (studio 0.68, `readerOrder`) ----
+
+/// `Settings.readerOrder`: read when the studio has it, pace-layered by
+/// default, written alone (a partial PATCH keeps every other setting).
+#[test]
+fn reader_order_reads_and_writes_the_setting_alone() {
+    use serde_json::json;
+    assert_eq!(ReaderOrder::default(), ReaderOrder::PaceLayered);
+    assert_eq!(
+        ReaderOrder::from_settings(&json!({"readerOrder": "newest"})),
+        Some(ReaderOrder::Newest)
+    );
+    assert_eq!(
+        ReaderOrder::from_settings(&json!({"readerOrder": "pace-layered"})),
+        Some(ReaderOrder::PaceLayered)
+    );
+    assert_eq!(
+        ReaderOrder::from_settings(&json!({"readerOrder": "someday"})),
+        Some(ReaderOrder::PaceLayered),
+        "an unknown value reads as the default"
+    );
+    assert_eq!(ReaderOrder::from_settings(&json!({"siteTitle": "x"})), None);
+    assert_eq!(
+        ReaderOrder::Newest.patch(),
+        json!({"readerOrder": "newest"}),
+        "only the one key"
+    );
+    assert_eq!(ReaderOrder::Newest.label(), "Chronological");
+    assert_eq!(ReaderOrder::PaceLayered.label(), "Pace-layered");
+}
+
+/// The Feed's places over reading rows: newest on top, and an edit that
+/// isn't maintenance climbs one place (not to the top, as chronological
+/// would put it).
+#[test]
+fn the_pace_layered_feed_climbs_an_edit_one_place() {
+    let mut a = rrow(
+        "s",
+        "a",
+        Some("2026-11-01T10:00:00Z"),
+        "2026-11-01T10:00:00Z",
+    );
+    let b = rrow(
+        "s",
+        "b",
+        Some("2026-11-01T11:00:00Z"),
+        "2026-11-01T11:00:00Z",
+    );
+    let c = rrow(
+        "s",
+        "c",
+        Some("2026-11-01T12:00:00Z"),
+        "2026-11-01T12:00:00Z",
+    );
+    a.version = 2;
+    a.updated = Some("2026-11-01T13:00:00Z".into());
+    a.observed_at = "2026-11-01T13:00:00Z".into();
+    let pos = feed_positions([&a, &b, &c], |_| None);
+    let mut keys: Vec<&Key> = pos.keys().collect();
+    keys.sort_by_key(|k| pos[*k]);
+    let ids: Vec<&str> = keys.iter().map(|k| k.1.as_str()).collect();
+    assert_eq!(ids, ["c", "a", "b"]);
+    // Chronological puts the edit on top.
+    let mut rows = vec![b.clone(), c.clone(), a.clone()];
+    sort_reading(&mut rows);
+    assert_eq!(rows[0].remote_id.as_str(), "a");
+}

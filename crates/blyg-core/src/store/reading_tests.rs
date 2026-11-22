@@ -419,7 +419,12 @@ fn changelog_and_pin_cache() {
     }];
     s.put_changelog(o, "X", &v).unwrap();
     assert_eq!(s.cached_changelog(o, "X").unwrap().0, v);
+    // --- reader order --- all of them at once, for the pace-layered Feed.
+    let all = s.cached_changelogs();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[&(o.to_string(), "X".to_string())], v);
     s.drop_changelog(o, "X").unwrap();
+    assert!(s.cached_changelogs().is_empty());
     assert!(s.cached_changelog(o, "X").is_none());
 
     s.put_pin(&pin(o, "X", 1, "first")).unwrap();
