@@ -19,4 +19,10 @@ section: Fixed
   remembered for that studio's contract version, not just the session.
 - **Background rules are greyed for a sign-in that can't change them**, with
   the reason shown, instead of failing when turned.
+- **On a newer studio, a Saved list, a hopper the blyg can't find, and the
+  contact book remove nothing here.** Each now takes the remove-or-keep
+  decision itself (`Store::apply_shelf`, `Store::hopper_not_found`,
+  `Store::take_served_contacts`) rather than relying on its caller. A hopper
+  your blyg answers "not found" for while saving an edit stays, with its
+  waiting changes, until Burrow knows the contract.
 - Changelog display is read once a pull rather than on each call.

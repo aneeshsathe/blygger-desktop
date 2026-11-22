@@ -12,6 +12,7 @@
 
 mod background; // --- background ---
 mod browse; // --- browse ---
+mod contacts; // --- contacts ---
 mod folders; // --- reader folders ---
 mod fts; // text-index upkeep
 pub use fts::FtsUpkeep;
@@ -115,7 +116,7 @@ struct Lists {
     held_back: bool,
 }
 
-/// May a list's word remove something now ([`Store::removal`])?
+/// May a list's word remove something now ([`Store::lists_prune_now`])?
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Removal {
     Now,
@@ -438,7 +439,7 @@ impl Store {
     }
 
     /// May a list's word remove something now?
-    pub(crate) fn removal(&self) -> Removal {
+    pub(crate) fn lists_prune_now(&self) -> Removal {
         match *self.lists() {
             Lists {
                 checked: Some(Prune::Allowed),
@@ -1145,7 +1146,7 @@ impl Store {
     /// carry unpushed edits, which will recreate them, or the contract is
     /// newer than Burrow's: `lists_prune`).
     pub fn merge_all(&self, wires: &[WireItem]) -> Result<MergeOutcome> {
-        let removal = self.removal();
+        let removal = self.lists_prune_now();
         let mut out = MergeOutcome::default();
         let mut c = self.conn();
         let tx = c.transaction()?;

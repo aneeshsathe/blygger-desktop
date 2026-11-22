@@ -37,6 +37,7 @@
 //!   stay on this computer's shelf in their places, and go once they can.
 
 use super::Engine;
+use crate::api::Prune;
 use crate::api::shelf_api::PutShelf;
 use crate::backend::{CoreError, Result};
 use crate::model::CoreEvent;
@@ -167,7 +168,9 @@ impl Engine {
         let theirs = self.less_taken_off(&server.entries, &local);
         let (merged, over) = cap(merge(base.as_deref(), &local, &theirs));
         if merged == server.entries {
-            let changed = self.store.apply_shelf(&server.entries)?;
+            let changed = self
+                .store
+                .apply_shelf(&server.entries, self.store.lists_prune())?;
             self.agreed(&server)?;
             return Ok(changed);
         }
@@ -176,7 +179,9 @@ impl Engine {
                 if over > 0 {
                     self.emit(CoreEvent::Error(overflow_message(over)));
                 }
-                let changed = self.store.apply_shelf(&stored.entries)?;
+                let changed = self
+                    .store
+                    .apply_shelf(&stored.entries, self.store.lists_prune())?;
                 self.agreed(&stored)?;
                 Ok(changed)
             }
@@ -214,7 +219,9 @@ impl Engine {
     pub(super) fn show_shelf_union(&self, server: &Remote) -> Result<bool> {
         let local = self.store.shelf_wire();
         let theirs = self.less_taken_off(&server.entries, &local);
-        self.store.apply_shelf(&merge(None, &local, &theirs))
+        // Withheld: the union holds everything here anyway.
+        self.store
+            .apply_shelf(&merge(None, &local, &theirs), Prune::Withheld)
     }
 
     /// A read-only sign-in: the blyg's list merged three ways with this
@@ -227,7 +234,7 @@ impl Engine {
         let base = self.shelf_base();
         let theirs = self.less_taken_off(&server.entries, &local);
         let (merged, _) = cap(merge(base.as_deref(), &local, &theirs));
-        let changed = self.store.apply_shelf(&merged)?;
+        let changed = self.store.apply_shelf(&merged, self.store.lists_prune())?;
         // The blyg's list is the base now, so this side's removals are
         // base − local from here on: the record isn't needed.
         self.agreed(server)?;

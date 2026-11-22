@@ -15,6 +15,7 @@
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
+use crate::api::Prune;
 use crate::backend::{CoreError, Result};
 use crate::model::LocalId;
 use crate::shelf::{Entry, OWN, TAKEN_OFF_MAX, TAKEN_OFF_META};
@@ -275,12 +276,30 @@ impl Store {
 
     /// Lay the blyg's shelf (`server`, its order) over the rows: what it
     /// names is what's on the shelf, in its order, and what it doesn't name
-    /// comes off. Posts of yours the blyg can't name (no server id yet, or
-    /// withdrawn) keep their places among them. True when anything changed.
-    pub fn apply_shelf(&self, server: &[Entry]) -> Result<bool> {
+    /// comes off when `prune` allows (on a newer contract, or before any
+    /// check, it stays, after the blyg's). Posts of yours the blyg can't
+    /// name (no server id yet, or withdrawn) keep their places among them.
+    /// True when anything changed.
+    pub fn apply_shelf(&self, server: &[Entry], prune: Prune) -> Result<bool> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let old = rows(&tx)?;
+        let held: Vec<Entry>;
+        let server = match prune {
+            Prune::Allowed => server,
+            Prune::Withheld => {
+                held = server
+                    .iter()
+                    .cloned()
+                    .chain(
+                        old.iter()
+                            .filter_map(|r| r.wire.clone())
+                            .filter(|w| !server.contains(w)),
+                    )
+                    .collect();
+                &held
+            }
+        };
         // Each entry as a row: an existing one, or a new one.
         let mut next: Vec<ShelfRow> = Vec::with_capacity(server.len());
         for e in server {

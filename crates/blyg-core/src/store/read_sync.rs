@@ -264,7 +264,7 @@ impl Store {
         server: &HashMap<(SubId, RemoteId), Option<u32>>,
         clear: bool,
     ) -> Result<ReadPlan> {
-        let removal = self.removal();
+        let removal = self.lists_prune_now();
         let pending = self.pending_read_rows()?;
         let mut plan = ReadPlan::default();
         let mut c = self.conn();

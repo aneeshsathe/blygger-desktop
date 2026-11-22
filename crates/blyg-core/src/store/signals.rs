@@ -20,7 +20,7 @@ impl Store {
     /// list. Signals on posts not held here are ignored. True when a row
     /// changed.
     pub fn replace_thumbs(&self, signals: &[(String, String, i8)]) -> Result<bool> {
-        let removal = self.removal();
+        let removal = self.lists_prune_now();
         let want: HashMap<(&str, &str), i8> = signals
             .iter()
             .map(|(s, r, t)| ((s.as_str(), r.as_str()), *t))

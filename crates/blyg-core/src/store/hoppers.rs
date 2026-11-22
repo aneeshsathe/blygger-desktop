@@ -292,7 +292,7 @@ impl Store {
     /// On a contract newer than Burrow knows (`lists_prune`) the read only
     /// adds: hoppers and memberships it lacks stay, as do their ops.
     pub fn replace_hoppers(&self, fetched: &[FetchedHopper]) -> Result<bool> {
-        let removal = self.removal();
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
         let before: (Vec<String>, BTreeSet<(String, String, String)>) = {
@@ -438,8 +438,19 @@ impl Store {
         Ok(h)
     }
 
-    /// A hopper deleted on the server: gone here too, with its memberships
-    /// and waiting ops. The posts stay. True when it was held.
+    /// A hopper the blyg answered 404 for by id (a read after a 409): gone
+    /// here too when `prune` allows. On a newer contract, or before any
+    /// check, it stays, with its waiting ops: the 404 may be a route that
+    /// moved. True when it went.
+    pub fn hopper_not_found(&self, id: &str, prune: crate::api::Prune) -> Result<bool> {
+        match prune {
+            crate::api::Prune::Allowed => self.remove_hopper(id),
+            crate::api::Prune::Withheld => Ok(false),
+        }
+    }
+
+    /// A hopper deleted here: gone, with its memberships and waiting ops.
+    /// The posts stay. True when it was held.
     pub fn remove_hopper(&self, id: &str) -> Result<bool> {
         let mut c = self.conn();
         let tx = c.transaction()?;
