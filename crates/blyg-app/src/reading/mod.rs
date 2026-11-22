@@ -102,6 +102,8 @@ mod compose_tests; // --- reading compose ---
 mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod perf_tests; // the reading screens at scale
+#[cfg(test)]
+mod pick_all_keys_tests;
 mod read_mark; // opening a post marks its row, in place
 #[cfg(test)]
 mod read_mark_tests;

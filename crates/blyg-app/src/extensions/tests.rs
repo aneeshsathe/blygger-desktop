@@ -237,11 +237,43 @@ fn setup_launch<'a>(
     Arc<FakeBackend>,
     &'a mut VisualTestContext,
 ) {
+    setup_keys(cx, config, l, crate::app::bind_keys)
+}
+
+/// `setup`, with the key table as `p` binds it (`windows_keys_tests`).
+fn setup_as<'a>(
+    cx: &'a mut TestAppContext,
+    v: &Vault,
+    config: &str,
+    p: crate::platform_text::Platform,
+) -> (
+    Entity<MainView>,
+    Arc<FakeBackend>,
+    &'a mut VisualTestContext,
+) {
+    use crate::platform_text::Platform;
+    let bind: fn(&mut gpui_kit::App) = match p {
+        Platform::Mac => |cx| crate::windows_keys_tests::bind_keys_as(Platform::Mac, cx),
+        Platform::Windows => |cx| crate::windows_keys_tests::bind_keys_as(Platform::Windows, cx),
+    };
+    setup_keys(cx, config, launch(v.data.clone()), bind)
+}
+
+fn setup_keys<'a>(
+    cx: &'a mut TestAppContext,
+    config: &str,
+    l: Launch,
+    bind_keys: fn(&mut gpui_kit::App),
+) -> (
+    Entity<MainView>,
+    Arc<FakeBackend>,
+    &'a mut VisualTestContext,
+) {
     let config = format!("blyg-url = https://blyg.example.com\n{config}");
     let prefs = Prefs::from_config(ConfigStore::in_memory(&config).config());
     cx.update(|cx| {
         gpui_kit::init(cx);
-        crate::app::bind_keys(cx);
+        bind_keys(cx);
         crate::settings::init(
             ConfigStore::in_memory(&config),
             Arc::new(MemoryTokenStore::default()),
@@ -1175,6 +1207,83 @@ mod macros {
             super::super::auto_crosspost::chip_label(1, "Bluesky", false)
         });
         assert_eq!(win, "Alt+2 ☐ Bluesky");
+    }
+
+    /// The chips' keys win over everything else the keymap binds to them
+    /// while the sheet is open, on both platforms' tables. On Windows the
+    /// reading layout is Alt+1 / Alt+2 (macOS's ⌥⌘1 / ⌥⌘2), a main-window
+    /// binding GPUI dispatched before the sheet's own key listener saw the
+    /// key: Alt+1 switched the screen behind the sheet to the stream and
+    /// left the chip unticked (Windows CI, 0.28.0).
+    #[gpui_kit::test]
+    fn the_chip_keys_tick_chips_on_the_windows_key_table(cx: &mut TestAppContext) {
+        chip_keys_tick_chips_with(crate::platform_text::Platform::Windows, cx);
+    }
+
+    #[gpui_kit::test]
+    fn the_chip_keys_tick_chips_on_the_mac_key_table(cx: &mut TestAppContext) {
+        chip_keys_tick_chips_with(crate::platform_text::Platform::Mac, cx);
+    }
+
+    fn chip_keys_tick_chips_with(p: crate::platform_text::Platform, cx: &mut TestAppContext) {
+        use crate::app::sheet::publish::PublishSheet;
+        use crate::platform_text::Platform;
+        let v = vault();
+        let (view, fake, cx) = setup_as(cx, &v, &config_all_sites(), p);
+        stub_pane(cx);
+        started(&view, cx);
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        let publish = match p {
+            Platform::Mac => "cmd-enter".to_string(),
+            Platform::Windows => crate::keymap::respell_for_windows("cmd-enter"),
+        };
+        cx.simulate_keystrokes(&publish);
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.sheet.is::<PublishSheet>()));
+        let sites: Vec<String> = view.read_with(cx, |v, _| {
+            v.auto_crosspost_sites()
+                .into_iter()
+                .map(|m| super::super::auto_crosspost::macro_key(&m.ext, &m.spec.id))
+                .collect()
+        });
+        assert!(sites.len() >= 2, "two sites to tick: {sites:?}");
+        let screen = view.read_with(cx, |v, _| v.reading.view);
+        let note = |v: &MainView, cx: &gpui_kit::App| {
+            v.sheet
+                .get::<PublishSheet>()
+                .map(|s| s.note.read(cx).value().to_string())
+        };
+        // The first two chips' keys: on Windows, the reading layout's too.
+        for (n, key) in ["alt-1", "alt-2"].into_iter().enumerate() {
+            cx.simulate_keystrokes(key);
+            cx.run_until_parked();
+            view.update_in(cx, |v, _, cx| {
+                let chosen = v.auto_crosspost_chosen(&post, cx);
+                assert!(chosen.contains(&sites[n]), "{p:?} {key}: chip {n} on");
+                assert!(v.sheet.is::<PublishSheet>(), "{p:?} {key}: the sheet stays");
+                assert_eq!(
+                    v.reading.view, screen,
+                    "{p:?} {key}: the screen behind the sheet stays put"
+                );
+                assert_eq!(note(v, cx).as_deref(), Some(""), "{p:?} {key} typed");
+            });
+        }
+        cx.simulate_keystrokes("alt-1");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(
+                !v.auto_crosspost_chosen(&post, cx).contains(&sites[0]),
+                "off"
+            );
+        });
+        // The note field still types.
+        cx.simulate_input("typo fix");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert_eq!(note(v, cx).as_deref(), Some("typo fix"));
+        });
     }
 
     /// The Extensions palette with cross-post's rows (ten here) keeps its

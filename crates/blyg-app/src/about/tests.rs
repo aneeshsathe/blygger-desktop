@@ -136,3 +136,38 @@ fn a_live_connection_shows_the_host_and_capabilities(cx: &mut TestAppContext) {
     assert!(text.contains("AI disclosure:     no\n"), "{text}");
     assert!(!text.contains("sekrit"), "{text}");
 }
+
+/// ⌘W closes About, as each platform binds it: Ctrl+W on Windows, where
+/// GPUI's `platform` modifier is the Windows key (the window used to read
+/// `platform` itself, so Ctrl+W did nothing there).
+#[gpui_kit::test]
+fn close_window_closes_about_on_the_windows_key_table(cx: &mut TestAppContext) {
+    close_window_closes_about_with(crate::platform_text::Platform::Windows, cx);
+}
+
+#[gpui_kit::test]
+fn close_window_closes_about_on_the_mac_key_table(cx: &mut TestAppContext) {
+    close_window_closes_about_with(crate::platform_text::Platform::Mac, cx);
+}
+
+fn close_window_closes_about_with(p: crate::platform_text::Platform, cx: &mut TestAppContext) {
+    use crate::platform_text::Platform;
+    setup(cx);
+    cx.update(|cx| crate::windows_keys_tests::bind_keys_as(p, cx));
+    cx.update(super::open);
+    cx.run_until_parked();
+    let h = cx.update(|cx| window(cx)).expect("open");
+    let vcx = &mut VisualTestContext::from_window(h.into(), cx);
+    vcx.run_until_parked();
+    let close = match p {
+        Platform::Mac => "cmd-w",
+        Platform::Windows => "ctrl-w",
+    };
+    vcx.simulate_keystrokes(close);
+    vcx.run_until_parked();
+    assert_eq!(
+        cx.update(|cx| cx.windows().len()),
+        0,
+        "{p:?}: {close} closed About"
+    );
+}
