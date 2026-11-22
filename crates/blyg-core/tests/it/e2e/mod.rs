@@ -5448,8 +5448,8 @@ fn burrows_background_is_the_studios() {
 
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
-fn the_studio_speaks_contract_five() {
-    // `GET {mount}/api/capabilities`: Burrow speaks contract 5.x only.
+fn the_studio_speaks_a_contract_burrow_knows() {
+    // `GET {mount}/api/capabilities`: Burrow speaks contracts 5.x and 6.x.
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
     let got = api.contract_version().unwrap();

@@ -31,6 +31,15 @@ Quotes refreshed, Including rewritten quotes, Small edits and Followed within
 15 minutes each put a post in Background, with a badge saying why and a switch
 on Settings' BACKGROUND row.
 
+## Burrow 0.27.3
+
+A fix for blygs on blygger-studio 0.67 or later. Those studios speak a newer
+version of the studio's API, and Burrow 0.27.2 refused to sync with them,
+saying it "doesn't speak" it yet. The only change Burrow needs to meet is one
+it already handles, so it syncs with them again. It also updates the library
+Burrow uses to read web addresses, which had a flaw that a crafted link could
+use to crash the app. Nothing else changes in how Burrow looks or works.
+
 ## Burrow 0.27.2
 
 A speed update. Searching from the omnibar reads only which posts match
