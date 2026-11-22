@@ -45,7 +45,7 @@ pub const NOT_SERVED_NOTE: &str =
 pub const ALSO_AT: &str = "the author says it is also at";
 
 /// Its tooltip.
-pub const ALSO_POSTED_TIP: &str =
+pub const ALSO_AT_TIP: &str =
     "Where the author says they posted this too. Burrow doesn't check or fetch the copies.";
 
 /// The sheet.
@@ -528,11 +528,12 @@ impl MainView {
                 .font_family(self.chrome())
                 .text_size(px(11.5))
                 .text_color(p.muted)
-                .tooltip(|_, cx| cx.new(|_| reading::Tip(ALSO_POSTED_TIP.to_string())).into())
+                .tooltip(|_, cx| cx.new(|_| reading::Tip(ALSO_AT_TIP.to_string())).into())
                 .child(ALSO_AT)
                 .children(links.into_iter().enumerate().map(move |(i, (host, url))| {
                     div()
                         .id(ElementId::Name(format!("{id}-{i}").into()))
+                        .debug_selector(move || format!("{id}-{i}"))
                         .cursor_pointer()
                         .text_color(p.ink)
                         .hover(|s| s.text_color(p.accent))
