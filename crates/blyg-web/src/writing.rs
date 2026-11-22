@@ -807,6 +807,7 @@ impl Burrow {
         if let Ok(v) = serde_json::from_str::<Value>(body)
             && v.is_object()
         {
+            self.feed_settings(&v); // --- reader order ---
             self.writing.settings = Some(v);
         }
     }
@@ -897,6 +898,7 @@ impl Burrow {
         match api::read(status, body, None) {
             Ok(v) if v.is_object() => {
                 let before = self.w_setting_str("siteUrl");
+                self.feed_settings(&v); // --- reader order ---
                 self.writing.settings = Some(v);
                 if self.w_setting_str("siteUrl") != before {
                     self.store.live.base = Burrow::public_base(body, origin);

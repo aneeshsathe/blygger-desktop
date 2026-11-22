@@ -156,6 +156,9 @@ pub struct WebReading {
     pub bg_fresh: bool,
     pub bg_rules: Option<blyg_core::background::BackgroundRules>,
     // --- end background ---
+    // --- reader order --- the Feed's order and places (`web_feed.rs`).
+    pub feed: crate::web_feed::WebFeed,
+    // --- end reader order ---
     /// Demo: the next id for a made-up subscription or hopper.
     next: u32,
 }
@@ -242,6 +245,8 @@ pub fn source_key(s: &Source) -> String {
                 Smart::Threads => "threads",
                 Smart::Fragments => "fragments",
                 Smart::Shelf => "shelf", // --- shelf sync ---
+                Smart::Agentic => "agentic", // --- reader order ---
+                Smart::Raw => "raw",         // --- reader order ---
             }
         ),
         Source::Folder(f) => format!("folder:{f}"),
@@ -265,6 +270,8 @@ pub fn parse_source(k: &str) -> Option<Source> {
         ("smart", "threads") => Source::Smart(Smart::Threads),
         ("smart", "fragments") => Source::Smart(Smart::Fragments),
         ("smart", "shelf") => Source::Smart(Smart::Shelf), // --- shelf sync ---
+        ("smart", "agentic") => Source::Smart(Smart::Agentic), // --- reader order ---
+        ("smart", "raw") => Source::Smart(Smart::Raw),
         ("sub", id) if !id.is_empty() => Source::Sub(id.into()),
         ("hopper", id) if !id.is_empty() => Source::Hopper(id.into()),
         ("own", _) => Source::Own,
@@ -541,6 +548,12 @@ impl Burrow {
         let lens = self.wr.lens;
         let kind_ok = |r: &ReadingItem| lens.is_none_or(|k| r.kind == k);
         match &self.wr.source {
+            // --- reader order --- Raw: every row that came in, its order.
+            Source::Smart(Smart::Raw) => self
+                .raw_rows(now)
+                .into_iter()
+                .filter(|r| kind_ok(r))
+                .collect(),
             // --- shelf sync --- the shelf's posts, in its order.
             Source::Smart(Smart::Shelf) => self
                 .shelf_order(rows)
@@ -560,9 +573,12 @@ impl Burrow {
             }
             s => {
                 let filed = HashMap::new();
-                rows.into_iter()
+                let shown = rows
+                    .into_iter()
                     .filter(|r| kind_ok(r) && svm::in_source(r, s, &filed, now))
-                    .collect()
+                    .collect();
+                // --- reader order --- the Feed's order, where it's followed.
+                self.feed_arrange(shown, s)
             }
         }
     }
@@ -884,12 +900,13 @@ impl Burrow {
                 .filter(|r| r.hoppers.contains(&h.id))
                 .count() as u32;
         }
-        let entries = svm::entries(
+        let entries = svm::entries_skipping(
             &hoppers,
             &[],
             &HashMap::new(),
             &subs,
             &self.rd.rows,
+            &HashSet::new(),
             &HashSet::new(),
             now,
         );
@@ -971,15 +988,16 @@ impl Burrow {
                 }
                 Entry::Folder { .. } | Entry::Trail(_) | Entry::Mentions { .. } => continue,
             };
-            let after_background = matches!(
+            // Mentions under the Feed, as studio 0.68's tabs.
+            let after_feed = matches!(
                 e,
                 Entry::Smart {
-                    smart: Smart::Background,
+                    smart: Smart::All,
                     ..
                 }
             );
             out.push(row);
-            if after_background {
+            if after_feed {
                 let keys = self.wr_mention_keys();
                 out.push(SourceRow {
                     kind: "mentions",
@@ -1003,6 +1021,7 @@ impl Burrow {
             "lens": match self.wr.lens { None => "all", Some(Kind::Thread) => "thread", Some(Kind::Fragment) => "fragment" },
             "filtered": self.wr.source != Source::default() || self.wr.lens.is_some(),
             "subsLoaded": !self.is_live() || self.wr.subs_loaded,
+            "order": self.feed_control(), // --- reader order ---
         }))
     }
 

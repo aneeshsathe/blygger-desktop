@@ -12,7 +12,7 @@
 
 import { Pager } from './pkg/blyg_web.js';
 import { $, $$, S, now, esc, persist, touched, toast, outcome, insertText, nonce, isPhone, MD } from './core.js';
-import { call } from './live.js';
+import { call, SITE } from './live.js';
 
 const W = {};
 S.writing = W;
@@ -686,7 +686,7 @@ export async function openSettings() {
     if (r.saved) { closeSheet(); toast(esc(r.saved)); return; }
     $$('button', s).forEach((b) => { b.disabled = true; });
     const a = await call(r.req.method, r.req.path, r.req.body);
-    const res = J(S.B.w_settings_answer(a.status, a.body, location.origin));
+    const res = J(S.B.w_settings_answer(a.status, a.body, SITE));
     if (res.error) { err.textContent = res.error.text; err.hidden = false; $$('button', s).forEach((b) => { b.disabled = false; }); return; }
     closeSheet();
     await persist({ quiet: true });

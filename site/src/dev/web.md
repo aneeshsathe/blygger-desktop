@@ -27,7 +27,7 @@ It runs in one of two modes, and says which:
 
 - **Live**, when it's served from a blyg at `/burrow/`, beside `/studio`
   (proposed upstream in blygger-studio#139). It works on your own posts and
-  reading list through the owner API at `{mount}/api` (beside `{mount}/burrow/`; `/api` for a blyg at the host root) on the same origin, signed in
+  reading list through the owner API at `{mount}/api` (beside `{mount}/burrow/`; `/api` for a blyg at the host root, and never the host root's `/api` for a blyg under a path) on the same origin, signed in
   by your Studio session cookie. There's no token and nothing to configure.
   Signed out, it asks you to sign in at Studio.
 - **Demo** everywhere else: invented sample posts kept in the browser
@@ -41,7 +41,7 @@ DEV=1 ./crates/blyg-web/serve.sh         # fast local build (no LTO; never ship 
 
 ## How live mode works
 
-- **Detection.** `GET /api/capabilities`: a contract 5 answer is a blyg; a
+- **Detection.** `GET /api/capabilities`: a contract 5 or 6 answer is a blyg; a
   401 with the blyg's `WWW-Authenticate` challenge is a blyg you aren't
   signed in to; anything else (a 404 from a static server) is the demo.
 - **Requests.** Only same-origin `{mount}/api/…` paths, with
@@ -58,7 +58,14 @@ DEV=1 ./crates/blyg-web/serve.sh         # fast local build (no LTO; never ship 
   pause the outbox sends what waits: edits (each with the revision it was
   based on), new drafts, draft deletes, read marks and hopper changes.
   Offline, they wait, survive a reload, and replay when the blyg answers.
-- **Refreshing.** While the tab is visible, it asks `GET /api/changes`
+- **Refreshing, contract 6** (studio 0.67 and later, no `/api/changes`).
+  Every 60 s while the tab is visible, each list is asked with
+  `If-None-Match`; one that didn't change answers a bodyless `304`, which
+  the page reads as the body it kept (`cond_answer` in `src/live.rs`),
+  never as an empty list. The reading list is asked only by its first page
+  until that page moves or its safety net (below) is due. `/api/changes`
+  is asked again every 3 hours, in case the blyg serves it again.
+- **Refreshing, contract 5.** While the tab is visible, it asks `GET /api/changes`
   every 15 s, as Studio does. It also asks on start, as soon as the tab is
   shown again, and right after your own publish, restore, withdraw or
   delete. It reads again only the lists whose revisions moved since they
@@ -126,6 +133,20 @@ sources pane is drawn only with the reading view, and the stream's filter
 is one pass over the rows it already orders. The code is
 `src/web_reading.rs` (rules, requests, answers) and `www/web-reading.js`
 (drawing), with hook lines marked `--- web-reading ---` in the shared files.
+
+The tabs are studio 0.68's, in its order: Feed (the All smart feed),
+Mentions, Agentic feed (a placeholder, as upstream), Saved (the shelf; its
+`/api/shelf` routes keep their name), Background and Raw (everything that
+came in, withdrawn posts too, newest first). The Feed is in the blyg's
+`readerOrder`: pace-layered or chronological, switched in the sources pane
+and saved to the blyg with `PATCH /api/settings`. A blyg without the
+setting gets the chronological Feed, and a switch lasts only for that
+tab. The order's rules are the app's `reading/feed_vm.rs`, compiled
+unchanged (`src/web_feed.rs`).
+
+**Not in the web app yet** (native 0.28.0 has them): syndication as native
+has it now, full-text search, the spellcheck dictionary, and the Agentic
+feed's helpers.
 <!-- --- end web-reading --- -->
 <!-- --- web-parity --- -->
 ## Studio parity

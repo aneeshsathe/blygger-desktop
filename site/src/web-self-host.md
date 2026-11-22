@@ -56,8 +56,8 @@ If you're an AI agent doing this for the blyg's owner:
 - A blyg on the reference Worker ([blygger-studio](https://github.com/blygger/blygger-studio)),
   deployed by the owner with `wrangler` from their own copy of that repo.
   Check that `GET https://<host>/api/capabilities` answers with JSON, or with
-  a 401 when signed out. Contract 5 (Studio 0.56 or later) is what the app is
-  tested against.
+  a 401 when signed out. Contract 6 (Studio 0.69) is what the app is
+  tested against; contract 5 (Studio 0.56 or later) still works.
 - `/burrow` free on that host. Nothing else may serve it, and the blyg's
   posts page must not be called `burrow`.
 - `curl`, `unzip`, `shasum` (or `sha256sum`) and OpenSSL 3 (for checking
@@ -65,9 +65,10 @@ If you're an AI agent doing this for the blyg's owner:
   Homebrew's `openssl@3`).
 
 **A blyg served under a path** (`MOUNT` = `/blyg`, at `you.com/blyg/`):
-Studio's `/studio` and `/api` stay at the host root anyway, so the app goes
-at the host root too: `you.com/burrow/`, not `you.com/blyg/burrow/`.
-The steps are the same.
+since Studio 0.65, `/studio` and `/api` are under the mount too
+(`you.com/blyg/api`), with no host-root alias. The app goes under the
+mount as well, `you.com/blyg/burrow/`, and finds the API beside itself.
+The steps are the same, with `burrow/` under the mount's static path.
 
 ## 1. Pick the release
 
@@ -295,9 +296,10 @@ so `icons/` differs too. The path to the checkout must not contain spaces.
 
 ## When something's wrong
 
-- **It says "demo".** It couldn't reach `/api/capabilities` on the same
-  host. Check that it's at the host root `/burrow/`, and that
-  `/api/capabilities` answers there.
+- **It says "demo".** It couldn't reach `{mount}/api/capabilities` on the
+  same host. Check that it's at `{mount}/burrow/` (the host root's
+  `/burrow/` for a blyg at the root), and that `{mount}/api/capabilities`
+  answers there.
 - **A 404 at `/burrow/`.** Check the `assets` block, and that
   `static/burrow/index.html` is in the deploy repo and was deployed.
 - **The blyg's own pages broke.** `not_found_handling` isn't `"none"`, or

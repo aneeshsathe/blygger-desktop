@@ -247,6 +247,7 @@ impl Burrow {
     /// again on the next draw.
     pub(crate) fn rows_changed(&mut self) {
         *self.placed.get_mut() = None;
+        self.wr.feed.rows_changed(); // --- reader order ---
     }
 
     /// The stream in its order: [`rvm::ordered`] (withdrawn posts hidden

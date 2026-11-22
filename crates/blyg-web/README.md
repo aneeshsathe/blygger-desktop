@@ -163,14 +163,18 @@ wouldn't keep the API out).
 
 ## Live mode
 
-Served from a blyg at `/burrow/`, the page shares an origin with the
-Studio (`/studio`) and the owner API (`/api`, at the host root), so it uses
+Served from a blyg at `{mount}/burrow/`, the page shares an origin with
+the Studio (`{mount}/studio`) and the owner API (`{mount}/api`; the mount
+is empty for a blyg at the host root, and is read from the page's own
+path by `api::mount_of` and `net.js` `MOUNT`; studio 0.65 dropped the
+host-root `/api` alias, so nothing assumes it), so it uses
 the Studio's session cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`): there's
 no CORS, no token and nothing to configure, and the page never sees the
 cookie.
 
 - **Which mode.** `GET /api/capabilities` decides (`api::detect`): a
-  contract 5 answer is a blyg; a 401 with the blyg's `WWW-Authenticate`
+  contract 5 or 6 answer is a blyg (an older one says to update the blyg;
+  a newer one is refused in `newer_contract`); a 401 with the blyg's `WWW-Authenticate`
   challenge is a blyg you aren't signed in to ("Sign in at Studio" opens
   `/studio/login` in a new tab; come back and the page catches up); any
   other answer (a static server's 404) is the demo. No answer at all, with
@@ -190,8 +194,14 @@ cookie.
   page to `nextCursor: null` (`Pager`), and an expired cursor drops what
   was read and starts over (at most `CURSOR_RESTARTS` times), so a list is
   never partial.
-- **What it reads.** `GET /api/settings` (`siteUrl`, for permalinks) on
-  start. Then `GET /api/changes` on start, every 15 s while the tab is
+- **What it reads.** `GET /api/settings` (`siteUrl`, for permalinks, and
+  `readerOrder`, the Feed's order) on start. On a contract 6 blyg (no
+  `/api/changes`; it's asked again only every 3 h after a 404), every
+  60 s it asks each list conditionally (`If-None-Match`, the ETag of its
+  last `200`): a bodyless `304` comes back as the kept body
+  (`live::cond_answer`), never as an empty list, and a held reading list
+  is asked only by its first page until that moves or its safety net is
+  due. On a contract 5 blyg, `GET /api/changes` on start, every 15 s while the tab is
   visible (Studio's cadence), at once when the tab is shown again or
   reconnects, and right after your own publish, restore, withdraw or
   draft delete. It reads a list again only when its counters moved

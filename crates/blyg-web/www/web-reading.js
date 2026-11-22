@@ -154,8 +154,29 @@ function sourcesHtml(d, { manage = true } = {}) {
       ${markAllOffered() ? '<button type="button" data-go="markall" title="Mark every post here read (⌃⌥A)">✓ Mark all read…</button>' : ''}
     </div>` : ''}
     <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
+    ${orderHtml(d.order)}
     ${rows}`;
 }
+// --- reader order --- the Feed's order (src/web_feed.rs), where the list
+// follows it. Labels come from the Rust and are escaped all the same.
+function orderHtml(o) {
+  if (!o || !o.shown) return '';
+  const b = (x) => `<button type="button" data-order="${esc(x.value)}" class="${x.on ? 'on' : ''}" aria-pressed="${!!x.on}">${esc(x.label)}</button>`;
+  return `<div class="wr-lens wr-order" role="group" aria-label="Feed order">${o.options.map(b).join('')}</div>`;
+}
+async function chooseOrder(value) {
+  const o = JSON.parse(S.B.wr_set_reader_order(value));
+  if (o.error) { toast(o.error); return; }
+  for (const s of ['#p-stream', '#d-stream']) { const el = $(s); if (el) el.scrollTop = 0; }
+  S.render();
+  if (!o.req) return;
+  const r = await call(o.req.method, o.req.path, o.req.body);
+  S.B.wr_reader_order_answer(o.at, r.status, r.body);
+  if (r.status < 200 || r.status > 299) toast('The blyg didn’t keep that order');
+  S.render();
+  redraw();
+}
+// --- end reader order ---
 // --- web-parity --- hidden once the blyg is known not to take batches.
 function markAllOffered() { return !(S.live && S.B.wr_ops_known() && !S.B.wr_can('markReadBatch')); }
 // --- end web-parity ---
@@ -176,6 +197,8 @@ function sourcesClick(e, { close = false } = {}) {
   if (src) { chooseSource(src.dataset.src); if (close) closePanel(); else redraw(); return true; }
   const l = e.target.closest('[data-lens]');
   if (l) { chooseLens(l.dataset.lens); redraw(); return true; }
+  const o = e.target.closest('[data-order]');
+  if (o) { chooseOrder(o.dataset.order); redraw(); return true; }
   const g = e.target.closest('[data-go]');
   if (g) { go(g.dataset.go); return true; }
   return false;

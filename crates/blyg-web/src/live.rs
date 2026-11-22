@@ -19,7 +19,8 @@ use std::time::Duration;
 use blyg_core::api::absolute_page;
 use blyg_core::api::wire::{ChangeState, WireItem, imported_row};
 use blyg_core::sync::{
-    HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SHELF_DEPS, SIGNALS_DEPS, SyncOptions, next_full_every,
+    CHANGES_RECHECK, HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SHELF_DEPS, SIGNALS_DEPS, SyncOptions,
+    next_full_every,
 };
 use blyg_core::{Hopper, Item, Kind, LocalId, ReadingItem, ServerId, Status};
 use serde::{Deserialize, Serialize};
@@ -740,6 +741,13 @@ impl Burrow {
     ///   and when to check again (`every`, ms). Without a usable answer
     ///   (no route, not JSON): every list, `rev: null`, and native's
     ///   slower interval.
+    /// - With no route at all (404: contract 6, studio 0.67+), `validating:
+    ///   true`: every list is read each time, conditionally (`cond_answer`:
+    ///   one that didn't change is a 304), and a held reading list only by
+    ///   its first page (`reading: "head"`) until its safety net is due,
+    ///   native sync's rule (`Engine::validating`). The route isn't asked
+    ///   again for `CHANGES_RECHECK` (`changes_due`); meanwhile the page
+    ///   plans with a 404 of its own.
     /// - `{wait}`: the blyg is rate-limiting (429: its `Retry-After`) or
     ///   failing (5xx: a doubling backoff). Read nothing; ask again in
     ///   `wait` ms.
@@ -766,6 +774,14 @@ impl Burrow {
             .then(|| serde_json::from_str::<Value>(body).ok())
             .flatten()
             .and_then(|v| Some((serde_json::from_value::<ChangeState>(v.clone()).ok()?, v)));
+        if rev.is_some() {
+            self.cond.changes_gone_at = None;
+        } else if status == 404 && self.cond.changes_due(now_ms) {
+            self.cond.changes_gone_at = Some(now_ms);
+        }
+        if rev.is_none() && self.cond.validating() {
+            return json(&self.validating_plan(visible, now_ms));
+        }
         let mut out = serde_json::Map::new();
         for (list, deps) in LISTS {
             let seen = self.seen_of(list);
@@ -776,7 +792,52 @@ impl Burrow {
         }
         out.insert("every".into(), json!(Pace::every(rev.is_some())));
         out.insert("rev".into(), rev.map(|(_, v)| v).unwrap_or(Value::Null));
+        out.insert("validating".into(), json!(false));
         json(&Value::Object(out))
+    }
+
+    /// Whether to ask `GET /api/changes` before this refresh: not for
+    /// `CHANGES_RECHECK` after it answered 404 (contract 6 has none).
+    pub fn changes_due(&self, now_ms: f64) -> bool {
+        self.cond.changes_due(now_ms)
+    }
+
+    /// The ETag kept for `path` (its last `200`), to ask it conditionally
+    /// (`If-None-Match`); none when nothing is kept.
+    pub fn cond_etag(&mut self, path: &str) -> Option<String> {
+        self.cond.kept.get(path).map(|k| k.etag)
+    }
+
+    /// A list page's answer to a read of `path` (asked with `cond_etag`),
+    /// with the answer's `ETag` (`""`: none), as `{status, body, same}`.
+    /// **A 304 is never an empty answer**: it comes back as the `200` body
+    /// kept for `path`, byte for byte, so nothing is dropped that a `200`
+    /// wouldn't drop. `same`: the page's rows are as last read (a 304, or
+    /// only its cursor moved), so the list it heads didn't move. A 304 for
+    /// a path with nothing kept is `{again: true}`: ask it once more,
+    /// unconditionally. Anything else passes through.
+    pub fn cond_answer(&mut self, path: &str, status: u16, body: &str, etag: &str) -> String {
+        let out = match status {
+            304 => match self.cond.kept.get(path) {
+                Some(k) => json!({ "status": 200, "body": &*k.body, "same": true }),
+                None => json!({ "again": true }),
+            },
+            200..=299 => {
+                let same = self
+                    .cond
+                    .kept
+                    .get(path)
+                    .is_some_and(|k| same_rows(&k.body, body));
+                if etag.is_empty() {
+                    self.cond.kept.forget(path);
+                } else {
+                    self.cond.kept.put(path, etag, body);
+                }
+                json!({ "status": status, "body": body, "same": same })
+            }
+            _ => json!({ "status": status, "body": body, "same": false }),
+        };
+        json(&out)
     }
 
     /// A list (`items`, `reading`, `hoppers` or `signals`) was read whole
@@ -797,14 +858,22 @@ impl Burrow {
         now_ms: f64,
         fetched: Option<String>,
     ) {
-        let Ok(c) = serde_json::from_str::<ChangeState>(rev_json) else {
+        // Without counters (`validating`), a whole read is still recorded:
+        // when it was, for the reading list's safety net.
+        let c = serde_json::from_str::<ChangeState>(rev_json).ok();
+        if c.is_none() && !self.cond.validating() {
             return;
-        };
+        }
         let Some((_, deps)) = LISTS.iter().find(|(l, _)| *l == list) else {
             return;
         };
         if let Some(fetched) = fetched {
-            let forced = unchanged(&c, self.seen_of(list), deps);
+            // Read only because the net was due: what it finds is what
+            // nothing else would have read (native's `forced`).
+            let forced = match &c {
+                Some(c) => unchanged(c, self.seen_of(list), deps),
+                None => list == "reading" && self.cond.reading_by_net,
+            };
             let fp = fingerprint(&fetched);
             let opts = SyncOptions::default();
             let net = self.nets.entry(list.to_string()).or_default();
@@ -816,13 +885,19 @@ impl Burrow {
             };
             net.fetched = Some(fp);
         }
-        let seen = Seen {
-            epoch: c.epoch.clone(),
-            revisions: deps
-                .iter()
-                .filter_map(|d| c.domains.get(*d).map(|n| (d.to_string(), *n)))
-                .collect(),
-            at_ms: now_ms,
+        let seen = match &c {
+            Some(c) => Seen {
+                epoch: c.epoch.clone(),
+                revisions: deps
+                    .iter()
+                    .filter_map(|d| c.domains.get(*d).map(|n| (d.to_string(), *n)))
+                    .collect(),
+                at_ms: now_ms,
+            },
+            None => Seen {
+                at_ms: now_ms,
+                ..Seen::default()
+            },
         };
         match list {
             "items" => self.store.live.seen = seen,
@@ -1089,8 +1164,14 @@ impl Burrow {
         })
     }
 
+    /// The blyg's mount from the page's path (`api::mount_of`), for
+    /// `live.js` to check `net.js`'s copy of the rule against.
+    pub fn mount_of(pathname: &str) -> String {
+        api::mount_of(pathname).to_string()
+    }
+
     /// The blyg's public base from `GET /api/settings` (`siteUrl`), else
-    /// `origin`.
+    /// `origin` (the page passes its origin and mount, `net.js` `SITE`).
     ///
     /// Folded to the origin's one spelling (§12.2: lowercase scheme and host,
     /// no default port, uppercase escapes), then held without its final `/`
@@ -1318,7 +1399,70 @@ impl Pace {
     }
 }
 
+/// Conditional reads, for a blyg without change counters (contract 6):
+/// native sync's `api::conditional`, with the page doing the fetching.
+#[derive(Debug, Default)]
+pub(crate) struct Conditional {
+    /// Each path's last `200` and its ETag (blyg-core's own keeper).
+    pub(crate) kept: blyg_core::api::conditional::Validators,
+    /// When `GET /api/changes` last answered 404 (ms), if it did since it
+    /// last answered.
+    pub(crate) changes_gone_at: Option<f64>,
+    /// This refresh reads the whole reading list because its safety net is
+    /// due (not because its head moved, or it was never read).
+    pub(crate) reading_by_net: bool,
+}
+
+impl Conditional {
+    /// No change counters: lists are read conditionally.
+    pub(crate) fn validating(&self) -> bool {
+        self.changes_gone_at.is_some()
+    }
+
+    /// Whether to ask `GET /api/changes` again (native's `CHANGES_RECHECK`).
+    pub(crate) fn changes_due(&self, now_ms: f64) -> bool {
+        let recheck = CHANGES_RECHECK.as_millis() as f64;
+        self.changes_gone_at.is_none_or(|t| now_ms - t >= recheck)
+    }
+}
+
+/// Whether two answers for one list page hold the same rows: the same
+/// bytes, or the same `items` with only the cursor moved (a feed poll, a
+/// thumb: native's `Api::reading` reads a head the same way).
+fn same_rows(kept: &str, body: &str) -> bool {
+    if kept == body {
+        return true;
+    }
+    let items = |s: &str| {
+        serde_json::from_str::<Value>(s)
+            .ok()
+            .and_then(|v| v.get("items").cloned())
+            .filter(Value::is_array)
+    };
+    matches!((items(kept), items(body)), (Some(a), Some(b)) if a == b)
+}
+
 impl Burrow {
+    /// The plan without change counters (`changes_plan`'s `validating`):
+    /// every list, each read conditionally; a held reading list only by
+    /// its head until its safety net is due (only while `visible`).
+    fn validating_plan(&mut self, visible: bool, now_ms: f64) -> Value {
+        let mut out = serde_json::Map::new();
+        for (list, _) in LISTS {
+            out.insert(list.to_string(), json!(true));
+        }
+        let held = self.reading_seen.at_ms > 0.0;
+        let net_due = visible && now_ms - self.reading_seen.at_ms >= self.net_every_ms("reading");
+        self.cond.reading_by_net = held && net_due;
+        if held && !net_due {
+            out.insert("reading".into(), json!("head"));
+        }
+        out.insert("every".into(), json!(Pace::every(false)));
+        out.insert("rev".into(), Value::Null);
+        out.insert("validating".into(), json!(true));
+        Value::Object(out)
+    }
+
     /// How long `list`'s safety net waits after its last whole read (ms).
     fn net_every_ms(&self, list: &str) -> f64 {
         self.nets

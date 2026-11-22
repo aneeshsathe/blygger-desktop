@@ -686,7 +686,7 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
     assert!(net.contains("mode: 'same-origin'"));
     // Its early reads go through the same guard, and only GETs are taken.
     assert!(net.contains("if (apiPath(path) && !early.has(path))"));
-    assert!(net.contains("const e = method === 'GET' ? early.get(path) : undefined;"));
+    assert!(net.contains("const e = method === 'GET' && !etag ? early.get(path) : undefined;"));
     assert_eq!(
         net.matches(" fetch(").count(),
         1,
@@ -1006,8 +1006,8 @@ fn a_refresh_reads_only_what_changed() {
     assert_eq!(plan(&mut b, 200, &changes("e1", 5, 8), soon), (false, true));
     // A new epoch (the database was restored): everything.
     assert_eq!(plan(&mut b, 200, &changes("e2", 5, 7), soon), (true, true));
-    // No usable answer: everything, as before /api/changes.
-    assert_eq!(plan(&mut b, 404, "", soon), (true, true));
+    // No usable answer: everything, as before /api/changes. (No route at
+    // all, contract 6, reads conditionally: `studio69_tests.rs`.)
     assert_eq!(plan(&mut b, 200, "{", soon), (true, true));
     // And everything now and then, as the native sync's safety net.
     let later = NOW + blyg_core::sync::FULL_PULL_EVERY.as_millis() as f64;

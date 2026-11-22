@@ -3,7 +3,13 @@
 //! `fetch` (same origin, the Studio session cookie, nothing else) and hands
 //! the status and body back here.
 //!
-//! The rules are blyg-core's (`blyg_core::api`, contract 5): resources are
+//! The page's own address says where the API is: served at
+//! `{mount}/burrow/`, it asks `{mount}/api` ([`mount_of`], [`api_url`]).
+//! Studio 0.65 dropped the host-root `/api` alias, so a path-mounted blyg
+//! answers nothing at `/api`. Paths here are mount-relative (`/api/…`);
+//! the page puts the mount in front.
+//!
+//! The rules are blyg-core's (`blyg_core::api`, contracts 5 and 6): resources are
 //! camelCase (`WireItem`, `imported_row`), lists are cursor pages
 //! (`CursorPage`) read from the first page to `nextCursor: null`, and a
 //! 409 `cursor-expired` drops what was read and starts the list again, at
@@ -12,7 +18,9 @@
 //! are `{code, message, details}`.
 
 use blyg_core::api::wire::{CursorPage, WireItem, kind_str};
-use blyg_core::api::{CONTRACT_MAJOR, CURSOR_RESTARTS, Contract, contract};
+use blyg_core::api::{
+    CONTRACT_MAJOR, CONTRACT_MAJOR_NEWEST, CURSOR_RESTARTS, Contract, contract,
+};
 use blyg_core::{Kind, RemoteRef};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -199,12 +207,11 @@ pub fn detect(status: u16, body: &str, www_authenticate: bool) -> Mode {
                 },
                 Contract::TooOld => Mode::Unsupported {
                     why: format!(
-                        "This blyg speaks API contract {cv}; Burrow needs {CONTRACT_MAJOR}.x. Update the blyg."
+                        "This blyg speaks API contract {cv}; Burrow needs \
+                         {CONTRACT_MAJOR}.x or {CONTRACT_MAJOR_NEWEST}.x. Update the blyg."
                     ),
                 },
-                Contract::TooNew(v) => Mode::Unsupported {
-                    why: format!("This blyg speaks API contract {v}, newer than Burrow knows."),
-                },
+                Contract::TooNew(v) => newer_contract(&v),
             },
             None => Mode::Demo,
         },
@@ -220,6 +227,35 @@ pub fn detect(status: u16, body: &str, www_authenticate: bool) -> Mode {
         }
         Err(_) => Mode::Demo,
     }
+}
+
+/// A blyg on a contract newer than Burrow knows: refused for now. This is
+/// the one place that decides it, so the "newer contract: keep syncing,
+/// never prune" mode native 0.28.0 is adding lands here (with what a
+/// `Mode::Live` on it then allows).
+fn newer_contract(v: &str) -> Mode {
+    Mode::Unsupported {
+        why: format!("This blyg speaks API contract {v}, newer than Burrow knows."),
+    }
+}
+
+/// The blyg's mount, from the page's own path: what comes before the last
+/// `/burrow/` (`/notes/burrow/` → `/notes`), empty at the host root and
+/// on any page not served as Burrow. `www/net.js` has the same rule (it
+/// runs before the WebAssembly), and `live.js` checks the two agree.
+pub fn mount_of(pathname: &str) -> &str {
+    pathname.rfind("/burrow/").map_or("", |i| &pathname[..i])
+}
+
+/// Where the page asks for the mount-relative `path` (`/api/…`): under the
+/// mount, never the host root.
+pub fn api_url(pathname: &str, path: &str) -> String {
+    format!("{}{path}", mount_of(pathname))
+}
+
+/// The blyg's own address: `origin` and the mount, without a final `/`.
+pub fn site_base(origin: &str, pathname: &str) -> String {
+    format!("{}{}", origin.trim_end_matches('/'), mount_of(pathname))
 }
 
 /// Percent-encode one path segment (blyg-core's `enc`).

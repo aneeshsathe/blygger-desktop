@@ -31,13 +31,16 @@ pub const KEEP_BODY_MAX: usize = 8 * 1024 * 1024;
 
 /// One URL's last `200`: its validator and its body.
 #[derive(Debug, Clone)]
-pub(crate) struct Kept {
+pub struct Kept {
     pub etag: String,
     pub body: Arc<String>,
 }
 
+/// Each URL's last `200`, the least recently used dropped past
+/// [`KEEP_BYTES`]: an [`Api`](super::Api)'s, and Burrow in a browser's
+/// (`crates/blyg-web/src/live.rs`, whose page does the fetching).
 #[derive(Debug, Default)]
-pub(crate) struct Validators {
+pub struct Validators {
     map: HashMap<String, (Kept, u64)>,
     bytes: usize,
     tick: u64,

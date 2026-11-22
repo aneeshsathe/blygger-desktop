@@ -5,9 +5,10 @@
 //
 // index.html loads this module first, before the app and its WebAssembly,
 // so the reads every live start makes go out at once instead of one after
-// another once the wasm is running: the capabilities and settings, the
-// change counters and, on a first start (nothing held in this browser yet),
-// the first page of each list. `call` hands each early answer to the first
+// another once the wasm is running: the capabilities and settings and, on a
+// first start (nothing held in this browser yet), the first page of each
+// list. (Contract 6 has no `/api/changes`: lists are read conditionally,
+// `If-None-Match` and a bodyless 304, src/live.rs `cond_answer`.) `call` hands each early answer to the first
 // request for exactly that path, once, within a few seconds; the first
 // refresh drops whatever is left (live.js `refresh`). Nothing here imports
 // anything, so it runs as soon as it arrives.
@@ -16,20 +17,30 @@ const API = '/api/';
 
 /** The blyg's mount: the app is served at {mount}/burrow/, the owner API at
     {mount}/api and the Studio at {mount}/studio. Empty for a blyg at the
-    host root. Paths here (and from the Rust) are mount-relative `/api/…`. */
-export const MOUNT = (() => {
-  const p = location.pathname;
+    host root. Paths here (and from the Rust) are mount-relative `/api/…`;
+    there is no host-root /api on a path-mounted blyg (studio 0.65). The
+    rule is src/api.rs `mount_of`, copied because this runs before the
+    WebAssembly; live.js checks the two agree. */
+function mountOf(p) {
   const i = p.lastIndexOf('/burrow/');
-  return i > 0 ? p.slice(0, i) : '';
-})();
+  return i >= 0 ? p.slice(0, i) : '';
+}
+export const MOUNT = mountOf(location.pathname);
+/** The blyg's own address (origin and mount): the base its links are built
+    on when its settings name no siteUrl. */
+export const SITE = location.origin + MOUNT;
 
 /** Whether `path` is a same-origin owner-API path (and nothing else). */
 export function apiPath(path) {
   return typeof path === 'string' && path.startsWith(API) && !/\/\.\.?(\/|$)|\\|\/\/|^[a-z]+:/i.test(path);
 }
 
-async function send(method, path, body) {
+async function send(method, path, body, etag) {
   const headers = { accept: 'application/json' };
+  // A conditional read: a 304 comes back bodyless, and the Rust hands back
+  // the body it kept (`cond_answer`). `no-store` keeps the browser's own
+  // cache out of it, so the 304 reaches the page as it came.
+  if (etag) headers['if-none-match'] = etag;
   // --- web-writing --- A FormData body (an image upload) goes as multipart.
   const form = typeof FormData !== 'undefined' && body instanceof FormData;
   // --- end web-writing ---
@@ -39,9 +50,9 @@ async function send(method, path, body) {
       method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', mode: 'same-origin',
       body: form ? body : body !== undefined && body !== null ? JSON.stringify(body) : undefined,
     });
-    return { status: res.status, body: await res.text(), retryAfter: res.headers.get('retry-after') ?? undefined, www: res.headers.has('www-authenticate') };
+    return { status: res.status, body: await res.text(), retryAfter: res.headers.get('retry-after') ?? undefined, www: res.headers.has('www-authenticate'), etag: res.headers.get('etag') ?? '' };
   } catch {
-    return { status: 0, body: '', retryAfter: undefined, www: false };
+    return { status: 0, body: '', retryAfter: undefined, www: false, etag: '' };
   }
 }
 
@@ -72,19 +83,19 @@ export const HELD = 'live-held';
 if (/^https?:$/.test(location.protocol) && location.pathname.lastIndexOf('/burrow/') >= 0) {
   prefetch('/api/capabilities');
   prefetch('/api/settings');
-  prefetch('/api/changes');
   let held = false;
   try { held = localStorage.getItem(`burrow-web.${HELD}`) === '1'; } catch { /* no storage: read them */ }
   if (!held) for (const p of FIRST_PAGES) prefetch(p);
 }
 
-/** One owner-API request. Never throws: no answer is status 0. */
-export async function call(method, path, body) {
+/** One owner-API request. Never throws: no answer is status 0. `etag`
+    (a GET's) asks conditionally. */
+export async function call(method, path, body, etag) {
   if (!apiPath(path)) throw new Error('Burrow only talks to this blyg’s own /api/');
-  const e = method === 'GET' ? early.get(path) : undefined;
+  const e = method === 'GET' && !etag ? early.get(path) : undefined;
   if (e) {
     early.delete(path);
     if (Date.now() - e.at < EARLY_MS) return e.answer;
   }
-  return send(method, path, body);
+  return send(method, path, body, method === 'GET' ? etag : undefined);
 }

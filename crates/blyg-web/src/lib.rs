@@ -37,6 +37,7 @@ pub mod store;
 pub mod theme;
 // --- web-reading ---
 pub mod web_reading;
+pub mod web_feed; // --- reader order --- (studio 0.68: Feed, Raw, Agentic, Saved)
 // --- end web-reading ---
 // --- reader view / changelog --- the author's site, changelog display.
 pub mod web_changelog;
@@ -327,6 +328,10 @@ pub struct Burrow {
     pace: live::Pace,
     /// Live: each list's safety net (`live::Net`). Not persisted.
     nets: std::collections::BTreeMap<String, live::Net>,
+    /// Live: conditional reads (contract 6, no `GET /api/changes`): each
+    /// path's last body and ETag, and whether the counters are gone.
+    /// Not persisted: a load asks its first refresh unconditionally.
+    cond: live::Conditional,
     /// Each reading row's stream excerpt, by key, for the version it was
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
@@ -397,6 +402,7 @@ impl Burrow {
             side_seen: Default::default(),
             pace: Default::default(),
             nets: Default::default(),
+            cond: Default::default(),
             excerpts: Default::default(),
             placed: Default::default(),
             // --- web-reading ---

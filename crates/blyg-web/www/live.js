@@ -14,9 +14,9 @@
 
 import { Burrow, Pager } from './pkg/blyg_web.js';
 import { $, S, esc, now, load, persist, persistReading, toast, pref } from './core.js';
-import { MOUNT, apiPath, call, dropEarly, HELD } from './net.js';
+import { MOUNT, SITE, apiPath, call, dropEarly, HELD } from './net.js';
 
-export { MOUNT, apiPath, call };
+export { MOUNT, SITE, apiPath, call };
 
 // The sign-in link follows the mount too.
 for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
@@ -26,6 +26,11 @@ for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
 /** What this origin is: `{mode: live|signin|unsupported|demo|offline}`. */
 export async function detect() {
   if (!/^https?:$/.test(location.protocol)) return { mode: 'demo' };
+  // net.js worked the mount out before the WebAssembly was here; the Rust
+  // has the rule (src/api.rs `mount_of`). Never guess another /api.
+  if (Burrow.mount_of(location.pathname) !== MOUNT) {
+    return { mode: 'unsupported', why: 'Burrow can’t tell where this blyg’s API is from this page’s address.' };
+  }
   const r = await call('GET', '/api/capabilities');
   // Kept for `start`, so the shelf's and the parity screens' capability
   // checks don't read it a second time.
@@ -34,21 +39,51 @@ export async function detect() {
 }
 let detected;
 
+/** `GET path`, conditionally once it was read before: a 304 comes back as
+    the body last read (src/live.rs `cond_answer`), never as an empty
+    list. `same`: the page's rows are as last read. */
+async function getCond(path) {
+  let r = await call('GET', path, undefined, S.B.cond_etag(path));
+  let a = JSON.parse(S.B.cond_answer(path, r.status, r.body, r.etag));
+  if (a.again) {
+    r = await call('GET', path);
+    a = JSON.parse(S.B.cond_answer(path, r.status, r.body, r.etag));
+  }
+  return { status: a.status ?? r.status, body: a.body ?? r.body, retryAfter: r.retryAfter, same: !!a.same };
+}
+
 /** A whole cursor-paged list (restarted on cursor-expired, never partial).
     A failure carries the answer's status and Retry-After, for the backoff.
     `first`, when given, gets the first page's items (JSON) as soon as it's
-    in, while the rest is read. */
+    in, while the rest is read. `same`: every page was as last read, so
+    there's nothing to install. */
 async function readAll(path, query = '', limit = 100, first) {
   const p = new Pager(path, query, limit);
   try {
     let pages = 0;
+    let same = true;
     for (let next = p.next_path(); next !== undefined; next = p.next_path()) {
-      const r = await call('GET', next);
+      const r = await getCond(next);
+      same &&= r.same;
       const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
       if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
       if (first && !pages++ && p.next_path() !== undefined) first(p.so_far());
     }
-    return { json: p.items() };
+    return { json: p.items(), same };
+  } finally { p.free(); }
+}
+
+/** Contract 6, a held reading list: whether its first page moved (src/live.rs
+    `changes_plan`, `reading: 'head'`). A 304, or rows as they were, says
+    nothing came in; a deeper change waits for the safety net. */
+async function headMoved(path) {
+  const p = new Pager(path, '', 100);
+  try {
+    const first = p.next_path();
+    const r = await getCond(first);
+    const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
+    if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
+    return { moved: !r.same };
   } finally { p.free(); }
 }
 
@@ -63,10 +98,10 @@ export function loadSaved() {
 
 /** Open the live store (as last persisted, for offline) on this blyg. */
 export async function start(online) {
-  let base = location.origin;
+  let base = SITE;
   if (online) {
     const st = await call('GET', '/api/settings');
-    if (st.status === 200) base = Burrow.public_base(st.body, location.origin);
+    if (st.status === 200) base = Burrow.public_base(st.body, SITE);
     // --- web-writing --- The settings, for the publish sheet's AI offer.
     if (st.status === 200) S.wSettings = st.body;
     // --- end web-writing ---
@@ -86,12 +121,15 @@ export async function start(online) {
 
 // ---------------------------------------------------------------- refresh
 // How updates arrive (docs/SPEC.md, "Burrow on the web"): while the tab is
-// visible and online, a `GET /api/changes` every 15 s (Studio's cadence),
-// which costs one small request when nothing moved; a list is read again
-// only when its counters moved. Hidden, it waits; shown again, it checks at
-// once. A 429 waits its Retry-After and a 5xx backs off (src/live.rs `Pace`).
-// Each list's safety net (read whole anyway after 10 min, doubling to 2 h
-// while that finds nothing, src/live.rs `Net`) runs only while visible.
+// visible and online, a check every 15 s with `GET /api/changes` (Studio's
+// cadence; a list is read again only when its counters moved), or, on a
+// blyg without it (contract 6), every 60 s by conditional reads: every list
+// asked with `If-None-Match`, a 304 for each that didn't change, and the
+// reading list only by its first page until its safety net is due. Hidden,
+// it waits; shown again, it checks at once. A 429 waits its Retry-After and
+// a 5xx backs off (src/live.rs `Pace`). Each list's safety net (read whole
+// anyway after 10 min, doubling to 2 h while that finds nothing, src/live.rs
+// `Net`) runs only while visible.
 let refreshing = null; // the run in progress
 let refreshAgain = false; // a call came in during it: one more run after
 let pollT = 0;
@@ -127,7 +165,10 @@ async function refreshOnce() {
   // (net.js) predates what it sends, so it goes.
   if (JSON.parse(S.B.outbox_next('[]'))) { dropEarly(); await flush(); }
   if (S.B.is_offline()) return;
-  const ch = await call('GET', '/api/changes');
+  // Contract 6 has no /api/changes: once it answered 404 it isn't asked
+  // again for a while (src/live.rs `changes_due`), and the plan is made as
+  // if it had answered 404 again.
+  const ch = S.B.changes_due(now()) ? await call('GET', '/api/changes') : { status: 404, body: '', retryAfter: undefined };
   const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, ch.retryAfter, document.visibilityState === 'visible', now()));
   if (plan.error) { problem(plan.error); return; }
   if (plan.wait) { hold(plan.wait); return; }
@@ -146,12 +187,20 @@ async function refreshOnce() {
   if (plan.items) {
     jobs.push(readAll('/api/items').then((items) => {
       if (items.error) { fail(items); return; }
-      S.B.live_items(items.json);
+      // Every page a 304 (or as it was): nothing to install or draw.
+      if (!(plan.validating && items.same)) { S.B.live_items(items.json); drawn(); }
       S.B.changes_accept('items', rev, now(), items.json);
-      drawn();
     }));
   }
-  if (plan.reading) {
+  // Contract 6, a held reading list: only its head, unless it moved.
+  let readWhole = plan.reading === true;
+  let headMovedNow = false; // the head just read moved: install whatever the pages say
+  if (plan.reading === 'head') {
+    const head = await headMoved('/api/reading/imported');
+    if (head.error && head.error.code !== 'not-found') fail(head);
+    else readWhole = headMovedNow = !!head.moved;
+  }
+  if (readWhole) {
     // A first start (nothing held yet) draws the first page at once, in
     // the list's order, and puts the rest in behind it.
     const empty = S.B.reading_held() === 0;
@@ -161,6 +210,11 @@ async function refreshOnce() {
     } : undefined).then(async (rows) => {
       const hops = await hopsP;
       if (!rows.error || rows.error.code === 'not-found') {
+        if (plan.validating && rows.same && hops.same && !headMovedNow) {
+          // Every page as it was: nothing to install.
+          S.B.changes_accept('reading', rev, now(), rows.json + hops.json);
+          return;
+        }
         S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
         // Each row carries its hoppers and thumb: those are settled too.
         // (What was fetched paces the list's safety net, `fetched` in
