@@ -124,14 +124,17 @@ impl Stream {
 }
 
 /// A post's blocks from its Markdown; an item held only as HTML (some
-/// feeds) shows its text as paragraphs.
-fn post_blocks(r: &ReadingItem) -> Vec<Block> {
+/// feeds) shows its text as paragraphs. A formula reads as text
+/// ([`formulas_as_text`]).
+pub(crate) fn post_blocks(r: &ReadingItem) -> Vec<Block> {
     let kind = match r.kind {
         Kind::Thread => blyg_render::Kind::Thread,
         Kind::Fragment => blyg_render::Kind::Fragment,
     };
     if !r.content_md.trim().is_empty() {
-        return blyg_render::native_blocks(&r.content_md, kind);
+        let mut blocks = blyg_render::native_blocks(&r.content_md, kind);
+        formulas_as_text(&mut blocks);
+        return blocks;
     }
     html_paragraphs(&r.content_html)
         .into_iter()
@@ -142,6 +145,36 @@ fn post_blocks(r: &ReadingItem) -> Vec<Block> {
             }])
         })
         .collect()
+}
+
+/// --- ux 0.28 --- The native blocks give a formula as its TeX in code
+/// (`$e^{i\pi}$`, `$$…$$`, `blyg_render::math::written`): in a card that
+/// reads as markup. Each becomes its text (`maths_text::tex_text`), in
+/// italics as a formula is set; a code span the author wrote stays code.
+fn formulas_as_text(blocks: &mut [Block]) {
+    fn spans(s: &mut [Span]) {
+        for s in s.iter_mut().filter(|s| s.code) {
+            let t = s.text.as_str();
+            let tex = t
+                .strip_prefix("$$")
+                .and_then(|t| t.strip_suffix("$$"))
+                .or_else(|| t.strip_prefix('$').and_then(|t| t.strip_suffix('$')))
+                .filter(|tex| !tex.trim().is_empty());
+            if let Some(tex) = tex {
+                s.text = super::maths_text::tex_text(tex);
+                s.code = false;
+                s.em = true;
+            }
+        }
+    }
+    for b in blocks {
+        match b {
+            Block::Para(s) | Block::Heading(_, s) => spans(s),
+            Block::Quote(inner) => formulas_as_text(inner),
+            Block::List { items, .. } => items.iter_mut().for_each(|i| formulas_as_text(i)),
+            _ => {}
+        }
+    }
 }
 
 /// Paragraph texts of an HTML fragment (block tags split, the rest dropped).

@@ -194,6 +194,13 @@ mod app {
     /// the studio's words, in the same order.
     #[gpui_kit::test]
     fn the_reader_order_has_one_name(cx: &mut TestAppContext) {
+        for o in blyg_core::order::ReaderOrder::ALL {
+            assert_eq!(
+                super::super::feed::order_label(o),
+                o.label(),
+                "the studio's words"
+            );
+        }
         let (view, _, cx) = setup(cx);
         view.update_in(cx, |v, window, cx| v.show_view(View::Reading, window, cx));
         settle(cx);
@@ -232,10 +239,10 @@ mod app {
         let ed = cx
             .debug_bounds("agentic-edition")
             .expect("the edition is drawn");
-        let panes = cx.debug_bounds("reader-panes").expect("the panes");
+        let window = cx.update(|window, _| window.viewport_size());
         assert!(
-            ed.size.width.as_f32() > panes.size.width.as_f32() * 0.5,
-            "the edition is wider than the list column: {ed:?} in {panes:?}"
+            ed.size.width.as_f32() > window.width.as_f32() * 0.5,
+            "the edition is wider than the list column: {ed:?} in {window:?}"
         );
         assert!(
             cx.debug_bounds("reader-list-pane").is_none(),
@@ -246,6 +253,10 @@ mod app {
         settle(cx);
         assert!(view.read_with(cx, |v, _| v.reading.opened.is_some()));
         assert!(cx.debug_bounds("agentic-edition").is_some());
+        assert!(
+            cx.debug_bounds("reader-list-pane").is_some(),
+            "the edition in the list column, beside the post"
+        );
         // esc puts the edition back across the pane.
         keys(cx, "escape");
         settle(cx);
@@ -253,6 +264,7 @@ mod app {
             assert!(v.reading.opened.is_none());
             assert_eq!(v.reading.view, View::Reading, "still Reading");
         });
+        assert!(cx.debug_bounds("reader-list-pane").is_none());
     }
 
     /// User testing: a locked Background rule (a sign-in that can't place)

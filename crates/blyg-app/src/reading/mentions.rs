@@ -91,7 +91,11 @@ impl MainView {
     }
 
     fn mentions_hint(&self) -> String {
-        format!("who responded to your posts · {MENTION_KEYS} · esc back")
+        // Spelled as this platform's keys are (`keymap::hint`).
+        format!(
+            "who responded to your posts · {} · esc back",
+            crate::keymap::hint(MENTION_KEYS)
+        )
     }
 
     /// The rows in the order they're drawn (each post's responses, then
@@ -104,7 +108,9 @@ impl MainView {
     }
 
     /// Responses' keys (the Received side): j/k or ↓/↑ move the row cursor,
-    /// h hides or unhides, r replies, o or ⏎ opens the response (↗).
+    /// h hides or unhides, r replies, ⏎ opens the response's post in the
+    /// reader (as a click on who responded does), o its page in the
+    /// default browser.
     /// Returns whether the key was taken.
     pub(super) fn mentions_key(
         &mut self,
@@ -171,6 +177,10 @@ impl MainView {
                                 cx,
                             ),
                         }
+                    }
+                    "enter" => {
+                        let (source, post) = (row.source.clone(), row.post.clone());
+                        self.open_mention(source, post, window, cx);
                     }
                     _ => cx.open_url(&row.source),
                 }
@@ -339,10 +349,13 @@ impl MainView {
                                                     .truncate()
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .child(format!("On “{title}”"))
-                                                    // Your post, in Posts.
+                                                    // Your post, in Posts: a link,
+                                                    // and looks it on hover.
                                                     .when_some(id.clone(), |d, id| {
                                                         d.cursor_pointer()
-                                                            .hover(|s| s.text_color(p.accent))
+                                                            .hover(|s| {
+                                                                s.text_color(p.accent).underline()
+                                                            })
                                                             .on_click(cx.listener(
                                                                 move |this, _, window, cx| {
                                                                     this.open_mentioned_post(
@@ -569,8 +582,9 @@ const LINKED_FROM: &str = "Linked from";
 const NOTICES: &str = "only you see these";
 
 /// The row keys, as the header shows them (the reading list's letters:
-/// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides).
-const MENTION_KEYS: &str = "j/k move · h hide · r reply · o open ↗";
+/// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides). ⏎ opens in Burrow,
+/// as a click on who responded does; o is the default browser.
+const MENTION_KEYS: &str = "j/k move · ⏎ open · o open in browser ↗ · h hide · r reply";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).

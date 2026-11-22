@@ -833,6 +833,7 @@ impl MainView {
             && !self.reading.feed_waiting(); // --- reader order ---
         let list = div()
             .id("reader-list-pane")
+            .debug_selector(|| "reader-list-pane".into())
             .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
             .flex_none()
             .h_full()
@@ -845,7 +846,9 @@ impl MainView {
             )
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
-            .when(agentic, |d| d.child(self.render_agentic_edition(cx)))
+            .when(agentic && self.reading.opened.is_some(), |d| {
+                d.child(self.render_agentic_edition(false, cx))
+            })
             .when(held == 0 && !agentic, |d| {
                 d.child(self.empty_note(crate::keymap::hint(
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
@@ -906,12 +909,22 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
-            // --- reader folders --- sources | list | post.
-            .child(self.render_three_panes(
-                list.into_any_element(),
-                self.render_reading_detail(body_font, cx),
-                cx,
-            ))
+            // --- reader folders --- sources | list | post. --- ux 0.28 ---
+            // The Agentic feed's edition is a page, as the studio's: with no
+            // post open it takes the reading pane, and no list column.
+            .child(if agentic && self.reading.opened.is_none() {
+                self.render_three_panes(
+                    div().into_any_element(),
+                    self.render_agentic_edition(true, cx),
+                    cx,
+                )
+            } else {
+                self.render_three_panes(
+                    list.into_any_element(),
+                    self.render_reading_detail(body_font, cx),
+                    cx,
+                )
+            })
             .children(self.render_compose_bar(cx)) // --- reading compose ---
             .into_any_element()
     }
