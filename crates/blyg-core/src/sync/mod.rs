@@ -500,9 +500,9 @@ impl Engine {
 
     /// Whether this pull may read `list`: not while it sits out pulls after
     /// changing under walk after walk (`churn`). Ask only when the list
-    /// would otherwise be read.
-    fn churn_due(&self, list: &'static str) -> bool {
-        self.state().churn.entry(list).or_default().due()
+    /// would otherwise be read. `asked`: a pull the user asked for.
+    fn churn_due(&self, list: &'static str, asked: bool) -> bool {
+        self.state().churn.entry(list).or_default().due(asked)
     }
 
     /// `list` was read to its end.
@@ -1519,7 +1519,7 @@ impl Engine {
         // the whole reading list again (issue #71).
         if let Some(walked) = &read.walked_whole {
             self.accept(walked, "signals", SIGNALS_DEPS)?;
-        } else if stale("signals", SIGNALS_DEPS) && self.churn_due("signals") {
+        } else if stale("signals", SIGNALS_DEPS) && self.churn_due("signals", !background) {
             match self.fetch_signals() {
                 Ok(changed) => {
                     surprise |= changed && forced("signals", SIGNALS_DEPS);
@@ -1532,7 +1532,7 @@ impl Engine {
         }
         // --- hoppers --- the hoppers and every membership (yours too), for
         // the sources pane; the rows' `hoppers` follow what's held here.
-        if stale("hoppers", HOPPERS_DEPS) && self.churn_due("hoppers") {
+        if stale("hoppers", HOPPERS_DEPS) && self.churn_due("hoppers", !background) {
             match self.fetch_hoppers() {
                 Ok(changed) => {
                     surprise |= changed && forced("hoppers", HOPPERS_DEPS);
@@ -1551,7 +1551,7 @@ impl Engine {
         if self.background_due(
             stale("background", background::BACKGROUND_DEPS),
             full || gap_open,
-        ) && self.churn_due("background")
+        ) && self.churn_due("background", !background)
         {
             match self.fetch_background() {
                 Ok(changed) => {
@@ -1566,7 +1566,8 @@ impl Engine {
         // --- shelf sync --- read when its counter moved, sent when it
         // changed here (sync/shelf.rs). A blyg without it: nothing.
         if self.shelf_served()
-            && ((stale("shelf", SHELF_DEPS) && self.churn_due("shelf")) || self.shelf_unsent())
+            && ((stale("shelf", SHELF_DEPS) && self.churn_due("shelf", !background))
+                || self.shelf_unsent())
         {
             match self.sync_shelf() {
                 Ok(changed) => {
@@ -1584,7 +1585,7 @@ impl Engine {
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
         // the blyg's database only), asked again when your items or your
         // reading moved. A refused or failed read leaves what's held.
-        if stale("freshness", upkeep::FRESHNESS_DEPS) && self.churn_due("freshness") {
+        if stale("freshness", upkeep::FRESHNESS_DEPS) && self.churn_due("freshness", !background) {
             match self.fetch_freshness() {
                 Ok(Some((_, changed))) => {
                     self.churn_read("freshness");

@@ -29,8 +29,12 @@ pub(crate) struct Churn {
 impl Churn {
     /// Whether this pull may read the list. A pull that may not counts down
     /// the sit-out, so ask only when the list would otherwise be read.
-    pub(crate) fn due(&mut self) -> bool {
-        if self.skip > 0 {
+    /// `asked`: a pull the user asked for (Sync now) reads it all the same,
+    /// and what it finds counts like any other try.
+    pub(crate) fn due(&mut self, asked: bool) -> bool {
+        if asked {
+            true
+        } else if self.skip > 0 {
             self.skip -= 1;
             false
         } else {
@@ -59,20 +63,27 @@ impl Churn {
     }
 }
 
-/// What to say, once a session, when `list` starts sitting pulls out.
+/// What to say, once a session, when `list` starts sitting pulls out:
+/// which list, and what that means for it until it settles.
 pub(crate) fn message(list: &str) -> String {
-    let what = match list {
-        "background" => "the Background list",
-        "hoppers" => "your hoppers",
-        "signals" => "your thumbs",
-        "shelf" => "the Shelf",
-        _ => "a list",
+    let (what, meanwhile) = match list {
+        "background" => (
+            "the Background list",
+            "new posts may show in the Feed rather than Background",
+        ),
+        "hoppers" => ("your hoppers", "your hoppers show what they held before"),
+        "signals" => ("your thumbs", "your thumbs show as they were"),
+        "shelf" => ("Saved", "Saved shows what it held before"),
+        "freshness" => (
+            "your threads' quotes",
+            "stale quotes are marked as they were",
+        ),
+        _ => ("a list", "it shows what it held before"),
     };
     format!(
         "Your blyg kept changing while Burrow read {what} (a subscription is \
          probably still importing posts). Burrow keeps what it has and reads it \
-         again in a few minutes; until then new posts may show in the Feed \
-         rather than Background."
+         again later; until then {meanwhile}."
     )
 }
 
@@ -86,7 +97,7 @@ mod tests {
         let mut c = Churn::default();
         (0..n)
             .filter(|_| {
-                let due = c.due();
+                let due = c.due(false);
                 if due {
                     c.expired();
                 }
@@ -100,7 +111,7 @@ mod tests {
         let mut c = Churn::default();
         for _ in 1..STREAK {
             assert!(!c.expired());
-            assert!(c.due(), "read again next pull");
+            assert!(c.due(false), "read again next pull");
         }
     }
 
@@ -124,18 +135,18 @@ mod tests {
     fn a_read_to_the_end_puts_it_back_to_every_pull() {
         let mut c = Churn::default();
         for _ in 0..STREAK + 2 {
-            while !c.due() {}
+            while !c.due(false) {}
             c.expired();
         }
         c.read();
-        assert!(c.due());
+        assert!(c.due(false));
         for _ in 1..STREAK {
             c.expired();
-            assert!(c.due(), "a fresh streak");
+            assert!(c.due(false), "a fresh streak");
         }
         c.expired();
-        assert!(!c.due(), "then one pull out, not where it left off");
-        assert!(c.due());
+        assert!(!c.due(false), "then one pull out, not where it left off");
+        assert!(c.due(false));
     }
 
     #[test]
