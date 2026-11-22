@@ -1512,6 +1512,12 @@ pub trait Backend: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Local: this blyg's dictionary edits waiting to be sent
+    /// (`crate::dictionary::Pending`).
+    fn dictionary_pending(&self) -> Result<crate::dictionary::Pending> {
+        Ok(crate::dictionary::Pending::default())
+    }
+
     /// Local: record `word` as taught (`true`) or forget it.
     fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
         let _ = (word, taught);

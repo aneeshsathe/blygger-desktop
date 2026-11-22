@@ -57,7 +57,9 @@ pub const READ_ONLY_NOTE: &str = "This sign-in can read your blyg's dictionary b
 /// unlearns them ([`unlearn_all`]).
 fn settle(backend: &Arc<dyn Backend>, d: &Dictionary) -> Vec<String> {
     let taught = backend.dictionary_taught().unwrap_or_default();
-    let gone = blyg_core::dictionary::left(&taught, d);
+    // A word whose send is still waiting hasn't left.
+    let queued = backend.dictionary_pending().unwrap_or_default();
+    let gone = blyg_core::dictionary::left(&taught, d, &queued);
     for w in &gone {
         let _ = backend.dictionary_teach(w, false);
     }

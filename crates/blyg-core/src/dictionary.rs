@@ -322,10 +322,13 @@ impl Taught {
     }
 }
 
-/// The taught words that have left the owner's words: the ones to unlearn
-/// on this computer (and forget).
-pub fn left(taught: &[String], d: &Dictionary) -> Vec<String> {
-    let owner: HashSet<&str> = d.owner_words().iter().map(String::as_str).collect();
+/// The taught words that have left the owner's words, counting `queued`
+/// (this blyg's edits not sent yet) as done: the ones to unlearn on this
+/// computer (and forget). A word queued as an add is still on its way, so
+/// it stays; one queued to be taken out has left.
+pub fn left(taught: &[String], d: &Dictionary, queued: &Pending) -> Vec<String> {
+    let owner = queued.apply(d.owner_words());
+    let owner: HashSet<&str> = owner.iter().map(String::as_str).collect();
     taught
         .iter()
         .filter(|w| !owner.contains(w.as_str()))
