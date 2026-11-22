@@ -8,8 +8,8 @@
 //! saves stay instant while a push is in flight.
 
 mod background; // --- background --- the studio's Background lens and choices
-pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
 mod churn; // a list that changes under every walk sits pulls out
+pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
