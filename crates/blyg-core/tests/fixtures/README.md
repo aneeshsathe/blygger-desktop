@@ -41,3 +41,9 @@ git -C <studio checkout> show v0.61.0:openapi.json > /tmp/baseline.json
 BLYG_BASELINE_CONTRACT=/tmp/baseline.json BLYG_BASELINE_STUDIO=0.61.0 \
   cargo test -p blyg-core --test it contract_coverage::regenerate_baseline -- --ignored
 ```
+
+`feeds/` is blygger-spec's pace-layered order fixtures (`conformance/feeds/`,
+RFC-3, decision #97), vendored verbatim from the spec commit pinned in
+`scripts/conformance/spec.sh`. blyg-core's `src/pace_tests.rs` runs them
+(`the_specs_feed_fixtures_give_their_expected_order`), and
+`scripts/feeds-conformance.sh` fails when the copy differs from the spec's.

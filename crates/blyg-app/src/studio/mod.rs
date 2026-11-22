@@ -544,7 +544,7 @@ fn prepare(backend: &dyn Backend, item: Option<&Item>, md: &str) -> (StoreResolv
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
     let resolver = if md.contains("[[") {
-        StoreResolver::snapshot(backend, &opts.mount)
+        StoreResolver::snapshot(backend, &opts.mount).publishing(opts.self_id.as_deref())
     } else {
         StoreResolver::empty(&opts.mount)
     };
@@ -562,7 +562,7 @@ fn prepare_lazy(
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
     let resolver = if md.contains("[[") {
-        StoreResolver::lazy(backend.clone(), &opts.mount)
+        StoreResolver::lazy(backend.clone(), &opts.mount).publishing(opts.self_id.as_deref())
     } else {
         StoreResolver::empty(&opts.mount)
     };

@@ -9,8 +9,8 @@ changes wait until the studio is updated, and Burrow says so once, with a status
 notice. On a newer contract sync goes on but removes nothing held here ("Contract
 guard" below). `docs/SERVER.md` has the
 details. **Synced to** blygger-studio v0.65.0 (contract 5.14.0; Burrow 0.27.0), whose
-rendering is 0.64.1's (`docs/RENDER.md`), and blygger-spec protocol 0.4 r15 (d248bc4,
-`scripts/reader-conformance.sh`). The floor stays `MIN_STUDIO` (0.49.12): every newer
+rendering is 0.64.1's (`docs/RENDER.md`), and blygger-spec protocol 0.4 r21 (fbc3f62,
+`docs/CONFORMANCE.md`). The floor stays `MIN_STUDIO` (0.49.12): every newer
 feature is asked for only when the blyg's capabilities or answers offer it. Goal: **zero
 friction between a thought and a published post.** The feel target is
 Notational Velocity: one window, type to search, ⏎ to create, nothing ever
