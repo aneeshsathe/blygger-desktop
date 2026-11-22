@@ -1146,6 +1146,13 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    /// The studio version (`blyg.json`'s generator) last seen, from the
+    /// update state or the contacts refresh, kept across launches: local,
+    /// instant. `None`: never known.
+    fn studio_version(&self) -> Option<String> {
+        self.studio_update().and_then(|u| u.current)
+    }
+
     /// Read the update state again if it's older than six hours (`force`:
     /// now). Network; call it off the UI thread.
     fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {

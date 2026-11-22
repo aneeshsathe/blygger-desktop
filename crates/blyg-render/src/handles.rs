@@ -173,11 +173,12 @@ fn candidates(token: &str) -> impl Iterator<Item = &str> {
 /// `consumeHandles`, with `contact` answering each handle (any case). Only
 /// `@` and the handle that names a contact become the link; the rest of the
 /// word stays the author's (`@lin's`, `@lin-driven`). With `natural` off
-/// (studio 0.56-0.65) only the whole token is looked up.
+/// (studio 0.56-0.65) only the whole token is looked up; it's asked only
+/// when the text has a handle.
 pub(crate) fn consume(
     md: &str,
     contact: &dyn Fn(&str) -> Option<HandleCard>,
-    natural: bool,
+    natural: &dyn Fn() -> bool,
 ) -> Consumed {
     let found = spots(md);
     if found.is_empty() {
@@ -186,6 +187,7 @@ pub(crate) fn consume(
             cards: Vec::new(),
         };
     }
+    let tries = if natural() { usize::MAX } else { 1 };
     let mut known: std::collections::HashMap<String, Option<HandleCard>> = Default::default();
     let mut lookup = |h: &str| {
         known
@@ -197,7 +199,6 @@ pub(crate) fn consume(
     let mut text = String::with_capacity(md.len() + 64);
     let mut last = 0;
     for (start, _, token) in found {
-        let tries = if natural { usize::MAX } else { 1 };
         let Some((handle, card)) = candidates(token)
             .take(tries)
             .find_map(|h| lookup(h).map(|c| (h, c)))
@@ -251,7 +252,7 @@ mod tests {
 
     #[test]
     fn known_handles_become_links_with_cards() {
-        let c = consume("Tea with @Lin and @sam, again @lin", &lin, true);
+        let c = consume("Tea with @Lin and @sam, again @lin", &lin, &|| true);
         assert_eq!(
             c.text,
             "Tea with [@Lin Okafor](https://lin.example.org/) and @sam, again [@Lin Okafor](https://lin.example.org/)"

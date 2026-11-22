@@ -66,6 +66,9 @@ impl Backend for Recording {
     fn rewrites_handles(&self) -> bool {
         self.inner.rewrites_handles()
     }
+    fn studio_version(&self) -> Option<String> {
+        self.inner.studio_version()
+    }
     fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.inner.reading_mentions()
     }

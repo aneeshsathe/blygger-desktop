@@ -9,7 +9,8 @@ section: Changed
   does; a possessive, hyphen or closing punctuation typed straight after the
   pick takes the space's place, and one undo takes it back to the pick. On
   Studio 0.56 to 0.65, which publish `@lin-driven` as plain text, the preview
-  and the pick work as before.
+  and the pick work as before, as they do until Burrow has seen which Studio
+  the blyg runs (it remembers that across launches).
 - **The `[[` / `![[` picker stays shut in a finished reference** (blygger-studio
   0.66). Retyping a bracket of a `[[id | label]]` or `![[id]]` that a `]]`
   already closes no longer opens the picker, and the picker closes once you

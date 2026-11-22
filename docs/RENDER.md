@@ -263,7 +263,9 @@ the link; the rest of the word stays. Studio 0.56–0.65 publish only a
 whole-token handle, so the fallback runs only when
 `Resolver::natural_handles` says so: the app's resolver asks
 `blyg_core::contacts::natural_grammar` of the studio version `blyg.json`
-names (0.66 or later, or unknown).
+names (0.66 or later). The version is kept in the store (`studio.version`
+meta, learnt from the update state and the contacts refresh); one never
+known reads as older, so the preview never links what publish won't.
 
 A line map follows every rewrite (`linemap.rs`), so each top-level block can
 carry `data-line="N"` (0-based source line) for source ↔ preview jumping.

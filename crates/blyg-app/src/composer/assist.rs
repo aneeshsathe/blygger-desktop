@@ -232,8 +232,9 @@ impl Assist {
         // A contact pick's close-up (`PickMark`): the pick's own change keeps
         // the mark; the edit after it reads it once, and punctuation typed
         // there is undone and written again over the pick's space, so the
-        // two are one undo step.
-        let mut undo_key = false;
+        // two are one undo step. A `Closing` mark lives for one change only:
+        // anything but the undo landing drops it.
+        let mut undo_key = None;
         let mut close_up = None;
         match self.pick_mark.take() {
             Some(PickMark::Picked { at, after }) if *text == after => {
@@ -243,12 +244,27 @@ impl Assist {
                 if let Some((fixed, caret)) = typed_at(&old, text, at, cursor)
                     .and_then(|typed| mention::punctuation_after_pick(&old, at, typed))
                 {
-                    self.pick_mark = Some(PickMark::Closing {
-                        after,
-                        fixed,
-                        caret,
-                    });
-                    undo_key = true;
+                    // A dead key or IME (`'` and `"` on US-International)
+                    // leaves the key as marked text: undoing under an open
+                    // composition commits it into a stale range. Leave it.
+                    let composing = self
+                        .editor
+                        .update(cx, |s, cx| s.marked_text_range(window, cx).is_some());
+                    let focus = self.editor.read(cx).focus_handle(cx);
+                    if composing {
+                        // Typed as written: `@lin '` (cosmetic).
+                    } else if focus.is_focused(window) {
+                        self.pick_mark = Some(PickMark::Closing {
+                            after,
+                            fixed,
+                            caret,
+                        });
+                        undo_key = Some(focus);
+                    } else {
+                        // Not the editor's own key: close up as a second
+                        // undo step rather than undo what we can't see.
+                        close_up = Some((fixed, caret));
+                    }
                 }
             }
             Some(PickMark::Closing {
@@ -291,9 +307,10 @@ impl Assist {
         if search {
             self.search_picker(cx);
         }
-        if undo_key {
-            // The editor's own undo, so the key leaves its history too.
-            window.dispatch_action(Box::new(Undo), cx);
+        if let Some(focus) = undo_key {
+            // The editor's own undo, on the editor, so the key leaves its
+            // history too; its change lands as `Closing`'s.
+            focus.dispatch_action(&Undo, window, cx);
         }
         if let Some((new, caret)) = close_up {
             let current = self.last.clone();
@@ -1104,7 +1121,9 @@ impl Assist {
 /// space's place. GPUI's textarea has no `beforeinput` and no public undo
 /// grouping, so the key lands, is undone through the editor's own `Undo`,
 /// and the closed-up text is written over the pick in one replacement: one
-/// undo step, back to the pick.
+/// undo step, back to the pick. Under an open IME composition nothing is
+/// closed up; when the editor isn't focused the close-up is a plain second
+/// replacement (two undo steps).
 enum PickMark {
     /// A pick left the caret at `at` and the text `after`.
     Picked { at: usize, after: String },

@@ -40,7 +40,7 @@ pub struct StoreResolver {
     handles: OnceCell<Vec<blyg_core::contacts::Contact>>,
     /// --- contacts --- Whether the blyg reads `@handle`s in natural grammar
     /// (studio 0.66; `snapshot`: read now; `lazy`: on the first handle;
-    /// `new`: yes).
+    /// `new`, with no backend to ask: yes, the target studio's reading).
     natural: OnceCell<bool>,
 }
 

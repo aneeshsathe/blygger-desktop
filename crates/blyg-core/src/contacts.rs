@@ -59,18 +59,19 @@ pub fn serves_contacts(version: &str) -> bool {
 /// or `_` that names a contact. No capability says so; only the version.
 pub const NATURAL_GRAMMAR: (u64, u64, u64) = (0, 66, 0);
 
-/// Whether a studio running `version` (`blyg.json`'s generator, as
-/// `StudioUpdate::current` holds it) reads handles in natural grammar.
-/// Unknown or unreadable: yes, the target studio's reading.
+/// Whether a studio running `version` (`blyg.json`'s generator) reads
+/// handles in natural grammar. Never known or unreadable: no, the
+/// whole-token reading, so a preview never links what publish won't.
 pub fn natural_grammar(version: Option<&str>) -> bool {
     version
         .and_then(crate::site::parse_version)
-        .is_none_or(|v| v >= NATURAL_GRAMMAR)
+        .is_some_and(|v| v >= NATURAL_GRAMMAR)
 }
 
-/// [`natural_grammar`] for the studio `backend` last saw (local, instant).
+/// [`natural_grammar`] for the studio `backend` last saw
+/// (`Backend::studio_version`: local, instant, kept across launches).
 pub fn natural_grammar_at(backend: &dyn crate::Backend) -> bool {
-    natural_grammar(backend.studio_update().and_then(|u| u.current).as_deref())
+    natural_grammar(backend.studio_version().as_deref())
 }
 
 /// The contacts in a `GET /api/contacts` answer: `{items: […]}`,
