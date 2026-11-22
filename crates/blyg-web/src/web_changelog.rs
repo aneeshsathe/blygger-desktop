@@ -15,8 +15,8 @@
 //! #96: nothing here routes, sorts or hides a post by its note.
 
 use blyg_core::changelog::{
-    ChangelogDisplay, ChangelogSettings, ChangelogSummary, Shown, history_row, parse_history,
-    serves_changelog, shown,
+    CHANGELOG_OPERATION, ChangelogDisplay, ChangelogSettings, ChangelogSummary, Shown, history_row,
+    parse_history, shown,
 };
 use blyg_core::{ReadingItem, SubscriptionKind};
 use serde_json::{Value, json};
@@ -44,13 +44,11 @@ impl Burrow {
                 .is_none_or(|s| s.kind == SubscriptionKind::Blyg)
     }
 
-    /// The blyg has changelog display (live: its contract says 5.8; the
-    /// demo always does).
+    /// The blyg has changelog display (live: its capabilities list
+    /// `summarizeChangelog`, never judged by the contract number; the demo
+    /// always does).
     fn cl_served(&self) -> bool {
-        if !self.is_live() {
-            return true;
-        }
-        self.wr.contract.as_deref().is_some_and(serves_changelog)
+        !self.is_live() || self.wr_can(CHANGELOG_OPERATION)
     }
 
     fn cl_mode(&self) -> ChangelogDisplay {
@@ -267,6 +265,10 @@ mod tests {
         }]);
         b.live_reading(&rows.to_string(), "[]");
         b.wr_set_contract("5.8.0");
+        b.wr_loaded(
+            "capabilities",
+            r#"{"contractVersion":"5.8.0","operations":["summarizeChangelog"]}"#,
+        );
         b
     }
 
@@ -298,9 +300,10 @@ mod tests {
         set_mode(&mut b, "latest");
         assert_eq!(b.wr_changelog_ask("a|a1"), "null");
         assert_eq!(b.wr_summary_ask("a|a1", &history()), "null");
-        // A studio before 5.8: nothing either.
+        // A studio without changelogs (none listed, whatever its
+        // contract): nothing either.
         let mut old = live();
-        old.wr_set_contract("5.7.0");
+        old.wr_loaded("capabilities", r#"{"contractVersion":"6.2.0","operations":[]}"#);
         set_mode(&mut old, "history");
         assert_eq!(old.wr_changelog_ask("a|a1"), "null");
     }

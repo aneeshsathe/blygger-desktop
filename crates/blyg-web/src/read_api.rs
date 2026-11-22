@@ -226,7 +226,7 @@ impl Burrow {
         } else {
             vec![]
         };
-        let mut hoppers: std::collections::HashMap<String, Vec<String>> = old_own
+        let mut hoppers: std::collections::HashMap<blyg_core::RemoteId, Vec<String>> = old_own
             .into_iter()
             .map(|o| (o.remote_id, o.hoppers))
             .collect();
@@ -493,7 +493,7 @@ impl Burrow {
             .unwrap_or_else(|| rvm::stub_body(&r.remote_id));
         let stub_of = RemoteRef {
             origin: r.origin.clone(),
-            id: r.remote_id.clone(),
+            id: r.remote_id.to_string(),
             version: r.version,
             cited: None,
         };
@@ -537,7 +537,7 @@ impl Burrow {
             r.content_html.clone()
         };
         let source = rvm::QuoteSource::Blyg {
-            id: r.remote_id.clone(),
+            id: r.remote_id.to_string(),
             html,
             title: rvm::post_title(r),
             url: rvm::web_url(r),
@@ -631,7 +631,7 @@ impl Burrow {
             .into_iter()
             .filter(|r| !blyg_core::own::is_own_row(r))
             .map(|r| Target {
-                id: r.remote_id.clone(),
+                id: r.remote_id.to_string(),
                 title: rvm::post_title(&r),
                 sub: format!("{} · {}", author(&r), rvm::host(&r.origin)),
                 label: rvm::quote_label(&r),

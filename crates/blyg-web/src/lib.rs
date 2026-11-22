@@ -53,10 +53,6 @@ pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
-#[expect(
-    dead_code,
-    reason = "blyg-app's whole view-model; the web uses part of it"
-)]
 pub mod vm;
 
 pub mod studio;

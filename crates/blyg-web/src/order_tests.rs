@@ -79,6 +79,9 @@ fn reading_rows_come_out_newest_first_whatever_order_the_blyg_sends() {
 #[test]
 fn your_published_posts_are_among_the_reading_rows() {
     let mut b = Burrow::new_live(NOW, None, None, BASE);
+    // The list's own order, chronological (the Feed defaults to
+    // pace-layered, as native: `studio69_tests.rs`).
+    b.w_set_settings(r#"{"readerOrder":"newest"}"#);
     let items = json!([
         wire(
             "01OWNPUBLISHED0000000000AA",
@@ -141,6 +144,9 @@ fn your_published_posts_are_among_the_reading_rows() {
 #[test]
 fn your_posts_dated_the_same_second_go_by_id_descending() {
     let mut b = Burrow::new_live(NOW, None, None, BASE);
+    // The list's own order, chronological (the Feed defaults to
+    // pace-layered, as native: `studio69_tests.rs`).
+    b.w_set_settings(r#"{"readerOrder":"newest"}"#);
     let t = "2026-11-05T18:30:43Z";
     let items = json!([
         wire("01A03000000000000000000000", "A03", "public", 2, t),

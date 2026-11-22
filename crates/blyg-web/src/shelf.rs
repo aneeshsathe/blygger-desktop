@@ -41,7 +41,7 @@ impl WebStore {
         let sid = self.item(id).and_then(|i| i.server_id).map(|s| s.0);
         self.shelf.iter().position(|s| match s {
             Shelved::Own(l) => l == &id.0,
-            Shelved::Entry(e) => e.is_own() && Some(&e.remote_id) == sid.as_ref(),
+            Shelved::Entry(e) => e.is_own() && Some(&*e.remote_id) == sid.as_deref(),
         })
     }
 
@@ -306,7 +306,9 @@ impl Burrow {
         match self.shelf_sync_state() {
             SyncState::Local => "local",
             SyncState::Synced => "synced",
-            SyncState::Waiting => "waiting",
+            // The web refuses a newer contract and asks no read-only
+            // sign-in, so these don't arise here; shown as waiting.
+            SyncState::Waiting | SyncState::HeldNewer | SyncState::HeldReadOnly => "waiting",
         }
         .into()
     }

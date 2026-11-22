@@ -211,7 +211,7 @@ pub fn detect(status: u16, body: &str, www_authenticate: bool) -> Mode {
                          {CONTRACT_MAJOR}.x or {CONTRACT_MAJOR_NEWEST}.x. Update the blyg."
                     ),
                 },
-                Contract::TooNew(v) => newer_contract(&v),
+                Contract::Newer(v) => newer_contract(&v),
             },
             None => Mode::Demo,
         },
@@ -229,10 +229,11 @@ pub fn detect(status: u16, body: &str, www_authenticate: bool) -> Mode {
     }
 }
 
-/// A blyg on a contract newer than Burrow knows: refused for now. This is
-/// the one place that decides it, so the "newer contract: keep syncing,
-/// never prune" mode native 0.28.0 is adding lands here (with what a
-/// `Mode::Live` on it then allows).
+/// A blyg on a contract newer than Burrow knows: refused here for now.
+/// Native keeps syncing on one and never prunes (`Contract::Newer`,
+/// `blyg_core::api::Prune::Withheld`); this is the one place the web
+/// decides it, so that mode lands here (with what a `Mode::Live` on it
+/// then must withhold).
 fn newer_contract(v: &str) -> Mode {
     Mode::Unsupported {
         why: format!("This blyg speaks API contract {v}, newer than Burrow knows."),

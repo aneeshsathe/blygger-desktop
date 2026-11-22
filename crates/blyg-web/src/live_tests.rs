@@ -154,7 +154,7 @@ fn a_blyg_is_told_apart_from_a_demo_server() {
         Mode::Unsupported { .. }
     ));
     assert!(matches!(
-        api::detect(200, r#"{"contractVersion":"6.0.0"}"#, false),
+        api::detect(200, r#"{"contractVersion":"7.0.0"}"#, false),
         Mode::Unsupported { .. }
     ));
     assert_eq!(v(Burrow::detect(200, caps, false))["mode"], "live");
@@ -887,6 +887,9 @@ fn the_next_page_of_the_stream_follows_the_cards_drawn() {
 #[test]
 fn the_streams_order_is_kept_until_a_row_changes() {
     let mut b = Burrow::new_live(NOW, None, None, BASE);
+    // The list's own order, chronological (the Feed defaults to
+    // pace-layered, as native: `studio69_tests.rs`).
+    b.w_set_settings(r#"{"readerOrder":"newest"}"#);
     let mut rows = reading_rows(3);
     for (i, r) in rows.as_array_mut().unwrap().iter_mut().enumerate() {
         r["updated"] = json!(format!("2026-11-0{}T09:00:00Z", i + 1));
@@ -1062,10 +1065,11 @@ fn each_list_follows_its_own_counters_as_native_does() {
         at(&mut b, changes_all("e1", 6, 7, 4, 0)),
         [true, false, false, false]
     );
-    // A subscription moved: the reading list and the hoppers.
+    // A subscription moved (every feed poll moves it): the hoppers, never
+    // the whole reading list (native's `READING_DEPS`, issue #71).
     let mut subs: Value = serde_json::from_str(&changes_all("e1", 5, 7, 4, 0)).unwrap();
     subs["domains"]["subscriptions"] = json!(3);
-    assert_eq!(at(&mut b, subs.to_string()), [false, true, true, false]);
+    assert_eq!(at(&mut b, subs.to_string()), [false, false, true, false]);
     // Accepting one list leaves the others' counters alone.
     let p = v(b.changes_plan(200, &changes_all("e1", 5, 7, 5, 1), None, true, soon));
     b.changes_accept("hoppers", &p["rev"].to_string(), soon, Some(String::new()));

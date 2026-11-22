@@ -418,7 +418,7 @@ fn native_lenses(me: &LiveBackend) -> Lenses {
     if let Some(set) = me.background_set() {
         set.annotate(&mut rows);
     }
-    let key = |r: &blyg_core::ReadingItem| (r.subscription_id.clone(), r.remote_id.clone());
+    let key = |r: &blyg_core::ReadingItem| (r.subscription_id.to_string(), r.remote_id.to_string());
     let now = chrono::Utc::now();
     let filed = std::collections::HashMap::new();
     let lens = |s: Smart| {
@@ -434,7 +434,7 @@ fn native_lenses(me: &LiveBackend) -> Lenses {
         shelf: me
             .shelf_entries()
             .into_iter()
-            .map(|e| (e.sub, e.remote_id))
+            .map(|e| (e.sub.to_string(), e.remote_id.to_string()))
             .filter(|k| held.contains(k))
             .collect(),
     }
@@ -479,7 +479,7 @@ fn shelf_and_background_lenses_match_the_studio() {
     me.sync_now().unwrap();
     assert!(me.background_served(), "studio 0.61 serves Background");
 
-    let theirs = |id: &str| (sub.id.clone(), id.to_string());
+    let theirs = |id: &str| (sub.id.to_string(), id.to_string());
     let own = (blyg_core::OWN_SUBSCRIPTION.to_string(), mine.clone());
     // Shelved in this order: mine, both, shelved.
     for k in [&own, &theirs(&both), &theirs(&shelved)] {
@@ -488,7 +488,7 @@ fn shelf_and_background_lenses_match_the_studio() {
     }
     me.sync_now().unwrap();
     for k in [&own, &theirs(&both), &theirs(&backed)] {
-        me.set_reading_placement(k, false, Some(Placement::Background))
+        me.set_reading_placement(&(k.0.as_str().into(), k.1.as_str().into()), false, Some(Placement::Background))
             .unwrap();
     }
     me.sync_now().unwrap();
@@ -553,7 +553,7 @@ fn shelf_and_background_lenses_match_the_studio() {
 
     // Clean up for the next test: choices cleared, shelf emptied.
     for k in &ours {
-        let _ = me.set_reading_placement(k, false, None);
+        let _ = me.set_reading_placement(&(k.0.as_str().into(), k.1.as_str().into()), false, None);
         let _ = me.set_entry_on_shelf(&Entry::new(k.0.clone(), k.1.clone()), false);
     }
     me.sync_now().unwrap();

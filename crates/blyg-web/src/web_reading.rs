@@ -122,7 +122,7 @@ pub struct WebReading {
     pub lens: Option<Kind>,
     /// `GET /api/subscriptions` has been read (live; the demo's are seeded).
     pub subs_loaded: bool,
-    pub diags: HashMap<String, SubDiag>,
+    pub diags: HashMap<blyg_core::SubId, SubDiag>,
     pub mentions: Option<Vec<Mention>>,
     pub outbound: Option<Vec<Outbound>>,
     pub accept_mentions: Option<bool>,
@@ -541,7 +541,7 @@ impl Burrow {
     /// (All, both kinds) it only drops withdrawn posts, which only
     /// Background lists, as in the app.
     pub(crate) fn wr_filter<'a>(
-        &self,
+        &'a self,
         rows: Vec<&'a ReadingItem>,
         now: DateTime<Utc>,
     ) -> Vec<&'a ReadingItem> {
@@ -730,7 +730,7 @@ impl Burrow {
                     .unwrap_or_else(|| u.host_str().unwrap_or("").to_string());
                 self.wr_put_sub(
                     Subscription {
-                        id,
+                        id: id.into(),
                         kind: SubscriptionKind::Blyg,
                         origin: format!("{}://{}/", u.scheme(), u.host_str().unwrap_or("")),
                         feed_url: a.url.trim().into(),
@@ -755,7 +755,7 @@ impl Burrow {
                 let Some(mut s) = self.rd.subs.iter().find(|s| s.id == a.id).cloned() else {
                     return error("That subscription isn't here any more");
                 };
-                let d = self.wr.diags.get(&a.id).cloned().unwrap_or_default();
+                let d = self.wr.diags.get(a.id.as_str()).cloned().unwrap_or_default();
                 let msg = match action {
                     "pause" => {
                         let on = a.on.unwrap_or(true);
@@ -1261,7 +1261,7 @@ impl Burrow {
             .map(|s| {
                 let d = self.wr.diags.get(&s.id);
                 SubRow {
-                    id: s.id.clone(),
+                    id: s.id.to_string(),
                     name: svm::sub_name(s),
                     host: rvm::host(&s.origin),
                     origin: s.origin.clone(),

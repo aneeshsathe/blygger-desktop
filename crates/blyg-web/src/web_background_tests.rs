@@ -156,8 +156,17 @@ fn rules_are_read_from_settings_and_written_one_key_at_a_time() {
     );
     let r = v(b.wr_bg_rules());
     assert_eq!(r["served"], true);
-    assert_eq!(r["rules"][0]["rule"], "minor");
-    assert_eq!(r["rules"][0]["on"], false);
+    // The rules blyg-core knows, in its order (`burst` came with 0.69).
+    let minor = |r: &serde_json::Value| -> serde_json::Value {
+        r["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["rule"] == "minor")
+            .cloned()
+            .expect("a minor rule")
+    };
+    assert_eq!(minor(&r)["on"], false);
     let o = v(b.wr_bg_rule("minor", true));
     assert_eq!(o["req"]["method"], "PATCH");
     assert_eq!(
@@ -165,6 +174,6 @@ fn rules_are_read_from_settings_and_written_one_key_at_a_time() {
         json!({"backgroundRules": {"minor": true}})
     );
     assert!(b.wr_bg_rule_saved(200, r#"{"backgroundRules":{"minor":true}}"#));
-    assert_eq!(v(b.wr_bg_rules())["rules"][0]["on"], true);
+    assert_eq!(minor(&v(b.wr_bg_rules()))["on"], true);
     assert!(v(b.wr_bg_rule("withdrawn", false))["error"].is_string());
 }
