@@ -136,7 +136,7 @@ pub fn link_trigger(old: &str, new: &str, cursor: usize) -> Option<usize> {
         return None;
     }
     let at = cursor - 2;
-    if new[..at].ends_with('!') || new[..at].ends_with('[') {
+    if new[..at].ends_with('!') || new[..at].ends_with('[') || written(new, cursor) {
         return None;
     }
     let line_start = new[..at].rfind('\n').map_or(0, |i| i + 1);
@@ -146,10 +146,26 @@ pub fn link_trigger(old: &str, new: &str, cursor: usize) -> Option<usize> {
     Some(at)
 }
 
+/// Whether the brackets the caret (just after them, or in their query) is in
+/// are already written, so being edited rather than typed: a `]]` closes
+/// them later on the line, before any new `[[` (studio 0.66, #157,
+/// palette.ts `written`). Retyping a bracket of a finished `[[id | label]]`
+/// then opens no picker. Clicking or moving into one types nothing, so it
+/// never did here.
+pub fn written(text: &str, caret: usize) -> bool {
+    let line = text
+        .get(caret..)
+        .and_then(|rest| rest.split('\n').next())
+        .unwrap_or("");
+    line.find("]]")
+        .is_some_and(|close| line.find("[[").is_none_or(|reopen| close < reopen))
+}
+
 /// The query typed after the brackets that start at `at`, while the caret
-/// is still there: on the same line, with no `]` yet. A `+` right after the
-/// brackets is tangling's `[[+ …]]` / `![[+ …]]` (studio 0.63), not a
-/// search: the picker closes.
+/// is still there: on the same line, with no `]` yet, and not past a
+/// label's `|` (studio 0.66, #157: there the author writes words, not a
+/// search). A `+` right after the brackets is tangling's `[[+ …]]` /
+/// `![[+ …]]` (studio 0.63), not a search: the picker closes.
 pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&str> {
     let open = kind.open();
     if text.get(at..at + open.len()) != Some(open) {
@@ -160,7 +176,8 @@ pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&st
         return None;
     }
     let q = text.get(start..cursor)?;
-    (!q.starts_with('+') && !q.contains(['\n', ']', '[']) && q.chars().count() <= 80).then_some(q)
+    (!q.starts_with('+') && !q.contains(['\n', ']', '[', '|']) && q.chars().count() <= 80)
+        .then_some(q)
 }
 
 /// Replace the typed brackets and query (`at..cursor`, plus a `]]` the

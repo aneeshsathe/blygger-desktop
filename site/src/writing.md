@@ -365,10 +365,12 @@ quote it. It's never put in for you.
 - **Mentions.** Type `@` to pick from the blygs you know: the people in your
   blyg's address book first (studio 0.56's contacts), then subscriptions,
   blogroll and authors you read. Where your blyg turns `@handle` into a link
-  when it publishes (studio 0.56), picking a contact writes `@handle`, and
-  the popup shows the link it becomes; publish tells you about any handle it
-  couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
-  notifies no one.
+  when it publishes (studio 0.56), picking a contact writes `@handle ` with a
+  space, and the popup shows the link it becomes; an apostrophe, hyphen or
+  closing punctuation typed straight after the pick takes the space's place,
+  so `@lin's notes` and an `@lin-driven agenda` both link Lin (studio 0.66).
+  Publish tells you about any handle it couldn't find. Otherwise it inserts a
+  plain link to that blyg. Either way it notifies no one.
   The preview shows a contact's handle as the link it will become (the
   same h-card your blyg publishes). Manage the address book in Blyg ›
   Contacts… (see [Reading](reading.md#contacts)).
@@ -445,8 +447,10 @@ searches every word of your published posts and the blyg posts you read, on
 your Mac, and filters by source (all, mine, imported) and blyg, newest or
 oldest first. Where you type the search is the blyg's **picker typing**
 setting: after the brackets in the editor (the default on a Mac), or in the
-picker's own box. Quotes only go
-in threads: in a fragment, Burrow says so and leaves the text alone.
+picker's own box. A reference you've already written is edited, not
+picked: retyping a bracket of a finished `![[id]]` or `[[id | label]]`
+opens nothing, and the picker closes once you type a label's `|`. Quotes
+only go in threads: in a fragment, Burrow says so and leaves the text alone.
 
 ### Partial quotes
 

@@ -162,8 +162,9 @@ impl fmt::Display for UnresolvedReason {
                     "quoted passage not found in the target's version {version}"
                 );
             }
+            // The studio's publish refusal (model.ts publishScoped, 0.67, #161).
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code"
+                "a fragment can't quote another item: make this a thread, or link it with [[id]]"
             }
             UnresolvedReason::Other(s) => s,
         };

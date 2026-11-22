@@ -97,6 +97,10 @@ pub struct Assist {
     /// The next edit is a paste: it never opens the mention popup.
     pasting: bool,
     mention: Option<MentionPopup>,
+    /// Where the last mention pick left the caret, and the text it left:
+    /// punctuation typed straight after closes up its space
+    /// (`mention::punctuation_after_pick`).
+    picked: Option<(usize, String)>,
     picker: Option<PickerPopup>,
     /// Bumped per picker search; a stale answer is dropped.
     pick_gen: usize,
@@ -154,6 +158,7 @@ impl Assist {
             last,
             pasting: false,
             mention: None,
+            picked: None,
             picker: None,
             pick_gen: 0,
             menu: None,
@@ -180,6 +185,7 @@ impl Assist {
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         self.last = self.editor.read(cx).value().to_string();
         self.mention = None;
+        self.picked = None;
         self.picker = None;
         self.menu = None;
         self.misspelled.clear();
@@ -214,7 +220,7 @@ impl Assist {
     }
 
     /// The text changed (typing, a paste, undo, a splice).
-    fn edited(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn edited(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (text, cursor) = {
             let s = self.editor.read(cx);
             (s.value().to_string(), s.cursor())
@@ -225,6 +231,17 @@ impl Assist {
         self.menu = None;
         let old = std::mem::replace(&mut self.last, text);
         let text = &self.last;
+        // A mention pick's own change keeps its mark; the edit after it
+        // reads the mark once: punctuation typed there takes the pick's space.
+        let close_up = match self.picked.take() {
+            Some((at, after)) if *text == after => {
+                self.picked = Some((at, after));
+                None
+            }
+            Some((at, after)) if old == after && !pasting => typed_at(&old, text, at, cursor)
+                .and_then(|typed| mention::punctuation_after_pick(&old, at, typed)),
+            _ => None,
+        };
 
         let mut search = false;
         if let Some(pk) = self.picker.as_mut() {
@@ -257,6 +274,10 @@ impl Assist {
         }
         if search {
             self.search_picker(cx);
+        }
+        if let Some((new, caret)) = close_up {
+            let current = self.last.clone();
+            self.splice(&current, &new, caret, window, cx);
         }
         self.schedule_check(SPELL_DEBOUNCE, cx);
         cx.notify();
@@ -508,7 +529,11 @@ impl Assist {
             return;
         }
         let (new, caret) = mention::insert(&text, m.at, cursor, c);
+        let handle = c.handle.is_some();
         self.splice(&text, &new, caret, window, cx);
+        if handle {
+            self.picked = Some((caret, new));
+        }
     }
 
     /// Apply `old -> new` as one undoable replacement, caret at `caret`.
@@ -1047,6 +1072,15 @@ impl Assist {
             .into_any_element(),
         )
     }
+}
+
+/// The one character `old -> new` typed at `at`, the caret now after it, if
+/// that is all the edit did (not a paste, a deletion or a replacement).
+fn typed_at<'a>(old: &str, new: &'a str, at: usize, cursor: usize) -> Option<&'a str> {
+    let n = new.len().checked_sub(old.len()).filter(|&n| n > 0)?;
+    let typed = new.get(at..at + n)?;
+    let same = new.get(..at)? == old.get(..at)? && new.get(at + n..)? == old.get(at..)?;
+    (cursor == at + n && same && typed.chars().count() == 1).then_some(typed)
 }
 
 fn item_label(i: &MenuItem) -> &str {
