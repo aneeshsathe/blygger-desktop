@@ -7,7 +7,8 @@ section: Changed
   or `_` that does, and an exact or longer handle still wins. There, picking
   a contact from the `@` popup writes `@handle ` with a space, as Studio
   does; a possessive, hyphen or closing punctuation typed straight after the
-  pick takes the space's place, and one undo takes it back to the pick. On
+  pick takes the space's place, and one undo takes it back to the pick (a
+  dead key or input method leaves the space, as in `@lin '`). On
   Studio 0.56 to 0.65, which publish `@lin-driven` as plain text, the preview
   and the pick work as before, as they do until Burrow has seen which Studio
   the blyg runs (it remembers that across launches).

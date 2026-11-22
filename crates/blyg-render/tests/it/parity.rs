@@ -62,7 +62,7 @@ const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
     ),
     // #102 (9) drops a wrapper left empty; studio 0.67 (#161) leaves an
     // empty `div.blyg-tk-gen` between two quotes in a row (blank prose
-    // between them is flushed as a part). Reported upstream as a quirk.
+    // between them is flushed as a part). Not yet reported upstream.
     (
         "tr_block_tk_two_quotes",
         &[(

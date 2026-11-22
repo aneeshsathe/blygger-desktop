@@ -369,7 +369,9 @@ quote it. It's never put in for you.
   the popup shows the link it becomes. On studio 0.66 or later the pick ends
   in a space, and an apostrophe, hyphen or closing punctuation typed straight
   after it takes the space's place, so `@lin's notes` and an `@lin-driven
-  agenda` both link Lin.
+  agenda` both link Lin. A character typed with a dead key or an input
+  method (`'` on a US-International keyboard, say) doesn't close up: `@lin '`
+  keeps its space, so delete it by hand.
   Publish tells you about any handle it couldn't find. Otherwise it inserts a
   plain link to that blyg. Either way it notifies no one.
   The preview shows a contact's handle as the link it will become (the
