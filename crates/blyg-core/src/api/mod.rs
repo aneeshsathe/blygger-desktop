@@ -65,12 +65,16 @@ use wire::*;
 /// 5.0.0 (studio 0.49.10+; Burrow's minimum is 0.49.12, which also keeps
 /// tokens made for the old host-root `/api` of a mounted blyg working, up
 /// to studio 0.64; 0.65 refuses them, and Burrow asks for a new sign-in:
-/// `Api::audience_moved`). Contract 6 (studio 0.67) drops `GET
-/// /api/changes`; sync already does without it (`api::conditional`).
-/// Anything else is
-/// refused before a list is read, because a page in another shape would
-/// read as the end of the list and rows would be pruned.
+/// `Api::audience_moved`). It is the oldest major Burrow speaks; the
+/// newest is [`CONTRACT_MAJOR_NEWEST`]. Anything else is refused before a
+/// list is read, because a page in another shape would read as the end of
+/// the list and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
+
+/// The newest private API contract major this Burrow speaks. Contract 6
+/// (studio 0.67) only drops `GET /api/changes`, which sync already does
+/// without (`api::conditional`).
+pub const CONTRACT_MAJOR_NEWEST: u64 = 6;
 
 /// The oldest blygger-studio Burrow syncs with, as a literal, so UI text
 /// can `concat!` it into `&'static str` consts (`blyg_core::min_studio!()`).
@@ -101,7 +105,7 @@ pub fn takes_whole_blyg(version: &str) -> bool {
 /// What Burrow makes of a studio's `contractVersion`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Contract {
-    /// 5.x: everything syncs.
+    /// 5.x or 6.x: everything syncs.
     Supported,
     /// Older than 5 (or no contract at all: a studio before capability
     /// discovery). The studio needs updating.
@@ -122,7 +126,9 @@ pub fn contract(version: Option<&str>) -> Contract {
         .next()
         .and_then(|m| m.parse::<u64>().ok())
     {
-        Some(CONTRACT_MAJOR) => Contract::Supported,
+        Some(major) if (CONTRACT_MAJOR..=CONTRACT_MAJOR_NEWEST).contains(&major) => {
+            Contract::Supported
+        }
         Some(major) if major < CONTRACT_MAJOR => Contract::TooOld,
         _ => Contract::TooNew(v.trim().to_string()),
     }
