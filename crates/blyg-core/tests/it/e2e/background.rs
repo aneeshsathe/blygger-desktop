@@ -178,8 +178,8 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
     // The studio's list says the same of the thread: the same parts in the
     // same order, each labelled as Burrow labels it (link-label.ts, ported
     // as pick::link_label).
-    let said = studio_parts(&e.url, &sid, &thread).expect("the thread is listed");
-    let want: Vec<(String, String, String)> = [&p1, &p2]
+    let mut said = studio_parts(&e.url, &sid, &thread).expect("the thread is listed");
+    let mut want: Vec<(String, String, String)> = [&p1, &p2]
         .into_iter()
         .map(|p| {
             let r = row_of(&rows, &sid, p);
@@ -187,6 +187,15 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
             (sid.clone(), p.to_string(), label)
         })
         .collect();
+    // The studio orders parts by `created` alone (reading-data.ts), so two
+    // parts made in the same millisecond come back in either order; Burrow
+    // breaks that tie by the thread's quote order. Compare the order only
+    // when the two were made at different times.
+    let created = |p: &str| row_of(&rows, &sid, p).created.clone();
+    if created(&p1) == created(&p2) {
+        said.sort();
+        want.sort();
+    }
     assert_eq!(said, want, "ReadingEntry.parts: sub, id, label");
 
     // The burst rule off: one key written, the others as stored (wordless
