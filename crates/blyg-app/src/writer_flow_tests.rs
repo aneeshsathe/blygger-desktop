@@ -452,7 +452,7 @@ fn the_palette_finds_formula_by_maths_words(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn ctrl_b_on_windows_hints_at_bold_once(cx: &mut TestAppContext) {
     use crate::platform_text::{Platform, spelled_as};
-    const HINT: &str = "Bold is Alt+B; Ctrl+B opens the Shelf";
+    const HINT: &str = "Bold is Alt+B; Ctrl+B opens Saved";
     let (view, _, cx) = setup(cx);
     open(&view, cx, DRAFT);
     spelled_as(Platform::Mac, || keys(cx, "cmd-b"));

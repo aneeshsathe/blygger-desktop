@@ -29,18 +29,14 @@ reason = "Sent by api::read_batch for children with a kept ETag; e2e/conditional
 # pending = "WP8 wp8-studio-065"
 # --- 0.28.0 wave A (sync, syndication, reader wire): add entries below this line only ---
 [[exempt]]
-item = "param:*/query:raw"
-reason = "Burrow doesn't send raw=true (GET /reading, /reading/summary) because it holds the whole imported list from GET /reading/imported, which is already raw (no Background rule, placement or fold, withdrawn rows included); its Raw view is that list, newest first, ordered by blyg-core's order.rs"
-
-[[exempt]]
 item = "enum:*/query:raw=true"
-reason = "The raw parameter's one value; Burrow doesn't send raw (see param:*/query:raw)"
-
-[[pending]]
-item = "param:listReading/query:order"
-pending = "0.28.0 wave B (readerOrder): pace-layered can't be worked out locally (the replay needs each imported item's changelog and maintenance versions, which GET /reading/imported doesn't carry), so the Feed's pace-layered order has to come from GET /reading?order=; wave A sends no order"
+reason = "The raw parameter's one value. Burrow doesn't send raw=true (GET /reading, /reading/summary): it holds the whole imported list from GET /reading/imported, which is already raw (no Background rule, placement or fold, withdrawn rows included), and its Raw tab is that list, newest first (reading/feed.rs raw_order). param:*/query:raw has no entry only because the matcher counts it as covered: tests hold the tab's label \"Raw\" (any case matches). That is a false cover: no test sends the parameter"
 
 # --- 0.28.0 wave B (reading tabs, Background rules, readerOrder): add entries below this line only ---
+
+[[exempt]]
+item = "param:listReading/query:order"
+reason = "Burrow orders the Feed itself (blyg_core::pace, a port of the studio's paceLayeredOrder over the local reading list; reading/feed.rs), so it never asks /reading for an order: the list it syncs is the same whichever order the owner chose"
 
 # --- 0.28.0 wave C (rendering, mentions, picker): add entries below this line only ---
 

@@ -583,6 +583,18 @@ impl MainView {
             }
             // --- background --- the Background feed, Rue's withdrawn post
             // open; and the stream at Ada's tide tables, "V2: one word".
+            // --- reader order ---
+            (Scene::RdFeed | Scene::RdRaw, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdFeed, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::All), cx);
+                self.move_reading(1, window, cx);
+            }
+            (Scene::RdRaw, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Raw), cx);
+                self.move_reading(1, window, cx);
+            }
             (Scene::RdBackground, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdBackground, 1) => {
                 use super::sources_vm::{Smart, Source};

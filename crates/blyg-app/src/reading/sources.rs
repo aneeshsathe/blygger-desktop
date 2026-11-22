@@ -55,6 +55,11 @@ const ICON_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 /// --- shelf sync --- three books on a shelf.
 const ICON_SHELF: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20h17"/><path d="M5.5 5h3v15h-3zM9.5 7h3v13h-3z"/><path d="M14.2 7.6l2.9-.8 3.3 12.4-2.9.8z"/></svg>"#;
 
+/// --- reader order --- the Agentic feed: a four-point spark (studio's ✦).
+const ICON_AGENTIC: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5l2 6.5 6.5 2-6.5 2-2 6.5-2-6.5-6.5-2 6.5-2z"/></svg>"#;
+/// --- reader order --- Raw: an inbox tray, as it came in.
+const ICON_RAW: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 13.5l2.5-8h11l2.5 8v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13.5h4.5l1 2h5l1-2H20"/></svg>"#;
+
 fn smart_icon(s: Smart) -> &'static [u8] {
     match s {
         Smart::Unread => ICON_UNREAD,
@@ -67,6 +72,9 @@ fn smart_icon(s: Smart) -> &'static [u8] {
         Smart::Threads => ICON_THREADS,
         Smart::Fragments => ICON_FRAGMENTS,
         Smart::Shelf => ICON_SHELF, // --- shelf sync ---
+        // --- reader order ---
+        Smart::Agentic => ICON_AGENTIC,
+        Smart::Raw => ICON_RAW,
     }
 }
 

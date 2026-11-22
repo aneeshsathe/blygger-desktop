@@ -617,12 +617,12 @@ impl MainView {
             .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
                 "Off unless you choose a model. It labels each new version typo, minor or major before you publish; you can change or clear the label. Readers see it only as words in your change note.",
             ))
-            .child(section("SMART FEED · saved now, not used yet"))
+            .child(section("AGENTIC FEED · saved now, not used yet"))
             .child(row(5, "Model", model_value(AiFunction::Feed), true))
             .children(other_box(AiFunction::Feed))
             .when(s.settings.feed_prompt.is_some(), |d| {
                 d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
-                    "Scoring prompt: how the agent should score new items",
+                    "Agentic feed prompt: how your assistant should organize what you read",
                 ))
                 .child(area(&s.feed, 56.))
             });

@@ -551,16 +551,19 @@ impl MainView {
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
                 )))
             })
-            .when(held > 0 && count == 0, |d| {
-                d.child(
-                    div()
-                        .id("reading-no-match")
-                        .p(px(16.))
-                        .text_size(px(13.))
-                        .text_color(p.ink)
-                        .child(vm::no_match(&self.reading.query)),
-                )
-            })
+            .when(
+                held > 0 && count == 0 && !self.reading.feed_waiting(),
+                |d| {
+                    d.child(
+                        div()
+                            .id("reading-no-match")
+                            .p(px(16.))
+                            .text_size(px(13.))
+                            .text_color(p.ink)
+                            .child(vm::no_match(&self.reading.query)),
+                    )
+                },
+            )
             .when(count > 0, |d| {
                 d.child(
                     list(
@@ -919,7 +922,7 @@ impl MainView {
                         cx.new(|_| {
                             super::Tip(
                                 "More for this post: AI reply, Link post, Open on web, → Notes, \
-                                 + Add to shelf, ⤳ Add to trail…"
+                                 + Save, ⤳ Add to trail…"
                                     .into(),
                             )
                         })

@@ -9,6 +9,7 @@ pub mod backend;
 pub mod background; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse ---
 pub mod catchup; // --- catch up ---
+pub mod change_size; // --- background --- isNearSame (studio 0.68)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod config;
 pub mod contacts; // --- contacts --- (studio 0.56)
@@ -26,6 +27,7 @@ pub mod order; // the one list order (reading rows, your posts)
 pub mod origin; // --- unicode --- §12.2 origin spelling (decision #103)
 pub mod outbound; // --- contacts --- sent mentions, groups, sources
 pub mod own; // your published posts as reading rows
+pub mod pace; // the pace-layered Feed (studio 0.68)
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;

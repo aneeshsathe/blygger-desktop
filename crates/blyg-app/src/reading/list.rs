@@ -781,6 +781,10 @@ impl MainView {
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
         let mut actions = vec![self.render_mode_toggle(cx)];
+        // --- reader order --- the Feed's own controls (kinds, order).
+        if let Some(c) = self.render_feed_controls(cx) {
+            actions.insert(0, c);
+        }
         if !stream {
             // --- reader folders --- the sources pane's button (⌥⌘S).
             actions.insert(0, self.render_sources_button(cx));
@@ -812,7 +816,10 @@ impl MainView {
         let held = self.reading.rows.len();
         let count = self.reading.shown.len();
         // --- reader folders --- a source with nothing in it (no search).
-        let empty_source = held > 0 && count == 0 && self.reading.query.trim().is_empty();
+        let empty_source = held > 0
+            && count == 0
+            && self.reading.query.trim().is_empty()
+            && !self.reading.feed_waiting(); // --- reader order ---
         let list = div()
             .id("reader-list-pane")
             .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
@@ -835,32 +842,35 @@ impl MainView {
             .when(empty_source, |d| {
                 d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
             })
-            .when(held > 0 && count == 0 && !empty_source, |d| {
-                d.child(
-                    div()
-                        .id("reading-no-match")
-                        .p(px(16.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .text_size(px(13.))
-                                .text_color(p.ink)
-                                .child(vm::no_match(&self.reading.query)),
-                        )
-                        .child(
-                            div()
-                                .font_family(self.chrome())
-                                .text_size(px(11.5))
-                                .text_color(p.muted)
-                                .child(crate::keymap::hint(
-                                    "Searches titles, authors and text of the posts held \
+            .when(
+                held > 0 && count == 0 && !empty_source && !self.reading.feed_waiting(),
+                |d| {
+                    d.child(
+                        div()
+                            .id("reading-no-match")
+                            .p(px(16.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(p.ink)
+                                    .child(vm::no_match(&self.reading.query)),
+                            )
+                            .child(
+                                div()
+                                    .font_family(self.chrome())
+                                    .text_size(px(11.5))
+                                    .text_color(p.muted)
+                                    .child(crate::keymap::hint(
+                                        "Searches titles, authors and text of the posts held \
                                      on this Mac · esc clears",
-                                )),
-                        ),
-                )
-            })
+                                    )),
+                            ),
+                    )
+                },
+            )
             .when(count > 0, |d| {
                 d.child(
                     uniform_list(
@@ -1316,7 +1326,7 @@ impl MainView {
                     cx.new(|_| {
                         super::Tip(
                             "More for this post: AI reply, Link post, → Notes, Hopper ›, \
-                             + Add to shelf, ⤳ Add to trail…"
+                             + Save, ⤳ Add to trail…"
                                 .into(),
                         )
                     })

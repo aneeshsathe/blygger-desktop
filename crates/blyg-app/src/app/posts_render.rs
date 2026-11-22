@@ -245,7 +245,7 @@ impl MainView {
                                     cx.new(|_| {
                                         reading::Tip(
                                             crate::keymap::hint(
-                                                "On your shelf · ⌘B opens it · ⌥⌘B takes it off",
+                                                "Saved · ⌘B opens Saved · ⌥⌘B removes it",
                                             )
                                             .into(),
                                         )

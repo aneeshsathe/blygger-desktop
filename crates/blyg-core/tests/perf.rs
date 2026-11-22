@@ -174,6 +174,49 @@ fn timing_reading_list_at_scale() {
     budget.done();
 }
 
+/// The pace-layered Feed's rebuild at the scale of a big reading list:
+/// about 4,000 rows and a few hundred cached changelogs (the posts opened).
+/// Burrow runs it whenever the reading list reloads: on the UI thread it
+/// only takes each row's facts (`pace::RowFacts`, a frame's budget at
+/// most); reading the changelogs and the replay (`pace::positions`) run
+/// off it. A release build on a local Mac: about 0.4 ms for the
+/// changelogs and 31 ms for the replay, so its budget is twice that.
+#[test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_pace_layered_feed_at_scale() {
+    use blyg_core::RemoteVersion;
+    const FEED_ROWS: usize = 4_000;
+    const LOGS: usize = 300;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let rows = synth::reading(FEED_ROWS, 7);
+    for r in rows.iter().step_by(FEED_ROWS / LOGS).take(LOGS) {
+        let log: Vec<RemoteVersion> = (1..=r.version.max(2))
+            .map(|v| {
+                serde_json::from_value(serde_json::json!({
+                    "version": v, "at": r.created, "note": "a note", "pinned": v == 1,
+                    "current": v == r.version,
+                }))
+                .unwrap()
+            })
+            .collect();
+        store.put_changelog(&r.origin, &r.remote_id, &log).unwrap();
+    }
+    let mut budget = Budget::default();
+    let logs = budget.time("cached_changelogs (300)", 8.0, || store.cached_changelogs());
+    assert_eq!(logs.len(), LOGS);
+    let facts = budget.time("RowFacts, UI thread (4k rows)", 8.0, || {
+        rows.iter()
+            .map(|r| blyg_core::pace::RowFacts::of(r, false))
+            .collect::<Vec<_>>()
+    });
+    let pos = budget.time("pace::positions, off it (4k rows)", 60.0, || {
+        blyg_core::pace::positions(facts, &logs)
+    });
+    assert!(pos.len() > rows.len() * 9 / 10);
+    budget.done();
+}
+
 /// A realistic mixed document of at least `target` characters: quotes
 /// (unresolved here), TK, links, fuzzy links, lists, a table, code, videos.
 fn document(target: usize) -> String {

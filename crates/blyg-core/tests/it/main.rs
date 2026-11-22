@@ -23,6 +23,7 @@ mod no_git;
 mod personal_data;
 mod profiles;
 mod read_sync;
+mod reader_order;
 mod reading;
 mod save_if_base;
 mod scratch;

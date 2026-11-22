@@ -54,6 +54,29 @@ impl Store {
         Some((serde_json::from_str(&json).ok()?, at))
     }
 
+    /// Every cached changelog, by `(origin, remote_id)`: the pins the
+    /// pace-layered Feed counts (`crate::pace`). One query.
+    pub fn cached_changelogs(
+        &self,
+    ) -> std::collections::HashMap<(String, String), Vec<RemoteVersion>> {
+        let c = self.conn();
+        let Ok(mut st) = c.prepare("SELECT origin, remote_id, json FROM remote_changelog") else {
+            return Default::default();
+        };
+        let Ok(rows) = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) else {
+            return Default::default();
+        };
+        rows.filter_map(|r| r.ok())
+            .filter_map(|(o, id, json)| Some(((o, id), serde_json::from_str(&json).ok()?)))
+            .collect()
+    }
+
     pub fn put_changelog(&self, origin: &str, remote_id: &str, v: &[RemoteVersion]) -> Result<()> {
         let json = serde_json::to_string(v).map_err(|e| CoreError::Storage(e.to_string()))?;
         self.conn().execute(

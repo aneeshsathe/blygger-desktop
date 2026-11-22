@@ -51,8 +51,8 @@
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, not a reply | Post › Link Post · New Fragment |
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
-| ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
-| ⌥⌘B | Add the open post to your shelf, or remove it | Post › Add to Shelf / Remove from Shelf |
+| ⌘B | Saved: the posts you keep to hand (1–9 opens one) | Post › Saved… |
+| ⌥⌘B | Save the open post, or remove it from Saved | Post › Save / Remove from Saved |
 | ⌥⌘T | Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops) | Blyg › Publish Trail… |
 | ⌥⌘K | Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading) | Post › Put on Quote Tray |
 | ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |

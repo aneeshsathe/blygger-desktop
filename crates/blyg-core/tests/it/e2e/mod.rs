@@ -2876,7 +2876,7 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "and nothing else");
 }
 
-// ------------------------------------- settings writes keep what's unknown
+// ------------------------------------ settings writes keep what they don't name
 
 /// Studio 0.68's new settings fields (contract 6.1.0): the Feed's order and
 /// the four Background rules phase 2 added.
@@ -2897,13 +2897,16 @@ fn new_settings(v: &Value) -> Value {
 }
 
 /// Every settings write Burrow makes is a partial `PATCH /api/settings`
-/// (skills/capability-gating, rule 5), so fields it doesn't name survive
-/// it: `readerOrder` and the new `backgroundRules` keys (studio 0.68,
-/// contract 6.1.0), set elsewhere, are as they were after each one. The
-/// blyg gets back what it held, even when an assertion fails.
+/// (skills/capability-gating, rule 5), so the fields a write doesn't name
+/// survive it. Studio 0.68's `readerOrder` and the four new
+/// `backgroundRules` keys (contract 6.1.0), set elsewhere, are as they were
+/// after each of Burrow's seven settings writers; a rule Burrow writes
+/// keeps `readerOrder` and the other rules, and `put_reader_order` keeps
+/// every rule. The blyg gets back what it held, even when an assertion
+/// fails.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
-fn settings_writes_keep_fields_this_burrow_doesnt_know() {
+fn settings_writes_keep_the_fields_they_dont_name() {
     let e = e2e();
     let (st, v) = owner("GET", &e.url, "/api/settings", None);
     assert_eq!(st, 200, "{v}");
@@ -2911,8 +2914,8 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
         eprintln!("skipped: no readerOrder here (older than studio 0.68)");
         return;
     }
-    // The Background rule Burrow writes below: one it lists that isn't
-    // among the new ones (whatever blyg_core::background::RULES grows to).
+    // The older Background rule Burrow writes below (one of RULES the
+    // blyg has that isn't among the new ones).
     let rule = *blyg_core::background::RULES
         .iter()
         .find(|r| !NEW_RULES.contains(*r) && v["backgroundRules"][**r].is_boolean())
@@ -2937,40 +2940,53 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
             (k.to_string(), json!(!on))
         })
         .collect();
-    let theirs = json!({ "readerOrder": order, "backgroundRules": flipped });
+    let mut theirs = json!({ "readerOrder": order, "backgroundRules": flipped });
     let (st, set) = owner("PATCH", &e.url, "/api/settings", Some(theirs.clone()));
     assert_eq!(st, 200, "{set}");
     assert_eq!(new_settings(&set), theirs);
-    let still = |what: &str| {
+    let still = |want: &Value, what: &str| {
         let (st, now) = owner("GET", &e.url, "/api/settings", None);
         assert_eq!(st, 200, "{now}");
-        assert_eq!(new_settings(&now), theirs, "after {what}");
+        assert_eq!(&new_settings(&now), want, "after {what}");
     };
 
     let api = Api::new(&e.url, e.cred.clone());
     // The site settings sheet: every field it knows, as read.
     let s = api.settings().unwrap().expect("settings");
     api.put_settings(&s).unwrap();
-    still("put_settings");
+    still(&theirs, "put_settings");
     let cfg = api.site_config().unwrap().expect("site config");
     api.put_site_config(cfg.patch(&Default::default())).unwrap();
-    still("put_site_config");
-    // A Background rule Burrow lists, flipped (put back by `_back`).
+    still(&theirs, "put_site_config");
+    // An older Background rule Burrow lists, flipped (put back by `_back`).
     let was = api.background_rules().unwrap().expect("rules");
     api.put_background_rule(rule, !was.on(rule)).unwrap();
-    still("put_background_rule");
+    still(&theirs, "put_background_rule (an older rule)");
     if let Some(c) = api.changelog_settings().unwrap() {
         api.put_changelog_settings(&c).unwrap();
-        still("put_changelog_settings");
+        still(&theirs, "put_changelog_settings");
     }
     if let Some(ai) = api.server_ai_settings().unwrap() {
         api.put_server_ai_settings(&ai).unwrap();
-        still("put_server_ai_settings");
+        still(&theirs, "put_server_ai_settings");
     }
     if let Some(at) = api.discover_seen_at().unwrap() {
         api.put_discover_seen_at(&at).unwrap();
-        still("put_discover_seen_at");
+        still(&theirs, "put_discover_seen_at");
     }
+    // A new rule Burrow writes now ("near-same", Small edits): it changes;
+    // readerOrder and the other three don't.
+    let near = theirs["backgroundRules"]["near-same"].as_bool().unwrap();
+    api.put_background_rule("near-same", !near).unwrap();
+    theirs["backgroundRules"]["near-same"] = json!(!near);
+    still(&theirs, "put_background_rule (near-same)");
+    // Burrow's own readerOrder, back to what the blyg had: it changes;
+    // every rule doesn't.
+    let ours = blyg_core::order::ReaderOrder::parse(v["readerOrder"].as_str().unwrap())
+        .expect("a readerOrder Burrow knows");
+    assert_eq!(api.put_reader_order(ours).unwrap(), ours);
+    theirs["readerOrder"] = v["readerOrder"].clone();
+    still(&theirs, "put_reader_order");
 }
 
 // ------------------------------------------------------ TK generate (0.27)

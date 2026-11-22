@@ -9,7 +9,7 @@ use super::*;
 gpui_kit::actions!(blygger, [FormatBold, FormatItalic, InsertFormula]);
 
 /// Windows' one-time hint (`bold_key_hint`).
-pub(crate) const BOLD_KEY_HINT: &str = "Bold is Alt+B; Ctrl+B opens the Shelf";
+pub(crate) const BOLD_KEY_HINT: &str = "Bold is Alt+B; Ctrl+B opens Saved";
 
 /// Replace `from..to` with `insert`, then select `start..end` (byte offsets).
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -111,7 +111,7 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "TogglePreview" => &["render", "html"],
         "ShowVersions" => &["history", "versions", "restore"],
         "QuotePicker" => &["quote", "transclude", "link"],
-        "ShowShelf" => &["bookshelf", "favourites", "favorites"],
+        "ShowShelf" => &["shelf", "bookshelf", "favourites", "favorites", "bookmarks"],
         // --- access-ai ---
         "ShowClientAccess" => &["tokens", "api token", "oauth", "revoke", "grants", "mcp"],
         "ShowServerAi" => &[

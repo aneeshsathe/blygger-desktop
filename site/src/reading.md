@@ -34,12 +34,38 @@ revised leads with its latest changelog note,
 ## The Reader
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
-(All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
-Shelf, Background, then **Your blyg**, your **hoppers**, your folders and the rest),
-the posts from that source in the middle, and the post on the right.
+(All unread, Today, Thumbed, Thumbed down, Threads, Fragments, then
+blygger-studio 0.68's tabs: **Feed**, **Agentic feed**, **Saved**,
+**Background** and **Raw**; then **Your blyg**, your **hoppers**, your folders
+and the rest), the posts from that source in the middle, and the post on the
+right.
 
 - **Threads** and **Fragments** list only that kind of post; **Thumbed
   down** lists the posts you gave a 👎.
+- **Feed** is everything you read but Background. It is **pace-layered** by
+  default, the order your blyg's home page uses, run over everything you
+  read: a new post arrives on top and sinks as others come, more slowly the
+  more its blyg pinned it, and a new version climbs one place (none when it
+  only republished, refreshed its quotes or fixed a few characters). Only a
+  blyg's own pins count. The newest 500 posts are ordered this way; older
+  ones follow newest first. **Chronological** lists newest first instead.
+  The choice is in the reading header (Pace-layered · Chronological), and
+  in Settings › READER ORDER; your blyg keeps it (`readerOrder`,
+  blygger-studio 0.68), or this computer does on an older studio. The
+  Stream follows it too, and so do Mentions, Background and every other
+  source except hoppers, trails, Saved and Raw, which keep their own order. In the Reader the
+  header also has the Feed's kinds: **All · Threads · Fragments**.
+  Burrow counts the pins of posts whose changelog it has read (the ones you
+  opened); a post it knows nothing more of counts as its first and latest
+  versions. So the pace-layered order is worked out on this Mac from the
+  versions Burrow has seen, and can differ slightly from your blyg's home
+  page.
+- **Agentic feed** will be where an assistant organizes your reading:
+  what you should see, and how. It isn't built yet, upstream either; its
+  prompt is already in Settings (AI, *Agentic feed prompt*).
+- **Raw** is what came in from the blygs you read, newest first, as it
+  arrived: nothing moved to Background, nothing folded under a thread,
+  withdrawn posts included. Your own posts aren't in it.
 
 - **Mentions**, under All unread, lists the posts you hold that mention you:
   on studio 0.56 and later, the ones your blyg's own mentions lens finds
@@ -51,11 +77,12 @@ the posts from that source in the middle, and the post on the right.
   and doesn't shrink when the blyg answers. Your own posts and Background
   aren't listed. A dot says there's something to read; there's never a
   count.
-- **Shelf** lists everything on your shelf, yours and others', in your
-  order, as the studio's Shelf lens does: **+ Add to shelf** among a post's
-  chips puts it there (see [The shelf](writing.md#the-shelf)). A shelved
-  post stays in Shelf even when it's in Background; a withdrawn one leaves.
-- **Background** holds what you've set aside, newest first, and nothing
+- **Saved** (it was the Shelf) lists everything you saved, yours and
+  others', in your order, as the studio's Saved tab does: **+ Save** among a
+  post's chips puts it there, and **✓ Saved** takes it out (see
+  [Saved](writing.md#the-shelf)). A saved post stays in Saved even when it's
+  in Background; a withdrawn one leaves.
+- **Background** holds what you've set aside, in the Feed's order, and nothing
   else lists it: not the other feeds, Mentions, the counts or the stream.
   Withdrawn posts are always there, the blygs' and your own; opened, one
   reads as withdrawn (with its retained pin, when the author kept one). On
@@ -91,12 +118,23 @@ on your blyg. Withdrawn posts are always in Background. On blygger-studio
   the author wrote.
 - **Republished unchanged:** a new version with the same text and the same
   quotes.
+- **Quotes refreshed:** a new version with the same text whose quotes now
+  show newer versions of what they quote (blygger-studio 0.68).
+  - **Including rewritten quotes:** a refresh that brought in a quote whose
+    text was rewritten. It acts only while Quotes refreshed is on (greyed
+    out otherwise); turn it off to keep those refreshes in the Feed.
+- **Small edits:** a new version that changes at most 40 characters and 2%
+  of the text (blygger-studio 0.68).
 - **Your own minor changes:** a version of yours the change classifier calls
   a typo, minor or refresh.
+- **Followed within 15 minutes:** a post its blyg followed with a newer one
+  within 15 minutes; a later version of it brings it back. It applies to
+  your own posts in your reader too (blygger-studio 0.68).
 
 Settings shows only the rules your blyg offers (blygger-studio 0.61 has just
-the last). On an older studio there are no chips or rules, and Background
-lists withdrawn posts.
+your own minor changes, 0.64 four rules, 0.68 all eight). On an older studio
+there are no chips or rules, and Background lists withdrawn posts. Your blyg
+measures each new version as it arrives; Burrow shows its answer.
 
 **By keys:** in Settings, ⇥ past THEME reaches the rules, ←/→ pick one, and
 space or ⏎ turns it off or on. A rule that's on reads “✓ Republished
@@ -105,7 +143,8 @@ unchanged”, one that's off “○ Republished unchanged off”, and a toast sa
 
 **Why is it here?** A post a rule put in Background says why, on a small
 badge: “published with ‘A morning on the harbour wall’” (the thread it came
-with), “no words of its own” or “republished unchanged”.
+with), “no words of its own”, “republished unchanged”, “quotes refreshed”,
+“quotes refreshed (rewritten)”, “small edit” or “followed within 15 min”.
 
 **+N parts.** When someone publishes a thread together with the items it
 quotes (with tangling, say), the parts go to Background and the thread says
@@ -261,8 +300,8 @@ and the tour, and when there's no blyg to read from.
 
 Burrow has several ways to keep a post. In plain words:
 
-- **Shelf**: posts you mean to come back to soon. A short list, in your
-  order, synced with your blyg. (**+ Add to shelf** in ⋯ More, or ⌥⌘B;
+- **Saved** (it was the Shelf): posts you mean to come back to soon. A short
+  list, in your order, synced with your blyg. (**+ Save** in ⋯ More, or ⌥⌘B;
   Ctrl+Shift+A on Windows.)
 - **Hopper**: a named collection on your blyg, yours and others' posts
   together; make it public and it gets its own page. (**h**.)
@@ -378,7 +417,7 @@ The selected post shows its actions. The common ones are chips under the
 post: **Quote into a thread**, **Reply**, **Catch up** (when the
 post draws on others) and **↓ Background**. The rest are in **⋯ More**, at
 the end of the row: AI reply, Fork, Link post, Open on web, → Notes,
-Hopper ›, + Add to shelf, ⤳ Add to trail and the other Background choices.
+Hopper ›, + Save, ⤳ Add to trail and the other Background choices.
 The menu shows each one's key where it has one (**h**, **t**, ⌥⌘B, ⌥⌘L), and
 those keys (and **b** and **q**) work as before. Each says what it
 makes:

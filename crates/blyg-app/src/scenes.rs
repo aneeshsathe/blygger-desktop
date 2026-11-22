@@ -294,6 +294,12 @@ scenes! {
     Reading {
         RdProvenance = "rd-provenance",
     }
+    /// reading/demo.rs (--- reader order ---): studio 0.68's tabs: the
+    /// Reader on the pace-layered Feed, its controls in the header; Raw
+    Reading {
+        RdFeed = "rd-feed",
+        RdRaw = "rd-raw",
+    }
     /// app/demo.rs (--- FX1 ---): Settings with the keyboard on BACKGROUND's
     /// second rule (⇥ ×5, →), scrolled to it
     Main {

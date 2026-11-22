@@ -1,11 +1,19 @@
 //! --- background --- Sample posts for studio 0.64's Background rules:
 //! Lin's thread published with two parts (a burst: "+2 parts"), Ada's post
 //! of only quotes ("no words of its own") and Rue's note republished
-//! unchanged. The fake works out their reasons as the studio's lens would
-//! ([`entries`]), under the rules as set. All invented, on
-//! `blyg.example.com`.
+//! unchanged; and studio 0.68's measured rules: Ada's typo fix (a small
+//! edit), Rue's threads whose quotes were refreshed (one with a quote
+//! rewritten), and Lin's note followed within minutes by another. The fake
+//! works out their reasons as the studio's lens would ([`entries`]), with
+//! the studio's own measures (`blyg_core::change_size::is_near_same`,
+//! `blyg_core::background::supersedes`), under the rules as set. All
+//! invented, on `blyg.example.com`.
 
-use blyg_core::background::{BURST, EntryBackground, Key, RULES};
+use blyg_core::background::{
+    BURST, BackgroundRules, EntryBackground, Key, QUOTES_MATERIAL, QUOTES_REFRESHED, RULES,
+    SUPERSEDED, supersedes,
+};
+use blyg_core::change_size::is_near_same;
 use blyg_core::{Kind, ReadingItem, RemoteId, SubId};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
@@ -20,6 +28,28 @@ pub const LIN_PART_2: &str = "01k211n0burst0000000000003";
 pub const ADA_WORDLESS: &str = "01k2ada0w0rd1ess0000000001";
 /// Rue's note, v2 the same as v1.
 pub const RUE_SAME: &str = "01k2rve0same00000000000001";
+
+// --- studio 0.68's measured rules ---
+/// Ada's post, v2 a typo fix of v1 (a small edit).
+pub const ADA_SMALL: &str = "01k2ada0sma11edit000000001";
+/// Lin's quick note, and the one Lin followed it with six minutes later.
+pub const LIN_DRAFT: &str = "01k211n0draft0000000000001";
+pub const LIN_FOLLOW: &str = "01k211n0f0110w000000000001";
+/// Rue's thread quoting Ada's post: v2 refreshed the quote to Ada's v2.
+pub const RUE_REFRESH: &str = "01k2rve0refresh00000000001";
+/// Rue's thread quoting Lin's follow-up, whose text Lin rewrote.
+pub const RUE_REWRITE: &str = "01k2rve0rewr1te00000000001";
+
+const ADA_SMALL_V1: &str = "Every harbour keeps two clocks. One is on the tower and runs on \
+    the town's time; the other is the water itself, which keeps teh moon's. Fishermen read \
+    the second one without looking, the way you know a stair in the dark. Visitors read \
+    the first and miss the boat.";
+const ADA_SMALL_V2: &str = "Every harbour keeps two clocks. One is on the tower and runs on \
+    the town's time; the other is the water itself, which keeps the moon's. Fishermen read \
+    the second one without looking, the way you know a stair in the dark. Visitors read \
+    the first and miss the boat.";
+const LIN_FOLLOW_V1: &str = "The ferry's bell rings twice for the last crossing.";
+const LIN_FOLLOW_V2: &str = "Nobody rings the ferry bell any more; a recording plays at dusk.";
 
 /// The burst thread's key (the `rd-burst` scene opens it).
 pub fn thread_key() -> Key {
@@ -114,9 +144,71 @@ pub fn rows(now: DateTime<Utc>) -> Vec<ReadingItem> {
             "Reading lists are promises we make to a later self.",
             &[],
         ),
+        // --- studio 0.68's measured rules ---
+        row(
+            "sub-ada",
+            "Ada",
+            ADA,
+            ADA_SMALL,
+            Kind::Fragment,
+            2,
+            now - d(2),
+            ADA_SMALL_V2,
+            &[],
+        ),
+        lin(
+            LIN_DRAFT,
+            Kind::Fragment,
+            now - d(1) - h(6),
+            "Ferry notes, part one: the bell.",
+            &[],
+        ),
+        row(
+            "sub-lin",
+            "Lin",
+            LIN,
+            LIN_FOLLOW,
+            Kind::Fragment,
+            2,
+            now - d(1) - h(6) + m(6),
+            LIN_FOLLOW_V2,
+            &[],
+        ),
+        row(
+            "sub-rue",
+            "Rue",
+            RUE,
+            RUE_REFRESH,
+            Kind::Thread,
+            2,
+            now - d(1) - h(4),
+            &format!("# Two clocks\n\nAda on harbour time:\n\n![[{ADA_SMALL}]]"),
+            &[ADA_SMALL],
+        ),
+        row(
+            "sub-rue",
+            "Rue",
+            RUE,
+            RUE_REWRITE,
+            Kind::Thread,
+            2,
+            now - d(1) - h(5),
+            &format!("# The ferry bell\n\nLin heard it:\n\n![[{LIN_FOLLOW}]]"),
+            &[LIN_FOLLOW],
+        ),
     ];
     bake_quotes(&mut rows);
     rows
+}
+
+/// What a refreshed quote's text change makes of the refresh (studio
+/// `refreshReason`): rewritten beyond a small edit is `quotes-material`.
+fn refresh_reason(was: &str, now: &str) -> &'static str {
+    if is_near_same(was, now) {
+        QUOTES_REFRESHED
+    } else {
+        QUOTES_MATERIAL
+    }
 }
 
 /// Each `![[id]]` line's quote baked into the HTML as a blyg publishes it
@@ -151,7 +243,10 @@ fn bake_quotes(rows: &mut [ReadingItem]) {
 /// The sample posts' Background entries, as the studio's lens would list
 /// them with `rules` (rule → on; a rule not listed is on).
 pub fn entries(rules: &[(String, bool)]) -> Vec<(Key, EntryBackground)> {
-    let on = |rule: &str| !rules.iter().any(|(r, v)| r == rule && !v);
+    let set = BackgroundRules {
+        rules: rules.to_vec(),
+    };
+    let on = |rule: &str| set.counts(rule);
     let key = |sub: &str, id: &str| (SubId::from(sub), RemoteId::from(id));
     let mut out = Vec::new();
     let mut add = |k: Key, reason: &str, detail: Option<serde_json::Value>| {
@@ -176,10 +271,32 @@ pub fn entries(rules: &[(String, bool)]) -> Vec<(Key, EntryBackground)> {
     }
     add(key("sub-ada", ADA_WORDLESS), "wordless", None);
     add(key("sub-rue", RUE_SAME), "maintenance", None);
+    // --- studio 0.68's measured rules ---
+    if is_near_same(ADA_SMALL_V1, ADA_SMALL_V2) {
+        add(key("sub-ada", ADA_SMALL), "near-same", None);
+    }
+    // Lin's follow-up came six minutes after the draft was last active.
+    if supersedes(6 * 60_000, 0) {
+        add(
+            key("sub-lin", LIN_DRAFT),
+            SUPERSEDED,
+            Some(json!({ "by": LIN_FOLLOW })),
+        );
+    }
+    add(
+        key("sub-rue", RUE_REFRESH),
+        refresh_reason(ADA_SMALL_V1, ADA_SMALL_V2),
+        None,
+    );
+    add(
+        key("sub-rue", RUE_REWRITE),
+        refresh_reason(LIN_FOLLOW_V1, LIN_FOLLOW_V2),
+        None,
+    );
     out
 }
 
-/// Every rule on, as a new studio 0.64 starts.
+/// Every rule on, as a new studio 0.68 starts.
 pub fn rules() -> Vec<(String, bool)> {
     RULES.iter().map(|r| (r.to_string(), true)).collect()
 }
@@ -219,6 +336,43 @@ mod tests {
             .find(|r| &*r.remote_id == ADA_WORDLESS)
             .expect("Ada's quote");
         assert!(!wordless.content_html.contains("![["));
+    }
+
+    /// Studio 0.68's measured rules on the sample posts, by the studio's
+    /// own measures, and "including rewritten quotes" only under "quotes
+    /// refreshed".
+    #[test]
+    fn the_measured_rules_place_the_samples_as_the_studio_would() {
+        let reason = |rules: &[(String, bool)], id: &str| {
+            entries(rules)
+                .into_iter()
+                .find(|(k, _)| &*k.1 == id)
+                .map(|(_, e)| e.reasons[0].clone())
+        };
+        let all = rules();
+        assert_eq!(reason(&all, ADA_SMALL).as_deref(), Some("near-same"));
+        assert_eq!(reason(&all, LIN_DRAFT).as_deref(), Some("superseded"));
+        assert_eq!(reason(&all, LIN_FOLLOW), None, "the newer one stays");
+        assert_eq!(
+            reason(&all, RUE_REFRESH).as_deref(),
+            Some("quotes-refreshed")
+        );
+        assert_eq!(
+            reason(&all, RUE_REWRITE).as_deref(),
+            Some("quotes-material")
+        );
+        let with = |rule: &str, on: bool| -> Vec<(String, bool)> {
+            all.iter()
+                .map(|(r, v)| (r.clone(), if r == rule { on } else { *v }))
+                .collect()
+        };
+        assert_eq!(reason(&with("quotes-material", false), RUE_REWRITE), None);
+        let refreshed_off = with("quotes-refreshed", false);
+        assert_eq!(reason(&refreshed_off, RUE_REWRITE), None);
+        assert_eq!(reason(&refreshed_off, RUE_REFRESH), None);
+        assert_eq!(reason(&with("near-same", false), ADA_SMALL), None);
+        assert_eq!(reason(&with("superseded", false), LIN_DRAFT), None);
+        assert_eq!(rows(Utc::now()).len(), 10);
     }
 
     /// User testing (R6): a post of only a quote is titled from what it

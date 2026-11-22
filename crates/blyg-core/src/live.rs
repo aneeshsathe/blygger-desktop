@@ -2123,6 +2123,51 @@ impl Backend for LiveBackend {
     }
     // --- end background ---
 
+    // --- reader order ---
+    fn reader_order(&self) -> crate::order::ReaderOrder {
+        self.e()
+            .store
+            .meta(crate::order::READER_ORDER_META)
+            .and_then(|s| crate::order::ReaderOrder::parse(&s))
+            .unwrap_or_default()
+    }
+
+    fn load_reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        let got = self.e().track(self.e().api.reader_order())?;
+        let store = &self.e().store;
+        store.set_meta(
+            crate::order::READER_ORDER_SERVED_META,
+            if got.is_some() { "1" } else { "0" },
+        )?;
+        if let Some(o) = got {
+            store.set_meta(crate::order::READER_ORDER_META, o.as_str())?;
+        }
+        Ok(got)
+    }
+
+    fn save_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let store = &self.e().store;
+        let served = store
+            .meta(crate::order::READER_ORDER_SERVED_META)
+            .as_deref()
+            == Some("1");
+        let kept = if served {
+            self.e().track(self.e().api.put_reader_order(order))?
+        } else {
+            order
+        };
+        store.set_meta(crate::order::READER_ORDER_META, kept.as_str())?;
+        Ok(kept)
+    }
+
+    fn cached_changelogs(&self) -> std::collections::HashMap<(String, String), Vec<RemoteVersion>> {
+        self.e().store.cached_changelogs()
+    }
+    // --- end reader order ---
+
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {
         self.e().store.hoppers()

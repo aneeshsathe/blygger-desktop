@@ -239,6 +239,7 @@ impl MainView {
         });
         self.changelog_settings_refresh(cx); // --- reader view / changelog ---
         self.background_rules_refresh(cx); // --- background ---
+        self.reader_order_refresh(true, cx); // --- reader order ---
         cx.notify();
     }
 

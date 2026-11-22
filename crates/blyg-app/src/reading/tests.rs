@@ -28,7 +28,11 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
             cx,
         );
     });
-    let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
+    let fake = Arc::new(
+        FakeBackend::with_timing(Timing::instant())
+            .chronological() // the list these tests read is newest first
+            .without_media_cache(),
+    );
     let backend: Arc<dyn Backend> = fake.clone();
     let f2 = fake.clone();
     let (view, cx) = cx.add_window_view(move |window, cx| {
@@ -813,10 +817,10 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Fork",
             "Link post · new fragment",
             "Open on web",
-            "→ Notes",        // --- notes ---
-            "Hopper ›",       // --- hoppers ---
-            "+ Add to shelf", // --- shelf sync ---
-            "↓ Background",   // --- background --- (the sample blyg serves it)
+            "→ Notes",      // --- notes ---
+            "Hopper ›",     // --- hoppers ---
+            "+ Save",       // --- shelf sync --- (studio 0.68's "+ save")
+            "↓ Background", // --- background --- (the sample blyg serves it)
             "⇊ Blyg to Background"
         ]
     );
@@ -837,7 +841,7 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Open on web",
             "→ Notes",
             "Hopper ›",
-            "+ Add to shelf",
+            "+ Save",
             "⇊ Blyg to Background",
             "⤳ Add to trail"
         ]

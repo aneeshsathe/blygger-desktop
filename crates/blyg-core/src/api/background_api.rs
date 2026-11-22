@@ -112,4 +112,24 @@ impl Api {
         BackgroundRules::from_settings(&v)
             .ok_or_else(|| CoreError::Other("your blyg didn't keep the Background rules".into()))
     }
+
+    /// --- reader order --- The `readerOrder` of `GET /api/settings`
+    /// (studio 0.68, contract 6.1.0). `Ok(None)`: the studio doesn't have
+    /// it (a setting, not an operation: its absence is the gate).
+    pub fn reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        let v: Option<Value> = Self::optional(self.call("GET", "/api/settings", None))?;
+        Ok(v.and_then(|v| crate::order::ReaderOrder::from_settings(&v)))
+    }
+
+    /// `PATCH /api/settings {readerOrder}`: that key only; the stored value
+    /// back. Sent only to a studio whose settings had the key (an older one
+    /// refuses an unknown key with a 400).
+    pub fn put_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let v = self.call("PATCH", "/api/settings", Some(order.patch()))?;
+        crate::order::ReaderOrder::from_settings(&v)
+            .ok_or_else(|| CoreError::Other("your blyg didn't keep the reader order".into()))
+    }
 }

@@ -52,6 +52,10 @@ pub(crate) mod mentions_vm; // --- contacts --- why a post is in it (the web com
 pub(crate) mod contacts;
 // --- end contacts ---
 pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
+// --- reader order --- studio 0.68's tabs: the Feed's order and controls, Raw.
+pub(crate) mod feed;
+#[cfg(test)]
+mod feed_tests;
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -461,6 +465,8 @@ pub struct State {
     /// --- background --- whether the blyg has Background (studio 0.61), and
     /// its rules for Settings.
     pub background: background::Background,
+    /// --- reader order --- the Feed's order and each row's place in it.
+    pub feed: feed::Feed,
 }
 
 impl State {
@@ -468,10 +474,14 @@ impl State {
         let data_dir = cx
             .try_global::<crate::connection::Connection>()
             .map(|c| c.data_dir.clone());
+        // --- reader order --- the Feed's order; its places are worked
+        // out off the UI thread when Reading opens (`feed_rebuild`).
+        let rows = vm::order(backend.reading());
+        let feed = feed::Feed::new(backend.reader_order());
         Self {
             view: View::Posts,
             focus: cx.focus_handle(),
-            rows: vm::order(backend.reading()),
+            rows,
             sel: None,
             opened: None,
             list_scroll: UniformListScrollHandle::new(),
@@ -534,6 +544,7 @@ impl State {
             site: site_view::SiteView::new(data_dir.clone()),
             changelogs: Default::default(),
             background: Default::default(),
+            feed,
         }
         .refiltered()
     }
@@ -577,6 +588,18 @@ impl State {
         // --- hoppers --- a hopper lists its posts in its own order.
         if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
             hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
+        }
+        // --- reader order --- the Feed's order (pace-layered or not), or Raw's;
+        // held (nothing listed) until its first places arrive.
+        feed::arrange(
+            &self.rows,
+            &mut self.shown,
+            self.mode,
+            &self.source,
+            &self.feed,
+        );
+        if self.feed_waiting() {
+            self.shown.clear();
         }
         // --- trails --- a trail lists its held stops, in its order.
         if let (stream_vm::ReadMode::Reader, sources_vm::Source::Trail(t)) =
@@ -632,6 +655,12 @@ impl State {
     /// haven't changed since the last one).
     pub fn narrow_next(&mut self) {
         self.narrow = true;
+    }
+
+    /// --- reader order --- What's on screen follows the Feed, which waits
+    /// for its first places: the list is held, with no "nothing here" note.
+    pub fn feed_waiting(&self) -> bool {
+        self.feed.held() && feed::follows_feed(self.mode, &self.source)
     }
 
     /// The rows the list shows (all of them without a search).
@@ -778,6 +807,8 @@ impl MainView {
         r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.background.set_rows(&r.rows); // --- background --- "+N parts"
+        self.feed_rebuild(cx); // --- reader order ---
+        let r = &mut self.reading;
         r.refilter();
         self.refresh_lineage_counts(cx); // --- lineage counts ---
         let r = &mut self.reading;
@@ -832,6 +863,8 @@ impl MainView {
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 let r = &mut self.reading;
                 r.background.set_rows(&r.rows); // --- background --- "+N parts"
+                self.feed_rebuild(cx); // --- reader order ---
+                self.reader_order_refresh(false, cx);
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);

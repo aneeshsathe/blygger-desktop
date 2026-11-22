@@ -36,21 +36,32 @@ pub enum Smart {
     Fragments,
     // --- end upkeep ---
     /// --- shelf sync --- what's on your shelf, yours and others', in your
-    /// order (studio 0.61's Shelf lens). Listed by `State::refilter`.
+    /// order (studio 0.61's Shelf lens; "Saved" since studio 0.68). Listed
+    /// by `State::refilter`.
     Shelf,
+    /// --- reader order --- studio 0.68's Agentic feed: where an assistant
+    /// will organize your reading. A placeholder upstream; lists nothing.
+    Agentic,
+    /// --- reader order --- studio 0.68's Raw: what came in from the blygs
+    /// you read, newest first, nothing moved to Background or folded.
+    Raw,
 }
 
 impl Smart {
-    pub const ALL: [Smart; 9] = [
+    pub const ALL: [Smart; 11] = [
         Smart::Unread,
         Smart::Today,
         Smart::Thumbed,
         Smart::Disliked,  // --- upkeep ---
         Smart::Threads,   // --- upkeep ---
         Smart::Fragments, // --- upkeep ---
+        // Studio 0.68's tabs, in its order (Mentions is listed under All
+        // unread): Feed, Agentic feed, Saved, Background, Raw.
         Smart::All,
-        Smart::Shelf, // --- shelf sync --- (the studio's order: Background after it)
+        Smart::Agentic,
+        Smart::Shelf,
         Smart::Background,
+        Smart::Raw,
     ];
 
     pub fn label(self) -> &'static str {
@@ -58,13 +69,15 @@ impl Smart {
             Smart::Unread => "All unread",
             Smart::Today => "Today",
             Smart::Thumbed => "Thumbed",
-            Smart::All => "All",
+            Smart::All => "Feed", // studio 0.68's name for All
             Smart::Background => "Background",
             // --- upkeep ---
             Smart::Disliked => "Thumbed down",
             Smart::Threads => "Threads",
             Smart::Fragments => "Fragments",
-            Smart::Shelf => "Shelf", // --- shelf sync ---
+            Smart::Shelf => "Saved", // --- shelf sync --- (studio 0.68's name)
+            Smart::Agentic => "Agentic feed", // --- reader order ---
+            Smart::Raw => "Raw",
         }
     }
 }
@@ -175,6 +188,10 @@ pub fn in_source(
     filed: &HashMap<SubId, String>,
     now: DateTime<Utc>,
 ) -> bool {
+    // --- reader order --- Raw: what came in, Background or not; yours aren't.
+    if *source == Source::Smart(Smart::Raw) {
+        return !super::own::is_own_row(r);
+    }
     // --- background --- Background posts are there and nowhere else.
     if is_background(r) != (*source == Source::Smart(Smart::Background)) {
         return false;
@@ -198,6 +215,9 @@ pub fn in_source(
         Source::Mentions => false,
         // --- shelf sync --- listed in the shelf's order by `State::refilter`.
         Source::Smart(Smart::Shelf) => false,
+        // --- reader order --- the Agentic feed has nothing to list yet.
+        Source::Smart(Smart::Agentic) => false,
+        Source::Smart(Smart::Raw) => true,
     }
 }
 
@@ -472,6 +492,9 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Today) => "Nothing dated today.",
         Source::Smart(Smart::Thumbed) => "No thumbed posts yet. 👍 a post to keep it here.",
         Source::Smart(Smart::All) => "Nothing to read yet.",
+        // --- reader order ---
+        Source::Smart(Smart::Agentic) => super::feed::AGENTIC_NOTE,
+        Source::Smart(Smart::Raw) => super::feed::RAW_EMPTY,
         Source::Smart(Smart::Background) => {
             "Nothing withdrawn. Posts their authors withdraw are kept here, out of the way."
         }
@@ -480,9 +503,7 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Threads) => "No threads to read.",
         Source::Smart(Smart::Fragments) => "No fragments to read.",
         // --- shelf sync ---
-        Source::Smart(Smart::Shelf) => {
-            "Nothing on your shelf yet. “+ Add to shelf” on any post puts it here."
-        }
+        Source::Smart(Smart::Shelf) => "Nothing saved yet. “+ Save” on any post puts it here.",
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
@@ -560,9 +581,11 @@ mod tests {
                 "Thumbed down", // --- upkeep ---
                 "Threads",      // --- upkeep ---
                 "Fragments",    // --- upkeep ---
-                "All",
-                "Shelf", // --- shelf sync ---
+                "Feed",
+                "Agentic feed",
+                "Saved", // --- shelf sync --- (studio 0.68's name)
                 "Background",
+                "Raw",
                 "# Folders",
                 "[Friends]",
                 "  Rue",
@@ -689,9 +712,9 @@ mod tests {
         );
         let all = Source::Smart(Smart::All);
         assert_eq!(
-            step_source(&e, &all, 3),
+            step_source(&e, &all, 5),
             Some(Source::Folder(FOLDER_FRIENDS.into())),
-            "headings are skipped (Shelf and Background come first)"
+            "headings are skipped (Agentic feed, Saved, Background and Raw come first)"
         );
         assert_eq!(
             step_source(&e, &Source::Smart(Smart::Unread), -1),
@@ -753,8 +776,8 @@ mod tests {
         assert_eq!(
             e[at - 1],
             Entry::Smart {
-                smart: Smart::Background,
-                unread: 0,
+                smart: Smart::Raw,
+                unread: 6,
             },
             "right under the smart feeds"
         );
