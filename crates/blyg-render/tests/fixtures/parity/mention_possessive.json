@@ -1,0 +1,12 @@
+{
+  "name": "mention_possessive",
+  "kind": "fragment",
+  "md": "In @lin's case, and in @lin’s too.",
+  "html": "<p>In <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>'s case, and in <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>’s too.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

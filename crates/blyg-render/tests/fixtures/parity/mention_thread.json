@@ -1,0 +1,12 @@
+{
+  "name": "mention_thread",
+  "kind": "thread",
+  "md": "@lin's notes.\n\n> @lin-driven, in a quote, stays\n\n`@lin-ish` in code, and [@lin](https://x.example/) linked.",
+  "html": "<p><span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>'s notes.</p>\n<blockquote>\n<p>@lin-driven, in a quote, stays</p>\n</blockquote>\n<p><code>@lin-ish</code> in code, and <a href=\"https://x.example/\">@lin</a> linked.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

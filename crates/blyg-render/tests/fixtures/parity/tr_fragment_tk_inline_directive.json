@@ -1,0 +1,24 @@
+{
+  "name": "tr_fragment_tk_inline_directive",
+  "kind": "fragment",
+  "md": "Lead [TK]bridge[=]one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\ntwo[/TK] tail.",
+  "html": "<p>Lead <span class=\"blyg-tk-gen\">one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\ntwo</span> tail.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "bridge",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+      "reason": "a fragment can't quote another item: make this a thread, or link it with [[id]]"
+    }
+  ]
+}

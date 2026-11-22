@@ -19,4 +19,5 @@ section: Changed
 - **A fragment's quote line says what to do instead** (blygger-studio 0.67).
   The publish refusal, the status bar and the preview warning for an
   own-line `![[id]]` in a fragment now say "make this a thread, or link it
-  with [[id]]", as Studio does, which now refuses the line too.
+  with [[id]]", as Studio does, which now refuses the line too. The preview's
+  parity fixtures come from Studio 0.68 (`docs/RENDER.md`).

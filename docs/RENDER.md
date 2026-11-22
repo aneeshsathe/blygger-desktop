@@ -409,8 +409,28 @@ node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/studio/clone
 cargo test -p blyg-render
 ```
 
-**Reference version: studio 0.64.1** (tag `v0.64.1`, unpatched),
-re-generated 2026-11-19 from 0.49.1 (markdown-it 14.3.3). The 0.49.1
+**Reference version: studio 0.68.0** (tag `v0.68.0`, unpatched),
+re-generated 2026-11-21 from 0.64.1 (markdown-it 14.3.3). Eight cases were
+added (293): five `mention_*` cases for natural grammar (0.66 #158; the fake
+store has contacts now, `lin` and `Lin-K`), two fragments whose generated
+output holds a directive line, and a block scope with two quotes in a row.
+Of the 285 existing cases 13 changed, all from studio 0.67's #161, which
+took up three r15 rules Burrow already followed, so their rewrites are gone:
+
+- A fragment's own-line `![[id]]` (in its text or in generated output) is a
+  publish error, with Studio's reason, "a fragment can't quote another item:
+  make this a thread, or link it with [[id]]" (`gen_parity.mjs` reads it
+  from `model.ts`). The `SPEC_ERRORS` entries for it went.
+- A link to another blyg's item with no `page` names its item document
+  (`items/{id}.json`); the no-`page` rewrite went.
+- A quote baked in a generated block sits between two `div.blyg-tk-gen`
+  wrappers, never inside one; `SPEC_BLOCK_SPLIT` went.
+
+One studio quirk is rewritten instead (`SPEC_REWRITES`): between two quotes
+in a row the studio leaves an empty `div.blyg-tk-gen`, which #102 (9) drops
+(`tr_block_tk_two_quotes`).
+
+**Studio 0.64.1** (re-generated 2026-11-19 from 0.49.1). The 0.49.1
 fixtures could not be regenerated against 0.59 or later until the
 generator moved to Miniflare 4. The harness now follows 0.64.1's preview
 handler: comments to self dropped (`previewComments`), `@handle` mentions
@@ -433,9 +453,8 @@ Of the 257 existing cases 15 changed, all from studio changes:
 - An own-line `![[id]]` in a generated block is baked as a quote, inside
   the block's `div.blyg-tk-gen` (the four decision-#60 cases). This crate
   already baked them, between two wrappers, as #102 (9) says; the parity
-  test now rewrites the studio's shape to the spec's (`SPEC_BLOCK_SPLIT`)
-  and compares the rest byte for byte, so they are no longer known
-  divergences.
+  test rewrote the studio's shape to the spec's until studio 0.67 took the
+  spec's shape (above).
 - `tk_inline_dollar` holds a formula now (maths, below).
 
 28 cases were added: maths (`math_*`: inline, display, display inside a
@@ -510,10 +529,9 @@ from its list", so every list only shrinks:
 
 Bug emulation: none. The patched-Worker bugs (patch 9) and the 0.47.0
 label bugs were dropped earlier; the three Worker behaviours under
-"Worker behaviour pinned as it is" are still the studio's in 0.64.1, and
-the r15 rewrites below that 0.64.1 still needs (#102 (9) inline spans, the
-reserved labelled `@vN`, the no-`page` link, the fragment directive error)
-remain.
+"Worker behaviour pinned as it is" are still the studio's in 0.68.0, and
+the r15 rewrites that 0.68.0 still needs (#102 (9) inline spans and the
+empty wrapper between two quotes, the reserved labelled `@vN`) remain.
 
 ### Earlier syncs
 
@@ -577,15 +595,15 @@ block's quotes inside the block, #105), so a re-sync is its own task. The
 rewrites follow the spec where the studio differs; studio 0.59 already
 bakes `data-blyg-label` exactly as rewritten.
 
-Results (studio 0.64.1). Tests compare after collapsing whitespace between
+Results (studio 0.68.0). Tests compare after collapsing whitespace between
 tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
-`tr_block_tk_directive_attached`) match after the `SPEC_BLOCK_SPLIT`
-rewrite; `tests/it/preview.rs` still pins this crate's output for them.
+`tr_block_tk_directive_attached`) match the studio's own output since 0.67;
+`tests/it/preview.rs` still pins this crate's output for them.
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 285 (258 byte-identical; 15 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 293 | 293 (272 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |
