@@ -91,6 +91,7 @@ sheets! {
     // --- access-ai ---
     ClientAccess(super::access::ClientAccessSheet),
     ServerAi(super::server_ai::ServerAiSheet),
+    Dictionary(super::server_ai::dictionary::DictionarySheet), // --- dictionary ---
     // --- contacts ---
     Contacts(super::reading::contacts::ContactsSheet),
     // --- upkeep ---

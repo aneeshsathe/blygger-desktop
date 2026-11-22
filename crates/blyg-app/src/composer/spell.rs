@@ -23,6 +23,22 @@ pub trait SpellEngine: Send + Sync + 'static {
     fn learn(&self, word: &str);
     /// Stop flagging this word for the rest of the session.
     fn ignore(&self, word: &str);
+    /// --- dictionary --- Take a learned word out of the user's dictionary
+    /// (it was taken out of the blyg's).
+    fn unlearn(&self, word: &str);
+}
+
+/// --- dictionary --- `ranges` without the words the blyg's dictionary
+/// accepts (`blyg_core::dictionary::Accepted`).
+pub fn drop_accepted(
+    text: &str,
+    mut ranges: Vec<Range<usize>>,
+    accepted: &blyg_core::dictionary::Accepted,
+) -> Vec<Range<usize>> {
+    if !accepted.is_empty() {
+        ranges.retain(|r| text.get(r.clone()).is_none_or(|w| !accepted.accepts(w)));
+    }
+    ranges
 }
 
 /// A copy of `text` with everything that isn't prose blanked to spaces,
@@ -386,6 +402,9 @@ pub mod fake {
         }
         fn ignore(&self, word: &str) {
             self.ok.lock().unwrap().insert(word.to_string());
+        }
+        fn unlearn(&self, word: &str) {
+            self.ok.lock().unwrap().remove(word);
         }
     }
 }

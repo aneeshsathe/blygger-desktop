@@ -644,8 +644,11 @@ impl Assist {
         let masked = spell::mask(&text);
         let plan = cx.global::<SpellService>().cache.plan(&masked);
         if plan.missing.is_empty() {
+            // --- dictionary --- the blyg's words aren't misspellings.
+            let known =
+                spell::drop_accepted(&text, plan.known, &cx.global::<SpellService>().accepted);
             self.last = text;
-            self.misspelled = spell::settle(plan.known, cursor);
+            self.misspelled = spell::settle(known, cursor);
             cx.notify();
             return;
         }
@@ -766,6 +769,9 @@ impl Assist {
             MenuItem::Learn | MenuItem::Ignore => {
                 if matches!(item, MenuItem::Learn) {
                     engine.learn(&menu.word);
+                    // --- dictionary --- and the blyg's, as Studio's "add
+                    // to dictionary" does.
+                    super::learned(&menu.word, cx);
                 } else {
                     engine.ignore(&menu.word);
                 }

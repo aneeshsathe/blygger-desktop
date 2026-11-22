@@ -255,6 +255,7 @@ scenes! {
         AaToken = "aa-token",
         AaAi = "aa-ai",
         AaPublish = "aa-publish",
+        AaDictionary = "aa-dictionary", // --- dictionary ---
     }
     /// site/mod.rs
     Site {

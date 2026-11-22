@@ -84,6 +84,7 @@ use crate::app::format::{FormatBold, FormatItalic, InsertFormula};
 use crate::app::access::ShowClientAccess;
 use crate::app::note_ai::DraftChangeNote;
 use crate::app::server_ai::ShowServerAi;
+use crate::app::server_ai::dictionary::ShowDictionary; // --- dictionary ---
 // --- upkeep ---
 use crate::app::syndication::ShowCopiesElsewhere;
 use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes}; // --- syndication ---
@@ -821,6 +822,12 @@ pub fn mac_table() -> Vec<Keybind> {
             ShowServerAi,
             "AI on your blyg: a model per function, house style, change notes, the change classifier",
             "Blyg › AI on Your Blyg…"
+        ),
+        // --- dictionary --- the blyg's spellcheck dictionary (studio 0.69)
+        menu_only!(
+            ShowDictionary,
+            "Your blyg's dictionary: the words its spellcheck accepts, shared with Studio; add and take out your own",
+            "Blyg › Dictionary…"
         ),
         kb!(
             "alt-cmd-n",
@@ -1666,6 +1673,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = (AddBlyg, ConnectBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
     let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
+    let _ = ShowDictionary; // --- dictionary ---
     let _ = ShowSite; // --- site ---
     let _ = (ShowStaleQuotes, ShowSignals, CopyLink); // --- upkeep ---
     let _ = ShowCopiesElsewhere; // --- syndication ---

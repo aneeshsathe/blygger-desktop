@@ -17,6 +17,10 @@ use crate::model::*;
 use crate::store::Store;
 use crate::sync::{Engine, Msg, SyncOptions, is_hopper_conflict, spawn};
 
+/// --- dictionary --- Held while the queued dictionary edits
+/// (`dictionary::PENDING_META`) are read and written back.
+static DICTIONARY_QUEUE: Mutex<()> = Mutex::new(());
+
 pub struct LiveBackend {
     engine: Arc<Engine>,
     /// Unauthenticated reads of other blygs' public surface. Holds no token.
@@ -263,6 +267,55 @@ impl LiveBackend {
     /// The TK provenance tracked for an item (`scopes` keyed to `keyed_to`).
     pub fn tracked_provenance(&self, id: &LocalId) -> crate::store::Tracked {
         self.engine.store.provenance(id)
+    }
+
+    /// --- dictionary --- Send the queued edits (studio 0.69): read the
+    /// dictionary, apply them onto the owner's words, write back from that
+    /// revision; a 409 is another client's write, merged onto and sent
+    /// again (three tries). The queue is cleared once stored, kept on what
+    /// a later try can mend (`dictionary::keeps_queue`: offline, 429, 5xx,
+    /// an ended sign-in, conflicts that kept coming), and dropped when the
+    /// blyg keeps no dictionary or refuses the words (the error says why).
+    fn send_dictionary(
+        &self,
+        queued: &crate::dictionary::Pending,
+    ) -> Result<Option<crate::dictionary::Dictionary>> {
+        use crate::api::dictionary::PutDictionary;
+        use crate::dictionary::{OWNER, PENDING_META, SOURCE_WORDS_MAX};
+        let store = &self.engine.store;
+        let sent = (|| {
+            let api = &self.e().api;
+            let Some(mut d) = self.e().track(api.dictionary())? else {
+                return Ok(None);
+            };
+            for _ in 0..3 {
+                let words = queued.apply(d.owner_words());
+                if words.len() > SOURCE_WORDS_MAX {
+                    return Err(CoreError::Other(format!(
+                        "your dictionary holds at most {SOURCE_WORDS_MAX} words of your own"
+                    )));
+                }
+                match self
+                    .e()
+                    .track(api.put_dictionary_source(OWNER, &words, d.revision))?
+                {
+                    PutDictionary::Stored(now) => return Ok(Some(now)),
+                    PutDictionary::Conflict(Some(now)) => d = now,
+                    // No longer offered: nothing to send to.
+                    PutDictionary::Conflict(None) => return Ok(None),
+                }
+            }
+            // Three conflicts in a row: kept, and the next read tries again.
+            Err(CoreError::RevisionConflict)
+        })();
+        // An edit queued meanwhile (another thread) stays for the next send.
+        let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        if !matches!(&sent, Err(e) if crate::dictionary::keeps_queue(e))
+            && store.meta(PENDING_META).as_deref() == Some(queued.to_meta().as_str())
+        {
+            store.delete_meta(PENDING_META)?;
+        }
+        sent
     }
 
     /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
@@ -2451,6 +2504,61 @@ impl Backend for LiveBackend {
         self.command(id, &sid, |rev| self.e().api.draft_note_history(&sid, rev))
     }
     // --- end changelog display ---
+
+    // --- studio 0.69 ---
+    fn agentic_feeds(&self) -> Result<Option<Vec<crate::agentic::Feed>>> {
+        self.e().track(self.e().api.agentic_feeds())
+    }
+
+    fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
+        self.e().track(self.e().api.agentic_edition(feed))
+    }
+
+    /// The read also sends edits made offline (`dictionary::Pending`).
+    fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
+        let queued = crate::dictionary::Pending::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::PENDING_META)
+                .as_deref(),
+        );
+        if queued.is_empty() {
+            return self.e().track(self.e().api.dictionary());
+        }
+        self.send_dictionary(&queued)
+    }
+
+    /// Queued first, so a blyg that can't be reached gets it on the next
+    /// read; `CoreError::Offline` then says so.
+    fn edit_dictionary(
+        &self,
+        edit: &crate::dictionary::Edit,
+    ) -> Result<crate::dictionary::Dictionary> {
+        use crate::dictionary::{PENDING_META, Pending, word_problem};
+        if let Some(p) = word_problem(&edit.word()) {
+            return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
+        }
+        let store = &self.engine.store;
+        // One read-change-write of the queue at a time (two quick Learn
+        // Spellings on their own threads would otherwise drop one).
+        let queued = {
+            let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queued = Pending::parse(store.meta(PENDING_META).as_deref());
+            queued.push(edit.clone());
+            store.set_meta(PENDING_META, &queued.to_meta())?;
+            queued
+        };
+        self.send_dictionary(&queued)?
+            .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))
+    }
+
+    fn summarize_catch_up(
+        &self,
+        entry: &crate::shelf::Entry,
+    ) -> Result<Option<crate::helpers::CatchUpSummary>> {
+        self.e().track(self.e().api.summarize_catch_up(entry))
+    }
+    // --- end studio 0.69 ---
 }
 
 impl LiveBackend {

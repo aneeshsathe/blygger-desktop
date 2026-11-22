@@ -813,10 +813,14 @@ impl MainView {
                 .children(self.render_source_menu(cx))
                 .into_any_element();
         }
+        // --- agentic feed --- the edition draws itself in the list's place.
+        let agentic = self.reading.source
+            == super::sources_vm::Source::Smart(super::sources_vm::Smart::Agentic);
         let held = self.reading.rows.len();
-        let count = self.reading.shown.len();
+        let count = if agentic { 0 } else { self.reading.shown.len() };
         // --- reader folders --- a source with nothing in it (no search).
-        let empty_source = held > 0
+        let empty_source = !agentic
+            && held > 0
             && count == 0
             && self.reading.query.trim().is_empty()
             && !self.reading.feed_waiting(); // --- reader order ---
@@ -834,7 +838,8 @@ impl MainView {
             )
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
-            .when(held == 0, |d| {
+            .when(agentic, |d| d.child(self.render_agentic_edition(cx)))
+            .when(held == 0 && !agentic, |d| {
                 d.child(self.empty_note(crate::keymap::hint(
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
                 )))
@@ -843,7 +848,7 @@ impl MainView {
                 d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
             })
             .when(
-                held > 0 && count == 0 && !empty_source && !self.reading.feed_waiting(),
+                held > 0 && count == 0 && !empty_source && !agentic && !self.reading.feed_waiting(),
                 |d| {
                     d.child(
                         div()

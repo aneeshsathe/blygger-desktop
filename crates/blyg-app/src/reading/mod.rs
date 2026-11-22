@@ -18,6 +18,10 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+// --- agentic feed --- studio 0.69's edition in the Agentic feed tab.
+pub(crate) mod agentic;
+#[cfg(test)]
+mod agentic_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
 #[cfg(test)]
 mod background_tests;
@@ -104,6 +108,8 @@ mod read_mark_tests;
 mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
+#[cfg(test)]
+mod studio069_tests;
 #[cfg(test)]
 mod tests;
 
@@ -454,6 +460,8 @@ pub struct State {
     pub trails: crate::app::trails::Trails,
     /// --- shelf sync --- the shelf's posts, in its order (the Shelf lens).
     pub shelved: Vec<Key>,
+    /// --- agentic feed --- the edition and the tab's name (studio 0.69).
+    pub agentic: agentic::Agentic,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -539,6 +547,7 @@ impl State {
             ),
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
             shelved: shelf_lens::keys(backend),                // --- shelf sync ---
+            agentic: Default::default(),                       // --- agentic feed ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
@@ -613,6 +622,13 @@ impl State {
             && self.source == sources_vm::Source::Smart(sources_vm::Smart::Shelf)
         {
             self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &self.shelved);
+        }
+        // --- agentic feed --- the edition's held posts, in its order.
+        if self.mode == stream_vm::ReadMode::Reader
+            && self.source == sources_vm::Source::Smart(sources_vm::Smart::Agentic)
+        {
+            let keys = self.agentic.keys().to_vec();
+            self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &keys);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -808,6 +824,7 @@ impl MainView {
         r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.background.set_rows(&r.rows); // --- background --- "+N parts"
+        r.agentic.refresh_cards(&r.rows); // --- agentic feed --- built once per change
         self.feed_rebuild(cx); // --- reader order ---
         let r = &mut self.reading;
         r.refilter();
@@ -851,6 +868,8 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
+                let r = &mut self.reading;
+                r.agentic.refresh_cards(&r.rows); // --- agentic feed ---
                 self.reading.background.served = self.backend.background_served(); // --- background ---
                 self.reading.background.placing = self.backend.background_placing();
                 // --- reader folders ---
@@ -861,6 +880,8 @@ impl MainView {
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 self.reading.hopper_order = self.backend.hopper_order();
                 self.reload_reading_shelf(); // --- shelf sync ---
+                self.agentic_refresh(false, cx); // --- agentic feed ---
+                self.dictionary_refresh(false, cx); // --- dictionary ---
                 self.load_kept_reading_mentions(); // --- contacts ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 let r = &mut self.reading;

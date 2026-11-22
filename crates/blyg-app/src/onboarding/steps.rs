@@ -156,6 +156,8 @@ pub enum Key {
     FeedOrder,
     /// Reading's Raw is the source.
     RawTab,
+    /// Reading's Agentic feed is the source (studio 0.69's edition).
+    AgenticTab,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -1376,6 +1378,26 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.28.0 --- studio 0.69: the Agentic feed's edition.
+    Step {
+        id: "agentic-edition",
+        since: "0.28.0",
+        title: ui_text("Your assistant's edition"),
+        caption: ui_text(
+            "On blygger-studio 0.69 an assistant can write you an edition: your reading as a \
+                  digest, in sections, each post with a headline, a short summary and why it's \
+                  there. The Agentic feed tab shows it, under the name your blyg gives it (here, \
+                  Morning paper). Click it; j/k step through its posts and ⏎ opens one.",
+        ),
+        keys: &[Key::AgenticTab],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
     // --- 0.24.0 --- Background, and the shelf on the reading side.
     Step {
         id: "background",
@@ -2042,6 +2064,7 @@ pub const TOURS: &[Tour] = &[
             "reader",
             "feed-order",
             "raw-tab",
+            "agentic-edition",
             "background",
             "parts",
             "shelf-add",
@@ -2258,6 +2281,7 @@ mod tests {
             Key::MentionsFeed,
             Key::FeedOrder, // --- 0.28.0 ---
             Key::RawTab,
+            Key::AgenticTab,
             Key::MoreMenu, // --- 0.26.0 ---
             Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,

@@ -7,7 +7,8 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 
 ## Burrow 0.28.0
 
-Burrow catches up with blygger-studio 0.68's reading.
+Burrow catches up with blygger-studio 0.68's reading, and 0.69's Agentic
+feed, dictionary and text helpers.
 
 ### Reading in the studio's tabs
 
@@ -18,7 +19,27 @@ others come, more slowly the more their blyg pinned them, and a new version
 climbs one place. **Chronological** lists newest first; the choice is in the
 reading header and Settings › READER ORDER, and your blyg keeps it. **Raw**
 lists what came in, newest first, with nothing moved to Background or folded.
-The Agentic feed is a placeholder, as in the studio.
+
+### The Agentic feed's edition
+
+On blygger-studio 0.69, an assistant can write you an **edition**: your
+reading as a digest, in sections, each post with a headline, a short summary
+and why it's there. The **Agentic feed** tab shows it, under the name your
+blyg gives it; j/k step through its posts and ⏎ opens one. Burrow reads
+editions; your assistant writes them.
+
+### Your blyg's dictionary
+
+The spellcheck accepts every word in your blyg's dictionary, shared with
+Studio. **Learn Spelling** adds the word there too, and **Blyg ›
+Dictionary…** lists your words and adds or takes them out.
+
+### Catch up, summarized by your blyg
+
+**s** in Catch up now asks your blyg's text helpers model first, when it has
+one, and keeps Burrow's own AI as the fallback. **Blyg › AI on Your Blyg…**
+sets that model, the Agentic feed's name, and whether the change classifier
+also judges other blygs' changes.
 
 ### Saved
 

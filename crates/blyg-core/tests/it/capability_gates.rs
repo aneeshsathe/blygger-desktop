@@ -266,6 +266,23 @@ fn whole_blyg_is_tried_and_a_refusal_remembered() {
     assert_eq!(env.mock.state().count("POST /api/subscriptions"), 1);
 }
 
+/// Studio 0.69: the dictionary's read follows `getDictionary` (a read-only
+/// sign-in still gets the accepted words), its write `putDictionarySource`;
+/// the Agentic feed list follows `listAgenticFeeds`, an edition `getAgentic`.
+#[test]
+fn studio_069_reads_and_writes_follow_their_own_operations() {
+    let env = env_at("next", &["getDictionary", "getAgentic"]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(api.serves_dictionary().unwrap(), "read");
+    assert!(!api.serves_dictionary_write().unwrap(), "no write");
+    assert!(api.serves_agentic().unwrap());
+    assert_eq!(api.agentic_feeds().unwrap(), None, "no listAgenticFeeds");
+    let env = env_at("6.2.0", &[]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(!api.serves_dictionary().unwrap(), "never by version");
+    assert!(!api.serves_agentic().unwrap());
+}
+
 /// Every operation a gate looks for is one the newest contract names: a
 /// typo would hide the feature on every studio.
 #[test]
@@ -310,6 +327,32 @@ struct Gate {
 /// Every capability gate Burrow has. `every_operation_constant_is_classified`
 /// fails on a constant in product code that isn't here.
 const GATES: &[Gate] = &[
+    // --- studio 0.69 ---
+    Gate {
+        constant: "blyg-core/src/agentic.rs::GET_OPERATION",
+        guards: Guards::Read,
+        what: "reading and showing the Agentic feed's edition",
+    },
+    Gate {
+        constant: "blyg-core/src/agentic.rs::LIST_OPERATION",
+        guards: Guards::Read,
+        what: "the Agentic feed list and the tab's name",
+    },
+    Gate {
+        constant: "blyg-core/src/dictionary.rs::GET_OPERATION",
+        guards: Guards::Read,
+        what: "the blyg's dictionary, which the spellcheck accepts",
+    },
+    Gate {
+        constant: "blyg-core/src/dictionary.rs::PUT_OPERATION",
+        guards: Guards::Write,
+        what: "sending a word to (or taking one out of) the blyg's dictionary",
+    },
+    Gate {
+        constant: "blyg-core/src/helpers.rs::SUMMARIZE_OPERATION",
+        guards: Guards::Write,
+        what: "asking the blyg to write Catch up's summary (Burrow's own AI writes it otherwise)",
+    },
     Gate {
         constant: "blyg-core/src/api/read_batch.rs::READ_BATCH_OPERATION",
         guards: Guards::Read,

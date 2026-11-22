@@ -28,6 +28,7 @@ mod conditional;
 mod links;
 mod maths;
 mod sign_in_path;
+mod studio069;
 mod subscribe_guard;
 mod tangle;
 

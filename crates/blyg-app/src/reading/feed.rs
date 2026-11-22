@@ -1,6 +1,6 @@
 //! --- reader order --- Reading in studio 0.68's six tabs, on Burrow's
 //! sources: **Feed** (the All smart feed, renamed), **Mentions**, **Agentic
-//! feed** (a placeholder, as upstream), **Saved** (the shelf, renamed),
+//! feed** (studio 0.69's edition, `agentic.rs`), **Saved** (the shelf, renamed),
 //! **Background** and **Raw**. Burrow's other smart feeds, hoppers, trails
 //! and folders stay.
 //!
@@ -17,8 +17,9 @@
 //!   Chronological.
 //! - Raw is what came in from the blygs you read, newest first: nothing
 //!   moved to Background, nothing folded, withdrawn posts included.
-//! - The Agentic feed lists nothing yet; its prompt is Settings › AI's
-//!   "Agentic feed prompt".
+//! - The Agentic feed draws the edition an assistant wrote (`agentic.rs`),
+//!   listing its posts in its order; its prompt is Blyg › AI on Your
+//!   Blyg…'s "Agentic feed prompt".
 
 use std::collections::HashMap;
 
@@ -33,10 +34,9 @@ use super::stream_vm::ReadMode;
 use super::vm::{self, Key};
 use crate::app::MainView;
 
-/// What the Agentic feed says (studio's placeholder).
-pub const AGENTIC_NOTE: &str = "Coming soon. An assistant who organizes your reading for you: \
-     what you should see, and how. You can already set its prompt in Settings › AI \
-     (Agentic feed prompt).";
+/// What the Agentic feed says before its first edition.
+pub const AGENTIC_NOTE: &str = "No edition yet. The Agentic feed is an assistant who organizes \
+     your reading for you, as a digest in sections, written on your blyg (studio 0.69).";
 
 /// What Raw says when it holds nothing.
 pub const RAW_EMPTY: &str = "Nothing has come in yet. Raw lists what came in from the blygs \
