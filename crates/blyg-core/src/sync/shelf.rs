@@ -256,9 +256,7 @@ impl Engine {
         let recorded = self.taken_off();
         server
             .iter()
-            .filter(|e| {
-                local.contains(e) || !(base.contains(e) || recorded.contains(e))
-            })
+            .filter(|e| local.contains(e) || !(base.contains(e) || recorded.contains(e)))
             .cloned()
             .collect()
     }

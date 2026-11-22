@@ -23,7 +23,9 @@ impl Engine {
     /// posts (`setReadingPlacement`). A failed read leaves what was noted.
     pub(super) fn note_background_served(&self) {
         if let Ok(on) = self.api.serves_background() {
-            let _ = self.store.set_background_served(on && !self.known_without_lens());
+            let _ = self
+                .store
+                .set_background_served(on && !self.known_without_lens());
         }
         if let Ok(on) = self.api.places_background() {
             let _ = self.store.set_background_placing(on);

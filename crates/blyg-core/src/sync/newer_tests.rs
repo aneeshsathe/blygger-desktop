@@ -64,7 +64,10 @@ fn a_read_only_sign_in_holds_a_shelf_change_and_says_so() {
 fn an_unchecked_contract_holds_a_shelf_change_without_calling_it_newer() {
     let e = engine();
     assert!(!e.store.newer_contract());
-    assert!(e.next_op(None, true).unwrap().is_none(), "held until checked");
+    assert!(
+        e.next_op(None, true).unwrap().is_none(),
+        "held until checked"
+    );
     assert_eq!(e.shelf_state(), SyncState::Waiting);
 }
 

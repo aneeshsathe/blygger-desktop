@@ -1625,7 +1625,12 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
 /// An item's version rows from its version list: replaced whole when
 /// `prune` allows, else only added to and updated (a newer contract's list,
 /// or one read before any check, may read short or empty).
-fn put_versions(tx: &Connection, id: &LocalId, v: &[Version], prune: Prune) -> rusqlite::Result<()> {
+fn put_versions(
+    tx: &Connection,
+    id: &LocalId,
+    v: &[Version],
+    prune: Prune,
+) -> rusqlite::Result<()> {
     if prune == Prune::Allowed {
         tx.execute("DELETE FROM versions WHERE local_id = ?1", [&id.0])?;
     }

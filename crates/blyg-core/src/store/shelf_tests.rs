@@ -202,19 +202,27 @@ fn the_blygs_list_is_laid_over_with_local_posts_kept_in_place() {
         s.set_on_shelf(id, true).unwrap();
     }
     // Elsewhere: b moved first, someone's post added, a taken off.
-    let changed = s.apply_shelf(&[Entry::own("it-b"), theirs("r1")], Prune::Allowed).unwrap();
+    let changed = s
+        .apply_shelf(&[Entry::own("it-b"), theirs("r1")], Prune::Allowed)
+        .unwrap();
     assert!(changed);
     assert_eq!(s.shelf_wire(), [Entry::own("it-b"), theirs("r1")]);
     // The scratch note (no server id) stays, at the top where it followed
     // nothing the blyg kept.
     assert_eq!(s.shelf(), [note.clone(), b.clone()]);
     // The same list again changes nothing.
-    assert!(!s.apply_shelf(&[Entry::own("it-b"), theirs("r1")], Prune::Allowed).unwrap());
+    assert!(
+        !s.apply_shelf(&[Entry::own("it-b"), theirs("r1")], Prune::Allowed)
+            .unwrap()
+    );
 
     // A post of yours this computer doesn't hold yet is kept by name, and
     // counts once it arrives.
-    s.apply_shelf(&[Entry::own("it-later"), Entry::own("it-b")], Prune::Allowed)
-        .unwrap();
+    s.apply_shelf(
+        &[Entry::own("it-later"), Entry::own("it-b")],
+        Prune::Allowed,
+    )
+    .unwrap();
     assert_eq!(s.shelf_wire(), [Entry::own("it-later"), Entry::own("it-b")]);
     assert_eq!(s.shelf(), [note.clone(), b.clone()]);
     let later = post(&s, "later");

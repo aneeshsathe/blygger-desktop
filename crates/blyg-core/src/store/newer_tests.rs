@@ -26,9 +26,13 @@ fn contact(id: &str, handle: &str) -> crate::contacts::Contact {
 #[test]
 fn a_served_contact_book_removes_only_when_allowed() {
     let s = Store::open_in_memory().unwrap();
-    let handles = |s: &Store| -> Vec<String> { s.contacts().into_iter().map(|c| c.handle).collect() };
-    s.take_served_contacts(vec![contact("c1", "lin"), contact("c2", "ade")], Prune::Allowed)
-        .unwrap();
+    let handles =
+        |s: &Store| -> Vec<String> { s.contacts().into_iter().map(|c| c.handle).collect() };
+    s.take_served_contacts(
+        vec![contact("c1", "lin"), contact("c2", "ade")],
+        Prune::Allowed,
+    )
+    .unwrap();
     s.take_served_contacts(vec![contact("c1", "lin")], Prune::Withheld)
         .unwrap();
     assert_eq!(handles(&s), ["lin", "ade"]);
@@ -217,7 +221,11 @@ fn a_stale_check_holds_removals_back_until_the_contract_is_read_again() {
     assert!(s.take_held_back());
     // Thumbs.
     s.replace_thumbs(&[]).unwrap();
-    let a = s.reading().into_iter().find(|r| r.remote_id == "A").unwrap();
+    let a = s
+        .reading()
+        .into_iter()
+        .find(|r| r.remote_id == "A")
+        .unwrap();
     assert_eq!(a.thumb, Some(1), "A's thumb held back");
     assert!(s.take_held_back());
     assert!(!s.take_held_back(), "taken once");
@@ -227,7 +235,11 @@ fn a_stale_check_holds_removals_back_until_the_contract_is_read_again() {
     s.merge_all(&[wire("S1", "one")]).unwrap();
     assert!(s.local_id_for_server("S2").is_none());
     s.replace_thumbs(&[]).unwrap();
-    let a = s.reading().into_iter().find(|r| r.remote_id == "A").unwrap();
+    let a = s
+        .reading()
+        .into_iter()
+        .find(|r| r.remote_id == "A")
+        .unwrap();
     assert_eq!(a.thumb, None);
     assert!(!s.take_held_back());
 }

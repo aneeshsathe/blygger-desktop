@@ -423,7 +423,10 @@ fn note_taken_off(tx: &Transaction, entry: Option<&Entry>, off: bool) -> Result<
     }
     tx.execute(
         "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-        params![TAKEN_OFF_META, serde_json::to_string(&list).unwrap_or_default()],
+        params![
+            TAKEN_OFF_META,
+            serde_json::to_string(&list).unwrap_or_default()
+        ],
     )?;
     Ok(())
 }
