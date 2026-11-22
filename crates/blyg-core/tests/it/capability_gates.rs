@@ -134,7 +134,7 @@ fn a_read_only_sign_in_shows_background_but_places_nothing() {
     assert!(b.background_served());
     assert!(!b.background_placing());
     let set = b.background_set().expect("the lens was read");
-    assert!(set.entries.iter().any(|(k, _)| k.1.to_string() == "R1"));
+    assert!(set.entries.iter().any(|(k, _)| k.1 == "R1"));
     let key: Key = ("S1".into(), "R1".into());
     assert!(
         b.set_reading_placement(&key, false, Some(Placement::Foreground))
