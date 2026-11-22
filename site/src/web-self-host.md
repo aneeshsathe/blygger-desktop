@@ -215,10 +215,12 @@ not have is hidden, or says why, until the studio offers it.
   id). Your own published posts are in it too, as on the desktop: never
   unread, no 👍 / 👎, and nothing sent about them. See
   [Your blyg](reading.md#your-blyg).
-- **It keeps itself up to date** while the tab is open: every 15 seconds it
-  asks your blyg what changed (as the studio does), and right after you
-  publish, restore or withdraw. A post, hopper or 👍 changed in another
-  studio or on another device shows within about 15 seconds. A hidden tab
+- **It keeps itself up to date** while the tab is open, and right after you
+  publish, restore or withdraw. On blygger-studio 0.69 (contract 6) it asks
+  each list once a minute whether it changed (a conditional read: an
+  unchanged list costs a bodyless answer), so a post, hopper or 👍 changed
+  in another studio or on another device shows within about a minute. An
+  older studio with `/api/changes` is asked every 15 seconds. A hidden tab
   asks nothing, and when the blyg is busy or failing it waits longer
   between tries.
 - **It starts fast.** On a first start the first page of Reading shows as
@@ -257,6 +259,25 @@ not have is hidden, or says why, until the studio offers it.
   **Shelf** lens in Sources. See [The shelf](writing.md#the-shelf). Needs a
   studio with `getShelf` and `putShelf` (0.61); otherwise the shelf stays in
   this browser.
+
+### Known limits (0.29.0)
+
+- **Reading is watched by its first page.** Once this browser holds your
+  reading list, each minute it asks only for the list's first page. A
+  change further down (an old post revised, read elsewhere, or moved to
+  Background) waits for the safety net: a whole read of the list about
+  once an hour, while the tab is visible.
+- **The pace-layered Feed is worked out here** from what the reading list
+  says, without the history of pinned versions the studio keeps, so its
+  order can differ a little from the studio's. Chronological order is the
+  same everywhere.
+- **A newer contract is refused.** On a studio whose contract is newer than
+  this build knows (7 or later), the web app says so and doesn't start,
+  while the desktop app keeps syncing what it knows. Update the web app to
+  the release made for that studio.
+- **Not here yet**: syndication to other sites, full-text search, the
+  spellcheck dictionary, and the Agentic feed's helpers (its tab reads the
+  edition). Use the desktop app or the studio for those.
 
 ## Updating
 
