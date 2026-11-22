@@ -422,6 +422,18 @@ pub(crate) mod scan {
     }
 }
 
+/// The key a test sends for redo in a text field: Ctrl+Y on Windows, where
+/// the field binds no Ctrl+Shift+Z, and Cmd+Shift+Z on the Mac. Tests never
+/// spell redo as a literal (`tests_dont_send_macos_only_caret_keys`).
+#[cfg(test)]
+pub(crate) fn redo_keys() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "ctrl-y"
+    } else {
+        "cmd-shift-z"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,7 +631,9 @@ mod tests {
     #[test]
     fn tests_dont_send_macos_only_caret_keys() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let this_file = root.join("platform_text.rs");
         let mut bad = Vec::new();
+        let mut edit = Vec::new();
         let mut dirs = vec![root.clone()];
         while let Some(d) = dirs.pop() {
             for e in std::fs::read_dir(&d).expect("read src") {
@@ -633,6 +647,19 @@ mod tests {
                 }
                 let text = std::fs::read_to_string(&p).expect("read");
                 for (n, line) in text.lines().enumerate() {
+                    // The helper's own file holds the literals it hides.
+                    if p != this_file {
+                        if let Some(k) = windows_edit_key(line) {
+                            let helper = windows_edit_row(k).map_or("", |r| r.2);
+                            let rel = p.strip_prefix(&root).expect("under src");
+                            edit.push(format!(
+                                "  {}:{}: {} (call {helper})",
+                                rel.display(),
+                                n + 1,
+                                line.trim()
+                            ));
+                        }
+                    }
                     for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
                         let Some(at) = line.find(call) else { continue };
                         let lit = line[at + call.len()..].split('"').next().unwrap_or("");
@@ -644,6 +671,14 @@ mod tests {
                 }
             }
         }
+        edit.sort();
+        assert!(
+            edit.is_empty(),
+            "tests sending an editing key the Windows text field binds differently, so \
+             the test passes on the Mac and fails on Windows CI:\n{}\nSend it through the \
+             helper named on each line (redo is Ctrl+Y on Windows, not Ctrl+Shift+Z).",
+            edit.join("\n")
+        );
         bad.sort();
         assert!(
             bad.is_empty(),
@@ -664,5 +699,70 @@ mod tests {
         assert!(!macos_caret_key("shift-left"));
         assert!(!macos_caret_key("cmd-enter"));
         assert!(!macos_caret_key("alt-cmd-left"));
+    }
+
+    /// Editing keys the text field binds per platform, where the Windows key
+    /// is not the plain Ctrl respelling: (Mac key, naive Windows key, what a
+    /// test calls instead). gpui-base 0.6.6, `input/base/state.rs`: redo is
+    /// Cmd+Shift+Z on the Mac but only Ctrl+Y on Windows. Undo, cut, copy,
+    /// paste and select-all respell plainly, so they are not here. Cmd+Backspace
+    /// and Cmd+Delete also differ (Windows' Ctrl+Backspace deletes a word), but
+    /// the app binds them on sheets, so a string alone cannot tell them apart.
+    const WINDOWS_EDIT_KEYS: &[(&str, &str, &str)] = &[(
+        "cmd-shift-z",
+        "ctrl-shift-z",
+        "crate::platform_text::redo_keys()",
+    )];
+
+    fn windows_edit_row(k: &str) -> Option<&'static (&'static str, &'static str, &'static str)> {
+        WINDOWS_EDIT_KEYS
+            .iter()
+            .find(|&&(mac, win, _)| k == mac || k == win)
+    }
+
+    /// The first keystroke in a string literal after a `simulate_keystrokes(`
+    /// or `keys(cx, ` call on `line` that is in `WINDOWS_EDIT_KEYS`. Sees a
+    /// literal on the same line as its call, also through
+    /// `keymap::keys("...")`; not one split across lines or held in a variable.
+    fn windows_edit_key(line: &str) -> Option<&str> {
+        let at = ["simulate_keystrokes(", "keys(cx, "]
+            .iter()
+            .filter_map(|call| line.find(call))
+            .min()?;
+        line[at..]
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .flat_map(|lit| lit.split(' '))
+            .find(|k| windows_edit_row(k).is_some())
+    }
+
+    #[test]
+    fn the_edit_key_rule_flags_keys_windows_reads_differently() {
+        // The line that failed Windows CI at cb1def7, copied exactly.
+        let real = "    cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-shift-z\"));";
+        assert_eq!(windows_edit_key(real), Some("cmd-shift-z"));
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(\"cmd-shift-z\");"),
+            Some("cmd-shift-z")
+        );
+        assert_eq!(
+            windows_edit_key("keys(cx, \"ctrl-shift-z\");"),
+            Some("ctrl-shift-z")
+        );
+        // The helper, an app key, and undo (Windows binds plain Ctrl+Z) pass.
+        assert_eq!(windows_edit_key("cx.simulate_keystrokes(redo);"), None);
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(crate::platform_text::redo_keys());"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-b\"));"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-z\"));"),
+            None
+        );
     }
 }

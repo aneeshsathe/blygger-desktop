@@ -314,14 +314,8 @@ fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) 
     );
     assert!(t.ends_with(" or @lin "), "back to the pick: {t:?}");
     // Redo brings the closed-up text back, not the key's own `@lin )`.
-    // Redo is Ctrl+Y in a Windows text field (gpui-base's Input binds no
-    // Ctrl+Shift+Z there), ⌘⇧Z on the Mac.
-    let redo = if cfg!(target_os = "windows") {
-        "ctrl-y"
-    } else {
-        "cmd-shift-z"
-    };
-    cx.simulate_keystrokes(redo);
+    // Redo is Ctrl+Y in a Windows text field, so the key comes from the helper.
+    cx.simulate_keystrokes(crate::platform_text::redo_keys());
     cx.run_until_parked();
     let t = text(&view, cx);
     assert!(t.ends_with(" or @lin)"), "redo closes up again: {t:?}");
