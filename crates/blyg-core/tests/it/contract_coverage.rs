@@ -982,3 +982,32 @@ fn common_word_siblings_do_not_anchor() {
         assert!(!reading_row.covers(&all[&key].rule), "{key}");
     }
 }
+
+/// Real lines of another branch's `crates/blyg-web` tests, which read a JSON
+/// card's `html` with `"origin"`, `"id"`, `"version"`, `"contentHtml"` and
+/// `/api/peek` nearby, were suspected of covering the exempted
+/// `CatchUp.cards[].html` (Burrow never calls catch-up). A card is a row of
+/// `id`, `origin`, `sub`, `version`, `source`, `at`, `depth`, `partial`,
+/// `label` and `html`: none of those anchors `html`, and no operation path is
+/// its owner (a schema in `components` has none).
+#[test]
+fn another_posts_html_is_not_the_catch_up_cards() {
+    let all = items(&current()).0;
+    let html = &all["property:CatchUp.cards[].html"].rule;
+    let Rule::Property(card) = html else {
+        panic!("not a property")
+    };
+    assert_eq!(card.owner, "CatchUp");
+    assert!(card.path.is_none(), "a components schema has no operation");
+    let peek = "    let r = v(b.wr_do(\"peek\", &args, NOW));\n    assert_eq!(\n        r[\"req\"][\"path\"],\n        \"/api/peek?origin=https%3A%2F%2Ffar.example.org%2F&id=X1\"\n    );\n    let p = v(b.wr_done(\n        \"peek\",\n        &args,\n        200,\n        r#\"{\"origin\":\"https://far.example.org/\",\"id\":\"X1\",\"kind\":\"thread\",\"version\":2,\n            \"contentHtml\":\"<h1>Far away</h1><p>Hello <script>x()</script>there.</p>\",\n            \"page\":null,\"url\":\"https://far.example.org/t/X1/\",\"stubOf\":null,\"forkedFrom\":null,\"subscriptionId\":null}\"#,\n        NOW,\n    ));\n    assert_eq!(p[\"peek\"][\"title\"], \"Far away\");\n    assert!(!p[\"peek\"][\"html\"].as_str().unwrap().contains(\"script\"));\n    assert_eq!(p[\"peek\"][\"followed\"], false);\n    assert_eq!(p[\"fire\"][\"path\"], \"/api/browse\");\n";
+    let opened = "    let post = v(b.open_reading(\"sub1|md1\", NOW));\n    let html = post[\"html\"].as_str().unwrap();\n    // A relative link would point at the owner's own blyg.\n    assert!(\n        html.contains(\"href=\\\"https://notes.example.com/api/items\\\"\"),\n";
+    let post = "    let post: Value = serde_json::from_str(&b.open_reading(&unread_keys[1], NOW)).unwrap();\n    assert!(!post[\"html\"].as_str().unwrap().is_empty());\n    assert!(post[\"by\"].as_str().unwrap().contains(\" · v\"), \"{post}\");\n";
+    for text in [peek, opened, post] {
+        assert!(!Tests::of(vec![text.into()]).covers(html), "{text}");
+    }
+    // Still covered where the catch-up card is named.
+    let named = "let c = CatchUp::default();\nassert!(c[\"cards\"][0][\"html\"].is_string());";
+    assert!(Tests::of(vec![named.into()]).covers(html));
+    let snake = "fn catch_up() {\n    c[\"html\"]\n}";
+    assert!(Tests::of(vec![snake.into()]).covers(html));
+}
