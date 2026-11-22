@@ -17,14 +17,18 @@
 //! API and this crate decides what to send and what the answers mean
 //! (`api`). Nothing here opens a socket.
 
+#![forbid(unsafe_code)]
+
 use blyg_core::{Item, Kind, LocalId, Status, SyncStatus};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 pub mod api;
-/// `vm.rs` calls `crate::keymap::{hint, hint_owned, keyless_here}`.
+/// `vm.rs` calls `crate::keymap::{hint, hint_owned, keyless_on}`.
 mod keymap;
+/// `vm.rs` and `reading/vm.rs` call `crate::platform_text`.
+pub mod platform_text;
 pub mod live;
 mod read_api;
 pub mod seed;
@@ -48,7 +52,10 @@ pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "blyg-app's whole view-model; the web uses part of it"
+)]
 pub mod vm;
 
 pub mod studio;

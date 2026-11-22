@@ -249,7 +249,7 @@ impl Burrow {
         *self.placed.get_mut() = None;
     }
 
-    /// The stream in its order: [`rvm::order_refs`] (withdrawn posts hidden
+    /// The stream in its order: [`rvm::ordered`] (withdrawn posts hidden
     /// unless kept, one row per post, edited-since-read first, otherwise
     /// the list order `place_reading_rows` sorted the rows into). Worked
     /// out once per change of the rows, not on every redraw.
@@ -770,12 +770,12 @@ impl Burrow {
     }
 }
 
-/// [`rvm::order_refs`] as indices into `rows` (the rows it returns are
+/// [`rvm::ordered`] as indices into `rows` (the rows it returns are
 /// `rows`' own, so each one's place is its offset in the slice).
 fn order_indices(rows: &[ReadingItem]) -> Vec<usize> {
     let base = rows.as_ptr().addr();
     let size = std::mem::size_of::<ReadingItem>().max(1);
-    rvm::order_refs(rows)
+    rvm::ordered(rows.iter())
         .into_iter()
         .map(|r| (std::ptr::from_ref(r).addr() - base) / size)
         .collect()

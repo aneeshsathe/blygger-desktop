@@ -47,14 +47,20 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("blyg-ai", &["blyg-core", "blyg-render"]),
     ("blyg-ext", &["blyg-core", "blyg-render"]),
     ("blyg-ext-*", &["blyg-ext", "blyg-core", "blyg-render"]),
+    // Burrow in a browser: the model and renderer, compiled to wasm (the
+    // view-models it shares with blyg-app are included by path, not a
+    // dependency, so GPUI stays out).
+    ("blyg-web", &["blyg-core", "blyg-render"]),
     ("blyg-app", &["*"]),
 ];
 
 /// The crates that may talk to the network (a direct dependency on an HTTP
 /// client): the blyg and studio API (`blyg-core`), AI providers (`blyg-ai`),
 /// the embedding model's one-time download (`blyg-embed`) and the app
-/// (update checks, block lists).
-const NETWORK: &[&str] = &["blyg-core", "blyg-ai", "blyg-embed", "blyg-app"];
+/// (update checks, block lists). blyg-web's page fetches through the browser
+/// (same origin only, `www/net.js`); its HTTP client is a dev-dependency,
+/// for the e2e test against a local studio (`tests/e2e.rs`).
+const NETWORK: &[&str] = &["blyg-core", "blyg-ai", "blyg-embed", "blyg-app", "blyg-web"];
 
 /// HTTP client crates.
 fn is_http_client(package: &str) -> bool {

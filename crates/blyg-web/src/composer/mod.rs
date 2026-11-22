@@ -4,10 +4,13 @@
 //! offers, how they rank, what a pick inserts) and the code-fence rules it
 //! calls (`composer/text.rs`).
 
+#![allow(
+    dead_code,
+    reason = "blyg-app's modules, compiled unchanged; each build uses a different part"
+)]
+
 #[path = "../../../blyg-app/src/composer/text.rs"]
-#[allow(dead_code)]
 pub mod text;
 
 #[path = "../../../blyg-app/src/composer/mention.rs"]
-#[allow(dead_code)]
 pub mod mention;

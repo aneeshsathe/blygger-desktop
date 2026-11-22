@@ -145,7 +145,6 @@ pub fn items(now: DateTime<Utc>) -> Vec<Item> {
 /// stubs, forks and quotes between posts, hoppers), compiled unchanged.
 /// It names the sample blyg as `super::ORIGIN`.
 #[path = "../../blyg-app/src/fake_reading.rs"]
-#[allow(dead_code)]
 pub mod reading_seed;
 
 /// Everything the Read tab shows: the fake's reading seed plus the

@@ -56,7 +56,7 @@ impl Burrow {
     /// The reading rows the chosen source and lens show, as (key, version,
     /// version read).
     fn view_rows(&self, now_ms: f64) -> Vec<(String, u32, Option<u32>)> {
-        let rows = rvm::order_refs(&self.rd.rows);
+        let rows = rvm::ordered(self.rd.rows.iter());
         self.wr_filter(rows, at(now_ms))
             .into_iter()
             .map(|r| (key_of(r), r.version, r.read_version))

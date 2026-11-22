@@ -42,3 +42,6 @@ rustls-pki-types = { version = "1", features = ["web"] }
 # The `Local` time zone (the list's "Sep 22") comes from the browser.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "wasmbind"] }
 console_error_panic_hook = "0.1.7"
+
+[lints]
+workspace = true

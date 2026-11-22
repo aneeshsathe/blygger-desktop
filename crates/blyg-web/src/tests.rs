@@ -295,7 +295,7 @@ fn the_stream_orders_without_copying_as_the_native_list_does() {
         .iter()
         .map(key)
         .collect();
-    let borrowed: Vec<String> = crate::reading::vm::order_refs(&rows)
+    let borrowed: Vec<String> = crate::reading::vm::ordered(rows.iter())
         .into_iter()
         .map(key)
         .collect();

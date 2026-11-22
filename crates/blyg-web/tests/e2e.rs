@@ -9,7 +9,7 @@
 //! Workers and sets `BLYG_E2E_URL`, `BLYG_E2E_TOKEN`, `BLYG_E2E_URL_B` and
 //! `BLYG_E2E_TOKEN_B`. It publishes on both: never point it at a real blyg.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use blyg_core::api::Api;
 use blyg_core::api::auth::Credential;
@@ -155,12 +155,8 @@ fn native_reading(me: &LiveBackend) -> Vec<String> {
         .collect()
 }
 
-fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
-    let t0 = Instant::now();
-    while !f() {
-        assert!(t0.elapsed() < timeout, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(200));
-    }
+fn wait_until(what: &str, timeout: Duration, f: impl FnMut() -> bool) {
+    blyg_core::wait::until_within(timeout, what, f);
 }
 
 fn sid(b: &LiveBackend, id: &LocalId) -> String {
@@ -201,7 +197,7 @@ fn web_reading_and_posts_follow_native_order() {
     for i in 0..30 {
         posts.push(publish(&source, &format!("Sample note {i:02} ({t})")));
         if i % 3 == 2 {
-            std::thread::sleep(Duration::from_millis(1100));
+            blyg_core::wait::wall_clock(Duration::from_millis(1100));
         }
     }
 
@@ -253,7 +249,7 @@ fn web_reading_and_posts_follow_native_order() {
 
     // `b` republishes an old post; once `a` polls, it tops both lists.
     let (old_id, old_rid) = &posts[4];
-    std::thread::sleep(Duration::from_millis(1100));
+    blyg_core::wait::wall_clock(Duration::from_millis(1100));
     source
         .save(old_id, &format!("Sample note 04, revised ({t})"))
         .unwrap();
@@ -279,7 +275,7 @@ fn web_reading_and_posts_follow_native_order() {
     for attempt in 0..5 {
         // Start just after a second turns over.
         let ms = now_ms() as u64 % 1000;
-        std::thread::sleep(Duration::from_millis(1000 - ms + 20));
+        blyg_core::wait::wall_clock(Duration::from_millis(1000 - ms + 20));
         let ids: Vec<LocalId> = (0..3)
             .map(|i| {
                 me.create_draft(Kind::Fragment, &format!("Own post {i} ({t}, {attempt})"))

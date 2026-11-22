@@ -152,7 +152,10 @@ impl Burrow {
     /// added (`""`: none; a blank version is `current`), on the item's
     /// `revision`: `{req}`, or `{error}` for an address that isn't
     /// `https:` or a version out of range.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the page passes each field of the form as its own argument"
+    )]
     pub fn w_copies_put(
         &self,
         path: &str,

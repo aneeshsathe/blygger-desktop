@@ -64,7 +64,10 @@ pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
     ordered(items)
 }
 
-fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+/// [`order`] over owned rows or borrowed ones: Burrow in a browser orders
+/// thousands of rows on every change, so it passes references
+/// (`rows.iter()`).
+pub fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut seen = std::collections::HashSet::new();
     let (mut edited, mut rest): (Vec<T>, Vec<T>) = items
         .into_iter()
