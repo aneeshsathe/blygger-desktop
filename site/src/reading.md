@@ -57,7 +57,9 @@ right.
   header also has the Feed's kinds: **All · Threads · Fragments**.
   Burrow counts the pins of posts whose changelog it has read (the ones you
   opened); a post it knows nothing more of counts as its first and latest
-  versions.
+  versions. So the pace-layered order is worked out on this Mac from the
+  versions Burrow has seen, and can differ slightly from your blyg's home
+  page.
 - **Agentic feed** will be where an assistant organizes your reading:
   what you should see, and how. It isn't built yet, upstream either; its
   prompt is already in Settings (AI, *Agentic feed prompt*).
