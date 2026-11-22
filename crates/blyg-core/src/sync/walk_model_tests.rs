@@ -379,16 +379,16 @@ impl Sim {
             let held = (st == Start::Continue)
                 .then(|| self.c.walk.take())
                 .flatten();
-            let mut r = Read::begin(
-                st,
+            let mut r = Read::begin(Begin {
+                start: st,
                 held,
-                rev.clone(),
+                rev: rev.clone(),
                 forced,
-                self.c.mark,
-                self.c.budget,
+                mark: self.c.mark,
+                budget: self.c.budget,
                 reads_sent,
-                self.c.prune,
-            )
+                prune: self.c.prune,
+            })
             .expect("something to read");
             loop {
                 if interrupt

@@ -55,13 +55,32 @@ fn whole_blyg_is_tried_and_a_refusal_remembered() {
     assert_eq!(p.title, "Their blyg");
     api.preview_subscription("https://them.example/").unwrap();
     let posts = env.mock.state().count("POST /api/subscriptions");
-    assert_eq!(posts, 3, "with the key (400), without it, then without only");
+    assert_eq!(
+        posts, 3,
+        "with the key (400), without it, then without only"
+    );
 
     // The floor contract is never sent it.
     let env = env_at("5.0.0", &[]);
     let api = Api::new(&env.mock.url, TOKEN);
     api.preview_subscription("https://them.example/").unwrap();
     assert_eq!(env.mock.state().count("POST /api/subscriptions"), 1);
+}
+
+/// Every operation a gate looks for is one the newest contract names: a
+/// typo would hide the feature on every studio.
+#[test]
+fn the_gated_operations_are_the_contracts() {
+    let known = crate::common::contract::current().operation_ids();
+    let gated = [
+        blyg_core::contacts::CONTACTS_OPERATION,
+        blyg_core::changelog::CHANGELOG_OPERATION,
+    ]
+    .into_iter()
+    .chain(blyg_core::outbound::GROUPS_OPERATIONS.iter().copied());
+    for op in gated {
+        assert!(known.iter().any(|k| k == op), "{op} isn't in the contract");
+    }
 }
 
 #[test]

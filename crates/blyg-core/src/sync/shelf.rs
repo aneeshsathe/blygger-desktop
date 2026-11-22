@@ -13,9 +13,12 @@
 //!   of it (`shelf::merge`), and the result is `PUT` with the revision it
 //!   was read at. A 409 (it moved again meanwhile) reads and merges once
 //!   more; a second 409 leaves both sides as they are for the next pull.
-//! - The first sync takes the union, the blyg's order first. So does every
-//!   sync with a studio on a contract newer than Burrow knows
-//!   (`sync/newer.rs`): nothing comes off here on its list's word.
+//! - The first sync takes the union, the blyg's order first.
+//! - On a contract newer than Burrow knows (`sync/newer.rs`) the shelf is
+//!   read and shown here as the union (nothing comes off on its word), and
+//!   never written: a change made here stays queued until a Burrow that
+//!   knows the contract sends it. A union sent back would bring back what
+//!   another device took off, and the 50-entry cap would trim it.
 //! - Your posts the blyg can't name yet (scratch notes, drafts not sent)
 //!   stay on this computer's shelf in their places, and go once they can.
 
@@ -94,6 +97,9 @@ impl Engine {
     /// the result when it differs. True when the shelf here changed.
     pub(super) fn sync_shelf(&self) -> Result<bool> {
         match self.api.get_shelf()? {
+            Some(server) if self.store.lists_prune() == crate::api::Prune::Withheld => {
+                self.show_shelf_union(&server) // --- newer contract ---
+            }
             Some(server) => self.settle_shelf(server, true),
             None => {
                 // No route after all: the shelf stays here.
@@ -104,12 +110,7 @@ impl Engine {
     }
 
     fn settle_shelf(&self, server: Remote, retry: bool) -> Result<bool> {
-        // --- newer contract --- merged as on a first sync, the union: a
-        // list it lacks an entry from takes nothing off here.
-        let base = match self.store.lists_prune() {
-            crate::api::Prune::Allowed => self.shelf_base(),
-            crate::api::Prune::Withheld => None,
-        };
+        let base = self.shelf_base();
         let local = self.store.shelf_wire();
         let (merged, over) = cap(merge(base.as_deref(), &local, &server.entries));
         if merged == server.entries {
@@ -150,6 +151,14 @@ impl Engine {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// --- newer contract --- The blyg's shelf, shown here as the union with
+    /// this side's (the blyg's order first), and nothing sent: no `PUT`, no
+    /// new base. True when the shelf here changed.
+    pub(super) fn show_shelf_union(&self, server: &Remote) -> Result<bool> {
+        let union = merge(None, &self.store.shelf_wire(), &server.entries);
+        self.store.apply_shelf(&union)
     }
 
     /// The blyg holds `r`: it's the base of the next merge.

@@ -275,24 +275,40 @@ pub struct Read {
     prune: Prune,
 }
 
+/// What one pull's read of the reading list starts from ([`Read::begin`]).
+#[derive(Debug)]
+pub struct Begin {
+    /// The read [`start`] asked for.
+    pub start: Start,
+    /// The walk an earlier pull left (for [`Start::Continue`]).
+    pub held: Option<Walk>,
+    /// The revisions captured for this pull.
+    pub rev: Option<ChangeState>,
+    /// Started only because the safety net was due.
+    pub forced: bool,
+    /// The head mark when the pull began (`HEAD_MARK`).
+    pub mark: Option<i64>,
+    /// Pages this pull may read (`reading_pages`).
+    pub budget: u32,
+    /// Read marks went from here since the last head read.
+    pub reads_sent: bool,
+    /// What the studio's contract lets a complete walk remove.
+    pub prune: Prune,
+}
+
 impl Read {
-    /// Start the read `start` asks for; `held` is the walk an earlier pull
-    /// left (for [`Start::Continue`]); `prune`, what the studio's contract
-    /// lets a complete walk remove. `None`: nothing to read.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the facts one pull's read starts from, each named at the call"
-    )]
-    pub fn begin(
-        start: Start,
-        held: Option<Walk>,
-        rev: Option<ChangeState>,
-        forced: bool,
-        mark: Option<i64>,
-        budget: u32,
-        reads_sent: bool,
-        prune: Prune,
-    ) -> Option<Read> {
+    /// Start the read `b.start` asks for. `None`: nothing to read.
+    pub fn begin(b: Begin) -> Option<Read> {
+        let Begin {
+            start,
+            held,
+            rev,
+            forced,
+            mark,
+            budget,
+            reads_sent,
+            prune,
+        } = b;
         let walk = match start {
             Start::Nothing => return None,
             Start::Continue => held.unwrap_or_else(|| Walk::new(true, rev, false)),

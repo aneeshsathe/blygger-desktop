@@ -743,7 +743,7 @@ impl Engine {
     pub fn earliest_due(&self) -> Option<i64> {
         let held = {
             let st = self.state();
-            st.read_denied || st.hopper_denied
+            st.read_denied || st.hopper_denied || self.store.lists_prune() == Prune::Withheld
         };
         if !held {
             return self.store.earliest_due();
@@ -1782,6 +1782,8 @@ impl Engine {
     fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
         (st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread))
             || (st.hopper_denied && op.kind == OpKind::Hopper) // --- hoppers ---
+            // --- newer contract --- the shelf isn't written to such a blyg.
+            || (op.kind == OpKind::Shelf && self.store.lists_prune() == Prune::Withheld)
     }
 
     /// A read-state write answered 403 (`e`, which names the missing scope,
@@ -2060,16 +2062,16 @@ impl Engine {
         let held = (start == Start::Continue)
             .then(|| self.state().walk.take())
             .flatten();
-        let Some(mut r) = Read::begin(
+        let Some(mut r) = Read::begin(walk::Begin {
             start,
             held,
-            rev.clone(),
+            rev: rev.clone(),
             forced,
             mark,
-            self.opts.reading_pages,
+            budget: self.opts.reading_pages,
             reads_sent,
-            self.store.lists_prune(),
-        ) else {
+            prune: self.store.lists_prune(),
+        }) else {
             return Ok(out);
         };
         let kinds: HashMap<SubId, SubscriptionKind> = self

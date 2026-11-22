@@ -49,6 +49,10 @@ fn a_newer_contracts_shelf_shows_the_union_and_sends_nothing() {
     let shelf = e.store.shelf_wire();
     assert!(shelf.contains(&Entry::new("s1", "A")), "{shelf:?}");
     assert!(shelf.contains(&Entry::new("s1", "B")), "{shelf:?}");
-    assert_eq!(e.store.meta(BASE_META), None, "nothing agreed with the blyg");
+    assert_eq!(
+        e.store.meta(BASE_META),
+        None,
+        "nothing agreed with the blyg"
+    );
     assert!(e.store.shelf_waiting(), "A's change still waits to be sent");
 }

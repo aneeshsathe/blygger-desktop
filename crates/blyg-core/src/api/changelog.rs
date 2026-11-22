@@ -1,23 +1,20 @@
 //! --- changelog display --- studio 0.58's changelog settings and summaries
 //! (private contract 5.8.0; `crate::changelog`). Asked only of a studio
-//! whose capabilities say 5.8 or later; an older one is never sent the
-//! route, the keys or the `history` flag.
+//! whose capabilities list `summarizeChangelog`; any other is never sent
+//! the route, the keys or the `history` flag.
 
 use serde_json::{Value, json};
 
 use super::{Api, enc};
 use crate::access_ai::DraftedNote;
 use crate::backend::{CoreError, Result};
-use crate::changelog::{ChangelogSettings, ChangelogSummary, SummaryOf, serves_changelog};
+use crate::changelog::{CHANGELOG_OPERATION, ChangelogSettings, ChangelogSummary, SummaryOf};
 
 impl Api {
     /// Whether this studio has changelog display and summaries (asks its
     /// capabilities).
     pub fn serves_changelog(&self) -> Result<bool> {
-        Ok(self
-            .contract_version()?
-            .as_deref()
-            .is_some_and(serves_changelog))
+        self.offers_all(&[CHANGELOG_OPERATION])
     }
 
     /// The changelog keys of `GET /api/settings`. `Ok(None)`: not served.

@@ -37,7 +37,10 @@ fn an_operation_is_offered_when_the_capabilities_list_it() {
     let caps = json!({ "contractVersion": "next", "operations": ["listContacts"] });
     assert!(offers(&caps, "listContacts"));
     assert!(!offers(&caps, "getShelf"));
-    assert!(offers(&json!({ "operations": { "getShelf": {} } }), "getShelf"));
+    assert!(offers(
+        &json!({ "operations": { "getShelf": {} } }),
+        "getShelf"
+    ));
     assert!(!offers(&json!({}), "getShelf"));
 }
 

@@ -6,7 +6,11 @@
 //!
 //! - Sync goes on, each feature gated on the operations the blyg's
 //!   capabilities list, as on any studio (skill `capability-gating`). Your
-//!   writes (publish, edits, read marks, hoppers, the shelf) go through.
+//!   writes (publish, edits, read marks, hoppers) go through. The shelf is
+//!   the exception: it's written whole, so a union sent back would bring
+//!   back entries another device took off; it's read and shown here, and a
+//!   change made here waits, queued, for a Burrow that knows the contract
+//!   (`Engine::show_shelf_union`, held in `Engine::next_op`).
 //! - Nothing held here is removed on the word of that studio's lists, until
 //!   a Burrow that knows the contract: a page in a shape Burrow doesn't know
 //!   would read as an empty or ended list. The store holds the one switch
@@ -20,8 +24,13 @@
 //!   - read marks another device seems to have cleared
 //!     (`Store::reconcile_read_state`);
 //!   - subscriptions and contacts, kept here by [`keep_held`];
-//!   - the shelf, merged as on a first sync (the union), not against the
-//!     last agreed list (`Engine::sync_shelf`).
+//!   - the shelf, shown as the union of the blyg's and this side's.
+//! - Left as the blyg says, on purpose: what the studio works out and
+//!   Burrow only caches, which a later read puts right and which holds
+//!   nothing of yours. The Background set (`fetch_background`), stale
+//!   quotes (`upkeep.freshness`), the mentions lens cache, each row's
+//!   syndication list (`set_reading_syndication`, `merge_wire_syndication`)
+//!   and an RSS post re-keyed under its new guid (`merge_reading_page`).
 //! - The app is told once a session (`CoreEvent::ServerNewer`).
 
 use crate::model::CoreEvent;

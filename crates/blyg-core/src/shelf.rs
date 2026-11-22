@@ -100,12 +100,8 @@ pub enum SyncState {
 /// `operations` (an array of ids; a map is read by its keys) list both
 /// [`GET_OPERATION`] and [`PUT_OPERATION`].
 pub fn serves(capabilities: &Value) -> bool {
-    let has = |op: &str| match capabilities.get("operations") {
-        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(op)),
-        Some(Value::Object(m)) => m.contains_key(op),
-        _ => false,
-    };
-    has(GET_OPERATION) && has(PUT_OPERATION)
+    crate::api::offers(capabilities, GET_OPERATION)
+        && crate::api::offers(capabilities, PUT_OPERATION)
 }
 
 /// A `Shelf` answer (`GET`, a `PUT`'s answer, or a 409's

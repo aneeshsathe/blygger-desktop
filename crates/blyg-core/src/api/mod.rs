@@ -92,16 +92,30 @@ macro_rules! min_studio {
 /// The oldest blygger-studio Burrow syncs with, for messages.
 pub const MIN_STUDIO: &str = crate::min_studio!();
 
-/// Whether a studio's `contractVersion` takes `wholeBlyg` on `POST
-/// /api/subscriptions` (5.1.0, studio 0.50.0). Its body is strict, so a
-/// 5.0 studio answers 400 to the key.
-pub fn takes_whole_blyg(version: &str) -> bool {
-    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(CONTRACT_MAJOR), Some(minor)) => minor >= 1,
-        (Some(major), _) => major > CONTRACT_MAJOR,
+/// Whether a studio's capabilities (`GET /api/capabilities`) list the
+/// operation `op`, as an array of names or an object keyed by them. Every
+/// feature a studio may lack is gated on this, never on `contractVersion`
+/// (skill `capability-gating`): a version Burrow can't read ("next") still
+/// gets what it lists.
+pub fn offers(capabilities: &Value, op: &str) -> bool {
+    match capabilities.get("operations") {
+        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(op)),
+        Some(Value::Object(m)) => m.contains_key(op),
         _ => false,
     }
+}
+
+/// Whether to send `wholeBlyg` on `POST /api/subscriptions` to a studio on
+/// `version`. The key (5.1.0, studio 0.50.0) has no operation of its own to
+/// look for, so this is the floor rule: only the floor contract, 5.0, is
+/// known to refuse it (its body is strict: 400). Anything else is sent it,
+/// and a 400 is asked again without it (`Api::post_subscription`).
+pub fn takes_whole_blyg(version: &str) -> bool {
+    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
+    !matches!(
+        (parts.next().flatten(), parts.next().flatten()),
+        (Some(CONTRACT_MAJOR), Some(0))
+    )
 }
 
 /// What Burrow makes of a studio's `contractVersion`.
@@ -179,8 +193,8 @@ pub struct Api {
     session: Mutex<Option<String>>,
     /// What items resolve against, from settings as last read or written.
     site: Mutex<Option<Site>>,
-    /// Whether `POST /api/subscriptions` takes `wholeBlyg` (contract 5.1+),
-    /// once the capabilities were read.
+    /// Whether `POST /api/subscriptions` takes `wholeBlyg`, once known: from
+    /// the floor rule (`takes_whole_blyg`), or from a 400 to the key.
     whole_blyg: Mutex<Option<bool>>,
     /// Each `GET` URL's last body and its `ETag` (`conditional`).
     validators: Mutex<Validators>,
@@ -630,6 +644,17 @@ impl Api {
     /// has none there). `Ok(None)`: not served (404), or not readable as
     /// one. Refused credentials (401 after a refresh, 403), offline,
     /// rate-limited or 5xx: an error, so nothing passes on a failed read.
+    /// Whether the studio's capabilities list every one of `ops`
+    /// ([`offers`]). A studio without capabilities offers nothing; a failed
+    /// read (offline, a 5xx, a refused credential) decides nothing.
+    pub fn offers_all(&self, ops: &[&str]) -> Result<bool> {
+        match self.call("GET", "/api/capabilities", None) {
+            Ok(v) => Ok(ops.iter().all(|op| offers(&v, op))),
+            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+            Err(_) => Ok(false),
+        }
+    }
+
     pub fn contract_version(&self) -> Result<Option<String>> {
         match self.call("GET", "/api/capabilities", None) {
             Ok(v) => Ok(v
@@ -983,37 +1008,49 @@ impl Api {
         Ok(subs.into_iter().map(Subscription::from).collect())
     }
 
-    /// Whether this studio takes `wholeBlyg`, read once from its
-    /// capabilities. A failed read answers false and is tried again next time.
+    /// Whether to send this studio `wholeBlyg`: what it answered before,
+    /// else the floor rule on its contract. A failed read sends it (a 400
+    /// is asked again without it).
     fn whole_blyg(&self) -> bool {
         if let Some(w) = *self.whole_blyg.lock().unwrap() {
             return w;
         }
         match self.contract_version() {
             Ok(v) => {
-                let w = v.as_deref().is_some_and(takes_whole_blyg);
+                let w = v.as_deref().is_none_or(takes_whole_blyg);
                 *self.whole_blyg.lock().unwrap() = Some(w);
                 w
             }
-            Err(_) => false,
+            Err(_) => true,
         }
     }
 
-    /// `{url}` for `POST /api/subscriptions`, with `wholeBlyg: true` where
-    /// the studio takes it. A URL that names one of a blyg's public hoppers
+    /// `POST /api/subscriptions` with `body` plus `wholeBlyg: true` where the
+    /// studio takes it. A URL that names one of a blyg's public hoppers
     /// otherwise proposes (and confirms) a hopper subscription, which Burrow
     /// doesn't model: it follows the whole blyg instead (spec 0.4 §16.12
-    /// rule 4). The key changes nothing for any other URL.
-    fn subscribe_body(&self, url: &str) -> Value {
-        let mut body = json!({ "url": url });
-        if self.whole_blyg() {
-            body["wholeBlyg"] = json!(true);
+    /// rule 4). The key changes nothing for any other URL. A 400 to the key
+    /// is asked again without it; when that works, the key isn't sent again.
+    fn post_subscription(&self, body: Value) -> Result<Value> {
+        if !self.whole_blyg() {
+            return self.call("POST", "/api/subscriptions", Some(body));
         }
-        body
+        let mut with = body.clone();
+        with["wholeBlyg"] = json!(true);
+        match self.call("POST", "/api/subscriptions", Some(with)) {
+            Err(CoreError::Rejected { status: 400, .. }) => {
+                let r = self.call("POST", "/api/subscriptions", Some(body));
+                if r.is_ok() {
+                    *self.whole_blyg.lock().unwrap() = Some(false);
+                }
+                r
+            }
+            r => r,
+        }
     }
 
     pub fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
-        let v = self.call("POST", "/api/subscriptions", Some(self.subscribe_body(url)))?;
+        let v = self.post_subscription(json!({ "url": url }))?;
         let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
         let kind = if s("kind").as_deref() == Some("rss") {
             SubscriptionKind::Rss
@@ -1036,15 +1073,14 @@ impl Api {
 
     /// `POST /api/subscriptions {url, confirm:true, title?}` → new subscription id.
     pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<SubId> {
-        let mut body = self.subscribe_body(url);
-        body["confirm"] = json!(true);
+        let mut body = json!({ "url": url, "confirm": true });
         if let Some(t) = title {
             body["title"] = json!(crate::text::for_save(t));
         }
-        Ok(self
-            .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
-            .id
-            .into())
+        let v = self.post_subscription(body)?;
+        let created: Created = serde_json::from_value(v)
+            .map_err(|e| CoreError::Other(format!("unexpected subscription answer: {e}")))?;
+        Ok(created.id.into())
     }
 
     /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
@@ -1986,16 +2022,6 @@ mod tests {
         assert_eq!(contract(Some("4.0.0")), Contract::TooOld);
         assert_eq!(contract(Some("1.0.0")), Contract::TooOld);
         assert_eq!(contract(None), Contract::TooOld, "no capabilities: too old");
-        assert!(
-            !takes_whole_blyg("5.0.0"),
-            "studio 0.49: strict body, no key"
-        );
-        assert!(takes_whole_blyg("5.1.0"));
-        assert!(takes_whole_blyg(" 5.2.0 "));
-        assert!(takes_whole_blyg("6.0.0"));
-        assert!(!takes_whole_blyg("5"));
-        assert!(!takes_whole_blyg("4.9.0"));
-        assert!(!takes_whole_blyg("next"));
         // Contract 6 (studio 0.67) only drops `GET /changes`, which sync
         // already does without: a studio on 0.67+ must still sync.
         assert_eq!(contract(Some("6.0.0")), Contract::Supported);

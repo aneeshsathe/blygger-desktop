@@ -43,16 +43,10 @@ pub struct ContactId {
     pub provenance: String,
 }
 
-/// Whether a studio's `contractVersion` serves contacts, the `@handle`
-/// rewrite and the mentions lens (5.7.0, studio 0.56).
-pub fn serves_contacts(version: &str) -> bool {
-    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(5), Some(minor)) => minor >= 7,
-        (Some(major), _) => major > 5,
-        _ => false,
-    }
-}
+/// The operation whose listing in a studio's capabilities means it serves
+/// contacts, the `@handle` rewrite and the mentions lens (contract 5.7.0,
+/// studio 0.56).
+pub const CONTACTS_OPERATION: &str = "listContacts";
 
 /// The first studio that reads `@handle`s in natural grammar (0.66, #158):
 /// `@lin-driven` names Lin there, through the longest prefix before a `-`
@@ -358,16 +352,6 @@ impl ContactSeed {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn contracts_from_5_7_serve_contacts() {
-        assert!(serves_contacts("5.7.0"));
-        assert!(serves_contacts("5.12.1"));
-        assert!(serves_contacts("6.0.0"));
-        assert!(!serves_contacts("5.6.3"));
-        assert!(!serves_contacts("5.0.0"));
-        assert!(!serves_contacts("x"));
-    }
 
     #[test]
     fn contacts_parse_from_any_list_shape() {

@@ -40,7 +40,8 @@ capabilities list, and your writes go through. But nothing held here is removed 
 studio's lists' word until Burrow knows the contract: a page in a shape Burrow doesn't
 know would read as an empty or ended list. Items, reading posts, subscriptions,
 hoppers, thumbs, read marks, contacts and shelf entries it doesn't list stay on this
-Mac; removals made here (an unsubscribe, a deleted post) still go. Burrow says "Your
+Mac; removals made here (an unsubscribe, a deleted post) still go. The shelf is read
+but not written: a change to it waits, queued, until Burrow is updated. Burrow says "Your
 blyg runs a newer studio" once a session, and asks to be updated.
 
 ## Signing in
@@ -333,7 +334,7 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
 - Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention hiding
   and subscription edits are `PATCH` too.
 - Mentions may have `relation: "source"` (generated text drew on your post).
-- Contract 5.7.0 (studio 0.56), asked for only when the capabilities say 5.7 or later:
+- Contract 5.7.0 (studio 0.56), asked for only when the capabilities list `listContacts`:
   `GET /api/contacts` (the owner's address book, `{handle, name, origin}`), publish's
   `unresolvedHandles` (it rewrites `@handle` to an h-card link), and `mentions=true` on
   `GET /api/reading`. The repo's OpenAPI fixture is still 5.0.0.

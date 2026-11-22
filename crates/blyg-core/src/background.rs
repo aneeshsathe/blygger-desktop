@@ -600,11 +600,7 @@ pub fn rule_label(rule: &str) -> (&'static str, &'static str) {
 
 /// Whether a `GET /api/capabilities` answer lists [`OPERATION`].
 pub fn serves(capabilities: &Value) -> bool {
-    match capabilities.get("operations") {
-        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(OPERATION)),
-        Some(Value::Object(m)) => m.contains_key(OPERATION),
-        _ => false,
-    }
+    crate::api::offers(capabilities, OPERATION)
 }
 
 /// `PUT /api/reading/placement`'s body for the row `key` (your own posts

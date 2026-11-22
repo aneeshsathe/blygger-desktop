@@ -147,7 +147,11 @@ fn contacts_follow_the_listed_operation_not_the_version() {
     b.refresh_contacts().unwrap();
     assert!(!b.rewrites_handles());
     assert!(
-        !env.mock.state().log.iter().any(|l| l.contains("/api/contacts")),
+        !env.mock
+            .state()
+            .log
+            .iter()
+            .any(|l| l.contains("/api/contacts")),
         "never asked"
     );
     let env = env_at("next", CONTACTS);
