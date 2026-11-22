@@ -410,6 +410,55 @@ fn mentions_are_a_list_without_counts(cx: &mut TestAppContext) {
     }));
 }
 
+/// A mention opens the post that mentioned yours in the reader, not the
+/// default browser; its group's "On “title”" opens your post in Posts.
+#[gpui_kit::test]
+fn a_mention_opens_its_post_in_burrow(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
+    settle(cx);
+    let (rue, own) = view.read_with(cx, |v, _| {
+        let groups = v.mention_groups();
+        let rue = groups
+            .iter()
+            .flat_map(|g| g.3.iter())
+            .find(|r| r.who == "Rue")
+            .cloned()
+            .unwrap();
+        let own = groups
+            .iter()
+            .find(|g| g.0.starts_with("On friction"))
+            .and_then(|g| g.1.clone())
+            .unwrap();
+        (rue, own)
+    });
+    let (origin, id, version) = rue.post.clone().expect("the mention names its post");
+    assert_eq!(
+        (origin.as_str(), id.as_str(), version),
+        (RUE, "01K2Mm1", Some(1))
+    );
+    view.update_in(cx, |v, window, cx| {
+        v.open_mention(rue.source.clone(), rue.post.clone(), window, cx)
+    });
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.reading.view, View::Reading, "the reader, in Burrow");
+        assert!(!v.browser.open, "not as a web page");
+    });
+    // Back to Mentions: "On “On friction…”" opens your post.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
+    settle(cx);
+    view.update_in(cx, |v, window, cx| v.open_mentioned_post(&own, window, cx));
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.reading.view, View::Posts);
+        assert_eq!(
+            v.current.as_ref().map(|c| c.local_id.clone()),
+            Some(own.clone())
+        );
+    });
+}
+
 #[gpui_kit::test]
 fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
