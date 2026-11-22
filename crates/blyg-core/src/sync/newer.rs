@@ -133,6 +133,16 @@ impl Engine {
         Ok(first)
     }
 
+    /// Whether the blyg's lists may remove what's held here now: on a
+    /// check from an earlier pull, the contract is read again first.
+    pub(crate) fn lists_prune_fresh(&self) -> Prune {
+        match self.store.lists_prune_now() {
+            crate::store::Removal::Now => Prune::Allowed,
+            crate::store::Removal::Recheck => self.recheck_contract(),
+            crate::store::Removal::Never => Prune::Withheld,
+        }
+    }
+
     /// Read the contract again now (one conditional `GET
     /// /api/capabilities`), before something is removed on a list's word:
     /// a studio upgraded since the last check is seen first. What the

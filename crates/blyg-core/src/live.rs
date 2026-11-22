@@ -389,7 +389,7 @@ impl LiveBackend {
     /// version history.
     fn refresh(&self, id: &LocalId, sid: &str) -> Option<WireItem> {
         let w = self.e().api.get_item_full(sid).ok()?;
-        self.e().store.apply_server(id, &w).ok()?;
+        self.e().lay_list(|| self.e().store.apply_server(id, &w), |_, _| ()).ok()?;
         Some(w)
     }
 
@@ -534,12 +534,12 @@ impl LiveBackend {
                 continue;
             };
             let _ = match self.e().store.local_id_for_server(&part.id) {
-                Some(local) => self.e().store.apply_server(&local, &pw),
+                Some(local) => self.e().lay_list(|| self.e().store.apply_server(&local, &pw), |_, _| ()),
                 None => self.e().store.insert_from_server(&pw).map(|_| ()),
             };
         }
         let w = w?;
-        self.e().store.replace_from_server(id, w).ok()?;
+        self.e().lay_list(|| self.e().store.replace_from_server(id, w), |_, _| ()).ok()?;
         Some(w.content_md.clone())
     }
 
@@ -1386,7 +1386,7 @@ impl Backend for LiveBackend {
         match self.e().track(self.e().api.get_item_full(&sid.0)) {
             Ok(w) => {
                 let _net = self.e().net_lock();
-                self.e().store.apply_server(id, &w)?;
+                self.e().lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())?;
                 Ok(w.versions.unwrap_or_default())
             }
             Err(CoreError::Offline) => {
@@ -1414,7 +1414,7 @@ impl Backend for LiveBackend {
         let _net = self.e().net_lock();
         self.command(id, &sid, |rev| self.e().api.restore(&sid, rev, version))?;
         let w = self.e().track(self.e().api.get_item_full(&sid))?;
-        self.e().store.replace_from_server(id, &w)?;
+        self.e().lay_list(|| self.e().store.replace_from_server(id, &w), |_, _| ())?;
         self.e().emit(CoreEvent::ItemsChanged);
         self.e().emit_status();
         Ok(())
@@ -2572,8 +2572,8 @@ impl LiveBackend {
             Err(CoreError::NotFound) => {
                 // --- newer contract --- gone only on a contract that lets
                 // the blyg's answers remove (not before the check either).
-                let store = &self.e().store;
-                if !store.hopper_not_found(id, store.lists_prune())? {
+                let prune = self.e().lists_prune_fresh();
+                if !self.e().store.hopper_not_found(id, prune)? {
                     return Err(hopper_conflict_error(
                         "Your blyg didn't find this hopper while Burrow was saving the change. \
                          Burrow keeps it here for now."

@@ -25,4 +25,7 @@ section: Fixed
   `Store::take_served_contacts`) rather than relying on its caller. A hopper
   your blyg answers "not found" for while saving an edit stays, with its
   waiting changes, until Burrow knows the contract.
+- **A post's version history keeps its versions on a newer studio.** A
+  version list that reads short or empty there adds and updates versions
+  but removes none held here.
 - Changelog display is read once a pull rather than on each call.

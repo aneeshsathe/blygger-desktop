@@ -1223,13 +1223,13 @@ impl Store {
     /// Refresh one item from the server without conflict detection (after
     /// publish, withdraw, …). Local unpushed content is kept.
     pub fn apply_server(&self, id: &LocalId, w: &WireItem) -> Result<()> {
-        let prune = self.lists_prune();
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
         if let Some(row) = get_row(&tx, id)? {
             merge_one(&tx, &row, w, false)?;
             if let Some(v) = &w.versions {
-                put_versions(&tx, id, v, prune)?;
+                put_versions(&tx, id, v, || removal.may(self))?;
             }
         }
         tx.commit()?;
@@ -1238,7 +1238,7 @@ impl Store {
 
     /// Server copy wins outright: drop local edits and conflict (restore).
     pub fn replace_from_server(&self, id: &LocalId, w: &WireItem) -> Result<()> {
-        let prune = self.lists_prune();
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
@@ -1254,7 +1254,7 @@ impl Store {
         if let Some(row) = get_row(&tx, id)? {
             merge_one(&tx, &row, w, false)?;
             if let Some(v) = &w.versions {
-                put_versions(&tx, id, v, prune)?;
+                put_versions(&tx, id, v, || removal.may(self))?;
             }
         }
         tx.commit()?;
@@ -1376,10 +1376,10 @@ impl Store {
     /// rows held for it; one it lacks goes only when the blyg's lists may
     /// remove (`lists_prune`).
     pub fn put_versions(&self, id: &LocalId, v: &[Version]) -> Result<()> {
-        let prune = self.lists_prune();
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
-        put_versions(&tx, id, v, prune)?;
+        put_versions(&tx, id, v, || removal.may(self))?;
         tx.commit()?;
         Ok(())
     }
@@ -1617,23 +1617,34 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
     )?;
     if let Some(v) = &w.versions {
         // A new row: nothing held to remove.
-        put_versions(tx, &id, v, Prune::Allowed)?;
+        add_versions(tx, &id, v)?;
     }
     Ok(id)
 }
 
-/// An item's version rows from its version list: replaced whole when
-/// `prune` allows, else only added to and updated (a newer contract's list,
-/// or one read before any check, may read short or empty).
+/// An item's version rows from its version list: replaced whole, or, when
+/// the list lacks a version held here and `may_drop` says no, only added to
+/// and updated (a newer contract's list, or one read before any check or on
+/// a stale one, may read short or empty). `may_drop` is asked only then.
 fn put_versions(
     tx: &Connection,
     id: &LocalId,
     v: &[Version],
-    prune: Prune,
+    may_drop: impl FnOnce() -> bool,
 ) -> rusqlite::Result<()> {
-    if prune == Prune::Allowed {
+    let held: Vec<u32> = tx
+        .prepare_cached("SELECT version FROM versions WHERE local_id = ?1")?
+        .query_map([&id.0], |r| Ok(r.get::<_, i64>(0)? as u32))?
+        .collect::<rusqlite::Result<_>>()?;
+    let drops = held.iter().any(|h| !v.iter().any(|x| x.version == *h));
+    if !drops || may_drop() {
         tx.execute("DELETE FROM versions WHERE local_id = ?1", [&id.0])?;
     }
+    add_versions(tx, id, v)
+}
+
+/// Add or update an item's version rows; none is removed.
+fn add_versions(tx: &Connection, id: &LocalId, v: &[Version]) -> rusqlite::Result<()> {
     let mut st = tx.prepare_cached(
         "INSERT OR REPLACE INTO versions (local_id, version, published_at, note, pinned, endcap) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;

@@ -58,6 +58,8 @@ impl Api {
             return Err(CoreError::Other(NEEDS_0_58.into()));
         }
         let v = self.call("PATCH", "/api/settings", Some(s.to_json()))?;
+        // The settings changed: what the pull cached of them is read again.
+        self.new_pull();
         Ok(ChangelogSettings::from_json(&v))
     }
 

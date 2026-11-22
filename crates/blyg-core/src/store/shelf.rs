@@ -18,7 +18,7 @@ use super::Store;
 use crate::api::Prune;
 use crate::backend::{CoreError, Result};
 use crate::model::LocalId;
-use crate::shelf::{Entry, OWN, TAKEN_OFF_MAX, TAKEN_OFF_META};
+use crate::shelf::{Entry, OWN, SERVED_META, TAKEN_OFF_MAX, TAKEN_OFF_META};
 
 pub use crate::shelf::SHELF_MAX;
 
@@ -397,11 +397,21 @@ impl Store {
 }
 
 /// Note that this side took `entry` off the shelf (`off`), or put it back
-/// ([`TAKEN_OFF_META`]). A post the blyg can't name yet needs no note.
+/// ([`TAKEN_OFF_META`]). A post the blyg can't name yet needs no note, and
+/// nothing is noted while the blyg doesn't serve Saved: such a removal
+/// isn't one from a list the blyg agreed.
 fn note_taken_off(tx: &Transaction, entry: Option<&Entry>, off: bool) -> Result<()> {
     let Some(entry) = entry else {
         return Ok(());
     };
+    let served: Option<String> = tx
+        .query_row("SELECT value FROM meta WHERE key = ?1", [SERVED_META], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if served.as_deref() != Some("1") {
+        return Ok(());
+    }
     let held: Option<String> = tx
         .query_row(
             "SELECT value FROM meta WHERE key = ?1",

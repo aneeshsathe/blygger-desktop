@@ -1429,7 +1429,12 @@ impl Engine {
                     || self.store.merge_all(&wires),
                     |mut a, b| {
                         a.changed |= b.changed;
-                        a.conflicts.extend(b.conflicts);
+                        // One Conflict event per item, though both lays saw it.
+                        for c in b.conflicts {
+                            if !a.conflicts.iter().any(|x| x.0 == c.0) {
+                                a.conflicts.push(c);
+                            }
+                        }
                         a
                     },
                 )?;
@@ -2203,6 +2208,12 @@ impl Engine {
                     .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
             );
             let stamps = || items.iter().filter_map(|i| parse_ts_ms(&i.observed_at));
+            // --- newer contract --- A page may re-key a row (an RSS guid
+            // changed), which removes the old one: on a check from an
+            // earlier pull, the contract is read again first.
+            if !items.is_empty() && self.store.lists_prune_now() == crate::store::Removal::Recheck {
+                self.recheck_contract();
+            }
             let (mut changed, written) =
                 self.store
                     .merge_reading_page(&items, &r.walk.keys, &kinds)?;

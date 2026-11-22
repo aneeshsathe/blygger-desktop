@@ -354,7 +354,9 @@ impl Store {
         // A re-key takes the old row's place, its thumb, shelf and hopper
         // places with it, on the list's word that the old id is gone: not
         // on a newer contract's (both rows stay; `lists_prune`).
-        let re_key = self.lists_prune() == crate::api::Prune::Allowed;
+        // `Engine::read_page` reads the contract again before a page when
+        // the check is from an earlier pull, so `Recheck` here is rare.
+        let re_key = self.lists_prune_now() == super::Removal::Now;
         let mut changed = false;
         let mut written = Vec::new();
         // In slices of `MERGE_CHUNK` rows, each its own transaction, so a

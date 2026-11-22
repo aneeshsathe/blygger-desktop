@@ -73,8 +73,12 @@ impl Engine {
             Ok(Some(lens)) => lens,
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
             Ok(None) => {
-                // Remembered for this contract, across sessions.
-                if let Some(v) = self.lens_memory_key() {
+                // Remembered for this contract, across sessions; not on a
+                // contract Burrow doesn't know, where plain rows may be a
+                // renamed field (asked again next session).
+                if !self.store.newer_contract()
+                    && let Some(v) = self.lens_memory_key()
+                {
                     self.store.set_meta(crate::background::NO_LENS_META, &v)?;
                 }
                 self.store.set_background_served(false)?;
