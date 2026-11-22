@@ -204,8 +204,7 @@ impl UnresolvedReason {
                 format!("the quoted passage isn't in version {version} of that post")
             }
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment can't quote: make this a thread, or link it with [[id]]"
-                    .into()
+                "a fragment can't quote: make this a thread, or link it with [[id]]".into()
             }
             UnresolvedReason::Other(s) => s.clone(),
         }

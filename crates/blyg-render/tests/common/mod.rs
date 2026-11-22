@@ -44,14 +44,11 @@ impl Resolver for FakeStore {
     /// The book (`contacts`), any case, as the studio's
     /// `lower(handle) IN (…)`; `entered` identifiers stay in the book.
     fn contact(&self, handle: &str) -> Option<blyg_render::HandleCard> {
-        let row = self.json["contacts"]
-            .as_array()?
-            .iter()
-            .find(|c| {
-                c["handle"]
-                    .as_str()
-                    .is_some_and(|h| h.eq_ignore_ascii_case(handle))
-            })?;
+        let row = self.json["contacts"].as_array()?.iter().find(|c| {
+            c["handle"]
+                .as_str()
+                .is_some_and(|h| h.eq_ignore_ascii_case(handle))
+        })?;
         let ids: Vec<Value> = serde_json::from_str(row["ids_json"].as_str()?).ok()?;
         Some(blyg_render::HandleCard {
             name: row["name"].as_str()?.to_string(),

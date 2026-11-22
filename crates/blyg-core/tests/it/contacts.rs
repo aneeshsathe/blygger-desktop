@@ -104,7 +104,10 @@ fn natural_grammar_starts_at_studio_0_66() {
     assert!(!natural_grammar(Some("0.65.9")));
     assert!(!natural_grammar(Some("0.56.0")));
     assert!(!natural_grammar(None), "never known: the old reading");
-    assert!(!natural_grammar(Some("not a version")), "unreadable: never known");
+    assert!(
+        !natural_grammar(Some("not a version")),
+        "unreadable: never known"
+    );
 }
 
 /// The studio's version (`blyg.json`'s generator) is read with the contacts

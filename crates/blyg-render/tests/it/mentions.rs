@@ -80,7 +80,10 @@ fn an_older_studio_keeps_the_whole_token_reading() {
 
 #[test]
 fn a_possessive_names_the_contact() {
-    assert_eq!(html("In @lin's case", false), format!("<p>In {LIN}'s case</p>\n"));
+    assert_eq!(
+        html("In @lin's case", false),
+        format!("<p>In {LIN}'s case</p>\n")
+    );
     assert_eq!(
         html("In @lin\u{2019}s case", false),
         format!("<p>In {LIN}\u{2019}s case</p>\n")

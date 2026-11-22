@@ -197,10 +197,14 @@ fn retyping_a_written_quotes_bracket_opens_nothing(cx: &mut TestAppContext) {
     assert!(!picker_open(&view, cx));
     let at = before.len() + 2;
     view.update_in(cx, |v, _, cx| {
-        v.editor.update(cx, |s, cx| s.set_selected_range(at..at, cx));
+        v.editor
+            .update(cx, |s, cx| s.set_selected_range(at..at, cx));
     });
     cx.simulate_input("[");
     cx.run_until_parked();
-    assert!(!picker_open(&view, cx), "a finished quote is edited, not picked");
+    assert!(
+        !picker_open(&view, cx),
+        "a finished quote is edited, not picked"
+    );
     assert_eq!(editor_text(&view, cx), format!("{before}![[abc]]"));
 }

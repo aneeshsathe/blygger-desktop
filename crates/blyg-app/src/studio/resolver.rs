@@ -109,7 +109,9 @@ impl StoreResolver {
             .collect();
         let r = Self::new(backend.items(), backend.reading(), &rss, mount);
         let _ = r.handles.set(handle_book(backend)); // --- contacts ---
-        let _ = r.natural.set(blyg_core::contacts::natural_grammar_at(backend));
+        let _ = r
+            .natural
+            .set(blyg_core::contacts::natural_grammar_at(backend));
         r
     }
 

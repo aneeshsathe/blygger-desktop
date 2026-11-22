@@ -86,6 +86,9 @@ fn letters_spaces_and_a_moved_caret_are_left_alone() {
     assert_eq!(punctuation_after_pick("x/@kyle ", 8, "'"), None);
     assert_eq!(punctuation_after_pick("@ ", 2, "'"), None);
     assert_eq!(punctuation_after_pick("@-kyle ", 7, "'"), None);
-    assert_eq!(punctuation_after_pick("(@kyle ", 7, ")"), Some(("(@kyle)".into(), 7)));
+    assert_eq!(
+        punctuation_after_pick("(@kyle ", 7, ")"),
+        Some(("(@kyle)".into(), 7))
+    );
     assert_eq!(punctuation_after_pick("@kyle ", 0, "'"), None);
 }

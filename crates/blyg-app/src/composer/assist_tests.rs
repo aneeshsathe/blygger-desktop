@@ -259,16 +259,28 @@ fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) 
     let (view, cx) = setup_handles(Some("0.68.0"), cx);
     let before = open_at_end(&view, DRAFT_THREAD, cx);
     pick_lin(&view, "In @li", cx);
-    assert_eq!(text(&view, cx), format!("{before}In @lin "), "a pick ends in a space");
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}In @lin "),
+        "a pick ends in a space"
+    );
     cx.simulate_input("'");
     cx.run_until_parked();
-    assert_eq!(text(&view, cx), format!("{before}In @lin'"), "the space gives way");
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}In @lin'"),
+        "the space gives way"
+    );
     cx.simulate_input("s case, then");
     pick_lin(&view, " @li", cx);
     // One key at a time, as typing is.
     cx.simulate_input("-");
     cx.run_until_parked();
-    assert!(text(&view, cx).ends_with("then @lin-"), "{}", text(&view, cx));
+    assert!(
+        text(&view, cx).ends_with("then @lin-"),
+        "{}",
+        text(&view, cx)
+    );
     cx.simulate_input("driven");
     cx.run_until_parked();
     assert_eq!(
@@ -279,16 +291,27 @@ fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) 
     pick_lin(&view, " and @li", cx);
     cx.simulate_input("x");
     cx.run_until_parked();
-    assert!(text(&view, cx).ends_with(" and @lin x"), "{}", text(&view, cx));
+    assert!(
+        text(&view, cx).ends_with(" and @lin x"),
+        "{}",
+        text(&view, cx)
+    );
     // Undo: the closed-up punctuation goes in one step, back to the pick.
     pick_lin(&view, " or @li", cx);
     cx.simulate_input(")");
     cx.run_until_parked();
-    assert!(text(&view, cx).ends_with(" or @lin)"), "{}", text(&view, cx));
+    assert!(
+        text(&view, cx).ends_with(" or @lin)"),
+        "{}",
+        text(&view, cx)
+    );
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-z"));
     cx.run_until_parked();
     let t = text(&view, cx);
-    assert!(!t.ends_with(" or @lin )"), "never a state nobody typed: {t:?}");
+    assert!(
+        !t.ends_with(" or @lin )"),
+        "never a state nobody typed: {t:?}"
+    );
     assert!(t.ends_with(" or @lin "), "back to the pick: {t:?}");
     // Redo brings the closed-up text back, not the key's own `@lin )`.
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-z"));
@@ -429,7 +452,11 @@ fn the_link_picker_shuts_at_a_label_and_in_written_brackets(cx: &mut TestAppCont
     let open = typing.find("[[").unwrap() + 1;
     let pipe = typing.find('|').unwrap();
     for (i, u) in up.iter().enumerate() {
-        assert_eq!(*u, (open..pipe).contains(&i), "key {i} of {typing:?}: {up:?}");
+        assert_eq!(
+            *u,
+            (open..pipe).contains(&i),
+            "key {i} of {typing:?}: {up:?}"
+        );
     }
     assert_eq!(text(&view, cx), format!("{before}{typing}"));
     // Take out the second `[`, then type it back: the link is written.
