@@ -81,7 +81,8 @@ fn inline_importmap(html: &str) -> &str {
 fn the_page_loads_under_a_content_security_policy() {
     let html = include_str!("../www/index.html");
     let map = inline_importmap(html);
-    let sha = |s: &str| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(s.as_bytes()));
+    let sha =
+        |s: &str| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(s.as_bytes()));
     let hash = sha(map);
     // A `srcdoc` frame (the preview, a version as published) inherits this
     // policy on top of its own nonce policy, so its one script (fixed text;

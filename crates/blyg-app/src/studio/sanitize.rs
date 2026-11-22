@@ -513,7 +513,9 @@ mod tests {
             let name = path.file_name().unwrap().to_string_lossy().to_string();
             let text = std::fs::read_to_string(&path).unwrap();
             for chunk in text.split("class=\\\"").skip(1) {
-                let Some(end) = chunk.find("\\\"") else { continue };
+                let Some(end) = chunk.find("\\\"") else {
+                    continue;
+                };
                 let value = &chunk[..end];
                 if value.contains('{') || value.contains('"') {
                     continue; // built from a variable; its values are literals elsewhere
