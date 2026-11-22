@@ -189,6 +189,12 @@ fn env_var_names() {
     ];
     let src = include_str!("dev_flags.rs");
     let src = src.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+    // The class table (and what follows it) names more than DevFlags reads:
+    // `dev_flags::every_blygger_name_has_a_class` checks it instead.
+    let src = src
+        .split("\n// ---- classes of every name ----\n")
+        .next()
+        .unwrap();
     let mut read: Vec<&str> = src
         .split('"')
         .skip(1)

@@ -17,9 +17,92 @@ use blyg_ext::*;
 
 const BLYGGER: &str = env!("CARGO_BIN_EXE_blygger");
 
+/// The names `src/dev_flags.rs`'s `CLASSES` table classes `TestsOnly`, read
+/// from its source (an integration test cannot see the crate's items): one
+/// `("NAME", TestsOnly),` entry per line.
+fn tests_only_names() -> Vec<&'static str> {
+    include_str!("../src/dev_flags.rs")
+        .lines()
+        .skip_while(|l| !l.starts_with("pub const CLASSES"))
+        .take_while(|l| *l != "];")
+        .filter(|l| l.trim_end().ends_with(", TestsOnly),"))
+        .filter_map(|l| l.trim().strip_prefix("(\"")?.split('"').next())
+        .collect()
+}
+
+/// Every `blygger` this file spawns starts here: the caller's environment
+/// less the variables only the test suite reads (a debug build refuses to
+/// start with one set, so `BLYGGER_UPDATE_DOCS=1 cargo test` would fail).
+fn command() -> Command {
+    let mut c = Command::new(BLYGGER);
+    for name in tests_only_names() {
+        c.env_remove(name);
+    }
+    c
+}
+
+#[test]
+fn the_tests_only_names_come_from_the_table() {
+    let names = tests_only_names();
+    assert!(names.contains(&"BLYGGER_UPDATE_DOCS"), "{names:?}");
+    assert!(names.contains(&"BLYGGER_LISTS_DIR"), "{names:?}");
+    assert!(names.iter().all(|n| n.starts_with("BLYGGER_")), "{names:?}");
+}
+
+/// `--version` is answered before the ignored-variable check: a misspelt
+/// name and a test-only name (set after the removals) don't stop it.
+#[test]
+fn version_is_not_blocked_by_ignored_variables() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = command()
+        .arg("--version")
+        .env("BLYGGER_CONFIG", dir.path().join("config"))
+        .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+        .env("BLYGGER_FAKEE", "1")
+        .env("BLYGGER_UPDATE_DOCS", "1")
+        .output()
+        .expect("run blygger");
+    assert!(out.status.success(), "{:?}", out.status);
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("blygger "));
+}
+
+/// An app start with an ignored variable exits 2 naming it, before any
+/// window. Debug builds only (a release build would start the app), and the
+/// child is killed if it ever does start.
+#[test]
+fn a_debug_start_with_a_misspelt_variable_exits_2_naming_it() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = command()
+        .env("BLYGGER_CONFIG", dir.path().join("config"))
+        .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+        .env("BLYGGER_FAKE", "1")
+        .env("BLYGGER_NO_ACTIVATE", "1")
+        .env("BLYGGER_NO_UPDATE", "1")
+        .env("BLYGGER_FAKEE", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run blygger");
+    let status = exit_within(
+        &mut child,
+        Duration::from_secs(30),
+        "blygger started the app despite an ignored variable",
+    );
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(status.code(), Some(2), "{status:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("blygger: "), "{err}");
+    assert!(err.contains("BLYGGER_FAKEE"), "{err}");
+    assert!(err.contains("did you mean BLYGGER_FAKE?"), "{err}");
+    assert!(!dir.path().join("data").exists(), "made a data dir");
+}
+
 /// `blygger <args>` with only this temp dir's config and data.
 fn blygger(dir: &Path, args: &[&str]) -> Output {
-    Command::new(BLYGGER)
+    command()
         .args(args)
         .env("BLYGGER_CONFIG", dir.join("config"))
         .env("BLYGGER_DATA_DIR", dir.join("data"))
@@ -145,7 +228,7 @@ fn dashed_version_and_help_print_and_exit() {
         (&["--help"][..], "Usage: blygger"),
         (&["-h"][..], "Usage: blygger"),
     ] {
-        let mut child = Command::new(BLYGGER)
+        let mut child = command()
             .args(args)
             .env("BLYGGER_CONFIG", dir.path().join("config"))
             .env("BLYGGER_DATA_DIR", dir.path().join("data"))
@@ -199,7 +282,7 @@ fn ext_with_an_unknown_name_exits_2() {
 fn ext_answers_initialize_and_shutdown_on_stdio() {
     use std::io::{BufRead, BufReader, Write};
     let dir = tempfile::tempdir().unwrap();
-    let mut child = Command::new(BLYGGER)
+    let mut child = command()
         .args(["+ext", blyg_ext_notes::NAME])
         .env("BLYGGER_CONFIG", dir.path().join("config"))
         .env("BLYGGER_DATA_DIR", dir.path().join("data"))
@@ -374,7 +457,7 @@ fn prepare_params() -> MacroPrepareParams {
 fn ext_cross_post_prepares_a_note_on_stdio() {
     use std::io::{BufReader, Write};
     let dir = tempfile::tempdir().unwrap();
-    let mut child = Command::new(BLYGGER)
+    let mut child = command()
         .args(["+ext", blyg_ext_crosspost::NAME])
         .env("BLYGGER_CONFIG", dir.path().join("config"))
         .env("BLYGGER_DATA_DIR", dir.path().join("data"))

@@ -80,6 +80,12 @@ fn main() -> ExitCode {
     if let Some(code) = cli::run(&args) {
         return code;
     }
+    // Past `--version`, `--help` and every `+action`: this is an app start.
+    // Before any window, config or backend work.
+    if let Err(e) = dev_flags::refuse_ignored() {
+        eprintln!("blygger: {e}");
+        return ExitCode::from(2);
+    }
     let launched = Instant::now();
 
     let files = ConfigFiles::discover();
