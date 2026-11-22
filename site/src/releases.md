@@ -10,8 +10,9 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 A fix for blygs on blygger-studio 0.67 or later. Those studios speak a newer
 version of the studio's API, and Burrow 0.27.2 refused to sync with them,
 saying it "doesn't speak" it yet. The only change Burrow needs to meet is one
-it already handles, so it syncs with them again. Nothing else changes in how
-Burrow looks or works.
+it already handles, so it syncs with them again. It also updates the library
+Burrow uses to read web addresses, which had a flaw that a crafted link could
+use to crash the app. Nothing else changes in how Burrow looks or works.
 
 ## Burrow 0.27.2
 

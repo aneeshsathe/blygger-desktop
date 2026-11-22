@@ -24,6 +24,14 @@ them in here.
 
 ## [0.27.3] - 2026-11-22
 
+A fix for blygs on blygger-studio 0.67 or later, and a security update.
+
+### Security
+- **The URL library is updated to 2.5.9 (RUSTSEC-2026-0592).** In 2.5.8 a
+  URL made of thousands of nested `blob:` prefixes overflowed the stack when
+  its origin was taken, and Burrow takes the origin of links it reads.
+  `Cargo.lock`
+
 ### Fixed
 - **Sync: a blyg on blygger-studio 0.67 or later syncs again.** Studio 0.67
   moved to private API contract 6, whose only change Burrow meets is that
