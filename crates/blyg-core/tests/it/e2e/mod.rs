@@ -2165,18 +2165,41 @@ fn an_unchanged_pull_reads_only_the_change_counters() {
 
     // A settings change re-reads the items with the settings (they resolve
     // against them).
-    let (s, v) = owner(
-        "PATCH",
-        &e.url,
-        "/api/settings",
-        Some(json!({ "showResponsesDefault": false })),
-    );
-    assert_eq!(s, 200, "{v}");
+    let _back = flip_show_responses(&e.url);
     b.pull_now().unwrap();
     let seen = proxy.take();
     assert!(seen.contains(&"GET /api/settings".to_string()), "{seen:?}");
     b.pull_now().unwrap();
     assert_eq!(proxy.take(), vec!["GET /api/changes"], "settled again");
+}
+
+/// Patches the blyg's settings to `.1` when dropped, so a test that fails
+/// part-way leaves the e2e blyg as it found it.
+struct SettingsBack(String, Value);
+
+impl Drop for SettingsBack {
+    fn drop(&mut self) {
+        let _ = owner("PATCH", &self.0, "/api/settings", Some(self.1.clone()));
+    }
+}
+
+/// Flip `showResponsesDefault` from what the blyg holds, as another client
+/// would; it goes back when the guard drops.
+fn flip_show_responses(url: &str) -> SettingsBack {
+    let (st, v) = owner("GET", url, "/api/settings", None);
+    assert_eq!(st, 200, "{v}");
+    let was = v["showResponsesDefault"]
+        .as_bool()
+        .unwrap_or_else(|| panic!("no showResponsesDefault: {v}"));
+    let back = SettingsBack(url.to_string(), json!({ "showResponsesDefault": was }));
+    let (st, v) = owner(
+        "PATCH",
+        url,
+        "/api/settings",
+        Some(json!({ "showResponsesDefault": !was })),
+    );
+    assert_eq!(st, 200, "{v}");
+    back
 }
 
 /// Studio 0.67+ (no `/changes`, contract 6): the first sync asks for the
@@ -2244,18 +2267,19 @@ fn without_changes_an_unchanged_pull_is_all_304s() {
     assert_eq!(b.item(&id).unwrap().content_md, theirs, "picked up");
 
     // A settings change is read (the items resolve against it), then the
-    // pulls settle to 304s again.
-    let (s, v) = owner(
-        "PATCH",
-        &e.url,
-        "/api/settings",
-        Some(json!({ "showResponsesDefault": false })),
-    );
-    assert_eq!(s, 200, "{v}");
+    // pulls settle to 304s again. Settings are asked on every pull, so what
+    // shows the change was read is that this pull, with nothing else
+    // changed, wasn't all 304s.
+    shim.take();
+    let _back = flip_show_responses(&e.url);
     b.pull_now().unwrap();
     let seen = proxy.take();
+    let read = shim.take();
     assert!(seen.contains(&"GET /api/settings".to_string()), "{seen:?}");
-    shim.take();
+    assert!(
+        read.not_modified < read.requests,
+        "the changed settings came back whole: {read:?} {seen:?}"
+    );
     b.pull_now().unwrap();
     let again = shim.take();
     assert!(
@@ -2309,9 +2333,12 @@ fn a_subscription_change_is_picked_up_by_revision() {
 /// off (1 s, 2 s, 4 s, capped at 4 s here). Without counters (studio
 /// 0.67+) each pull asks the reading list's first page, conditionally, and
 /// goes no deeper when it's as it was; the safety net backs off the same.
+/// A local feed of [`WALK_SEED`] posts makes a whole walk several pages,
+/// so a walk shows (as pages with a cursor) and can be counted.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn reading_is_walked_only_when_reading_moves() {
+    const WALK_SEED: usize = 250;
     let counters = has_changes();
     let e = e2e();
     let src_url = url_b();
@@ -2322,11 +2349,41 @@ fn reading_is_walked_only_when_reading_moves() {
     );
     let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("walks");
-    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a wren"), None);
     let me = manual(d1.path());
+    let api = Api::new(&e.url, e.cred.clone());
+    let feeds: LiveFeeds = std::sync::Arc::new(std::sync::Mutex::new(vec![(
+        "/seed.xml",
+        many_rss(
+            "Walk seed",
+            "https://seed.blyg.example.com/",
+            WALK_SEED,
+            0,
+        ),
+    )]));
+    let host = serve_live_feeds(feeds);
+    let seed = me
+        .subscribe(&format!("{host}/seed.xml?run={t}"), Some("Walk seed"))
+        .expect("subscribe to a local feed");
+    let _seed = Unsub(&me, seed.id.clone());
+    wait_every(
+        "the seed feed's import",
+        Duration::from_secs(120),
+        Duration::from_millis(500),
+        || {
+            served_reading(&api)
+                .iter()
+                .filter(|(s, _)| *s == seed.id)
+                .count()
+                >= WALK_SEED
+        },
+    );
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a wren"), None);
     let sub = me.subscribe(&src_url, Some("Walk count")).unwrap();
     let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&rid]);
+    // Pages a whole walk reads, the first included (100 rows a page).
+    let per_walk = served_reading(&api).len().div_ceil(100).max(1);
+    assert!(per_walk >= 3, "a walk is several pages: {per_walk}");
 
     let proxy = Proxy::start(&e.url);
     let other = LiveBackend::open_with(d3.path(), &proxy.url, e.cred.clone(), walk_opts())
@@ -2398,19 +2455,34 @@ fn reading_is_walked_only_when_reading_moves() {
         assert!(walks(&idle) <= 4, "{idle:?}");
     } else {
         assert_eq!(count(&idle, "GET /api/changes"), 0, "{idle:?}");
-        // The head's first page, and nothing deeper.
-        assert!(pages(&signal) <= 1, "a thumb walks nothing: {signal:?}");
-        assert!(pages(&hopper) <= 1, "a hopper walks nothing: {hopper:?}");
-        // One first page a pull; past it, at most 4 safety-net walks (1 s,
-        // 2 s, 4 s, the cap) of the whole list.
-        let per_walk = served_reading(&Api::new(&e.url, e.cred.clone()))
-            .len()
-            .div_ceil(100)
-            .max(1);
+        // A thumb or a hopper costs the head's first page, or, when that
+        // pull is a walk the safety net or a late row made due, one whole
+        // walk: never more. Rows on `/reading/imported` carry `thumb` and
+        // `hoppers`, so the row a thumb or membership changed comes back
+        // rewritten when a read reaches it, no newer than the head mark:
+        // `walk::late` then asks for one deep walk, paced by
+        // `full_pull_every` (`deep_due`), and a whole walk clears it.
+        assert!(
+            pages(&signal) <= per_walk,
+            "a thumb walks at most once: {signal:?}"
+        );
+        assert!(
+            pages(&hopper) <= per_walk,
+            "a hopper walks at most once: {hopper:?}"
+        );
+        // Idle: one first page a pull. Past them, the safety net's whole
+        // walks (1 s, 2 s, 4 s, the cap: at most 4 in 10 s) and at most
+        // one deep walk the hopper's late row left due; and the net does
+        // walk (it isn't backed off for good).
+        let deeper = pages(&idle) - walks(&idle);
         assert!(walks(&idle) <= pulls, "{idle:?}");
         assert!(
-            pages(&idle) - walks(&idle) <= 4 * (per_walk - 1),
-            "{per_walk} pages a walk: {idle:?}"
+            deeper <= 5 * (per_walk - 1),
+            "at most 5 walks of {per_walk} pages: {deeper} deeper pages, {idle:?}"
+        );
+        assert!(
+            deeper >= per_walk - 1,
+            "the safety net walked: {deeper} deeper pages, {idle:?}"
         );
     }
     me.signal(&sub.id, &RemoteId::from(&rid), None).unwrap();
@@ -2811,24 +2883,24 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
 
 // ------------------------------------- settings writes keep what's unknown
 
-/// Studio 0.68's settings fields this Burrow doesn't write: the Feed's
-/// order and the four Background rules phase 2 added.
-fn unknown_settings(v: &Value) -> Value {
-    json!({
-        "readerOrder": v["readerOrder"],
-        "backgroundRules": {
-            "quotes-refreshed": v["backgroundRules"]["quotes-refreshed"],
-            "quotes-material": v["backgroundRules"]["quotes-material"],
-            "near-same": v["backgroundRules"]["near-same"],
-            "superseded": v["backgroundRules"]["superseded"],
-        },
-    })
+/// Studio 0.68's new settings fields (contract 6.1.0): the Feed's order and
+/// the four Background rules phase 2 added.
+const NEW_RULES: [&str; 4] = ["quotes-refreshed", "quotes-material", "near-same", "superseded"];
+
+/// Those fields of a settings answer.
+fn new_settings(v: &Value) -> Value {
+    let rules: serde_json::Map<String, Value> = NEW_RULES
+        .iter()
+        .map(|k| (k.to_string(), v["backgroundRules"][*k].clone()))
+        .collect();
+    json!({ "readerOrder": v["readerOrder"], "backgroundRules": rules })
 }
 
 /// Every settings write Burrow makes is a partial `PATCH /api/settings`
-/// (skills/capability-gating, rule 5), so fields a newer studio added
-/// survive it: `readerOrder` and the new `backgroundRules` keys (studio
-/// 0.68, contract 6.1.0), set elsewhere, are as they were after each one.
+/// (skills/capability-gating, rule 5), so fields it doesn't name survive
+/// it: `readerOrder` and the new `backgroundRules` keys (studio 0.68,
+/// contract 6.1.0), set elsewhere, are as they were after each one. The
+/// blyg gets back what it held, even when an assertion fails.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn settings_writes_keep_fields_this_burrow_doesnt_know() {
@@ -2839,24 +2911,36 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
         eprintln!("skipped: no readerOrder here (older than studio 0.68)");
         return;
     }
-    // Studio (another client) sets them away from their defaults:
-    // readerOrder "newest" (the default is "pace-layered").
-    let theirs = json!({
-        "readerOrder": "newest",
-        "backgroundRules": {
-            "quotes-refreshed": false,
-            "quotes-material": false,
-            "near-same": false,
-            "superseded": false,
-        },
-    });
+    // The Background rule Burrow writes below: one it lists that isn't
+    // among the new ones (whatever blyg_core::background::RULES grows to).
+    let rule = *blyg_core::background::RULES
+        .iter()
+        .find(|r| !NEW_RULES.contains(*r) && v["backgroundRules"][**r].is_boolean())
+        .expect("a rule Burrow lists that the blyg has");
+    let mut back = new_settings(&v);
+    back["backgroundRules"][rule] = v["backgroundRules"][rule].clone();
+    let _back = SettingsBack(e.url.clone(), back);
+
+    // Studio (another client) moves them all away from what they are:
+    // readerOrder to the other order ("newest" or "pace-layered").
+    let order = if v["readerOrder"] == "newest" { "pace-layered" } else { "newest" };
+    let flipped: serde_json::Map<String, Value> = NEW_RULES
+        .iter()
+        .map(|k| {
+            let on = v["backgroundRules"][*k]
+                .as_bool()
+                .unwrap_or_else(|| panic!("no backgroundRules.{k}: {v}"));
+            (k.to_string(), json!(!on))
+        })
+        .collect();
+    let theirs = json!({ "readerOrder": order, "backgroundRules": flipped });
     let (st, set) = owner("PATCH", &e.url, "/api/settings", Some(theirs.clone()));
     assert_eq!(st, 200, "{set}");
-    assert_eq!(unknown_settings(&set), theirs);
+    assert_eq!(new_settings(&set), theirs);
     let still = |what: &str| {
         let (st, now) = owner("GET", &e.url, "/api/settings", None);
         assert_eq!(st, 200, "{now}");
-        assert_eq!(unknown_settings(&now), theirs, "after {what}");
+        assert_eq!(new_settings(&now), theirs, "after {what}");
     };
 
     let api = Api::new(&e.url, e.cred.clone());
@@ -2867,12 +2951,10 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
     let cfg = api.site_config().unwrap().expect("site config");
     api.put_site_config(cfg.patch(&Default::default())).unwrap();
     still("put_site_config");
-    // One Background rule Burrow knows, off and back.
-    let rule = blyg_core::background::RULES[1];
+    // A Background rule Burrow lists, flipped (put back by `_back`).
     let was = api.background_rules().unwrap().expect("rules");
-    api.put_background_rule(rule, false).unwrap();
+    api.put_background_rule(rule, !was.on(rule)).unwrap();
     still("put_background_rule");
-    api.put_background_rule(rule, was.on(rule)).unwrap();
     if let Some(c) = api.changelog_settings().unwrap() {
         api.put_changelog_settings(&c).unwrap();
         still("put_changelog_settings");
@@ -2885,22 +2967,6 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
         api.put_discover_seen_at(&at).unwrap();
         still("put_discover_seen_at");
     }
-    // Back to the studio's defaults.
-    let (st, v) = owner(
-        "PATCH",
-        &e.url,
-        "/api/settings",
-        Some(json!({
-            "readerOrder": "pace-layered",
-            "backgroundRules": {
-                "quotes-refreshed": true,
-                "quotes-material": true,
-                "near-same": true,
-                "superseded": true,
-            },
-        })),
-    );
-    assert_eq!(st, 200, "{v}");
 }
 
 // ------------------------------------------------------ TK generate (0.27)
