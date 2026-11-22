@@ -310,7 +310,9 @@ fn the_reading_tabs_are_studios_in_its_order() {
 #[test]
 fn raw_lists_what_came_in_and_the_agentic_feed_nothing_yet() {
     let mut b = reading();
-    assert_eq!(keys(&b), ["sub1|r2", "sub1|r1"], "the Feed: no withdrawn post");
+    let mut feed = keys(&b);
+    feed.sort();
+    assert_eq!(feed, ["sub1|r1", "sub1|r2"], "the Feed: no withdrawn post");
     b.wr_set_source("smart:raw");
     assert_eq!(
         keys(&b),
@@ -328,33 +330,38 @@ fn raw_lists_what_came_in_and_the_agentic_feed_nothing_yet() {
 #[test]
 fn the_feed_follows_the_blygs_reader_order() {
     let mut b = reading();
-    // Without the setting (an older blyg, the demo): chronological, kept
-    // in this browser.
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
-    let r = v(b.wr_set_reader_order("pace-layered"));
-    assert!(r.get("req").is_none(), "{r}");
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered");
-    // A blyg that keeps it (studio 0.68): its choice, and a change is sent.
-    b.w_set_settings(r#"{"readerOrder":"pace-layered"}"#);
+    // Without the setting (an older blyg, the demo): the studio's default,
+    // pace-layered, as native's (`ReaderOrder::default`); a choice is kept
+    // in this tab.
+    assert_eq!(
+        v(b.wr_sources(NOW))["order"]["value"],
+        blyg_core::order::ReaderOrder::default().as_str()
+    );
     assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered");
     let r = v(b.wr_set_reader_order("newest"));
+    assert!(r.get("req").is_none(), "{r}");
+    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
+    // A blyg that keeps it (studio 0.68): its choice, and a change is sent.
+    b.w_set_settings(r#"{"readerOrder":"newest"}"#);
+    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
+    let r = v(b.wr_set_reader_order("pace-layered"));
     assert_eq!(
         r["req"],
-        json!({ "method": "PATCH", "path": "/api/settings", "body": { "readerOrder": "newest" } })
+        json!({ "method": "PATCH", "path": "/api/settings", "body": { "readerOrder": "pace-layered" } })
     );
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest", "at once");
+    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered", "at once");
     // Refused: back to what the blyg keeps.
     b.wr_reader_order_answer(r["at"].as_f64().unwrap(), 500, "{}");
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered");
+    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
     let o = &v(b.wr_sources(NOW))["order"];
-    assert_eq!(o["label"], "Pace-layered");
+    assert_eq!(o["label"], "Chronological");
 }
 
 #[test]
 fn a_pace_layered_feed_lists_by_each_rows_place() {
     use crate::reading::feed;
-    let mut b = reading();
-    b.w_set_settings(r#"{"readerOrder":"pace-layered"}"#);
+    // No setting: pace-layered all the same (native's default).
+    let b = reading();
     // The places are blyg-core's replay (the one the app uses).
     let rows: Vec<blyg_core::ReadingItem> = b.rd.rows.clone();
     let placed = feed::places(
@@ -376,4 +383,36 @@ fn a_pace_layered_feed_lists_by_each_rows_place() {
     want.sort();
     let want: Vec<String> = want.into_iter().map(|(_, k)| k).collect();
     assert_eq!(keys(&b), want);
+}
+
+// ---------------------------------------------------------------- remote HTML
+
+/// A post with only Markdown (a feed item, an older studio's row): the
+/// Markdown is someone else's, so what it renders to goes through
+/// `sanitize_at` too, like the HTML they send.
+#[test]
+fn a_markdown_only_post_is_cleaned_against_its_own_origin() {
+    let mut b = live();
+    let mut row = reading_row("md1");
+    row["contentHtml"] = json!("");
+    row["contentMd"] = json!(
+        "[the owner's API](/api/items) and ![a](https://img.example.com/a.png) \
+         and [studio](/studio/login)"
+    );
+    b.live_reading(&json!([row]).to_string(), "[]");
+    let post = v(b.open_reading("sub1|md1", NOW));
+    let html = post["html"].as_str().unwrap();
+    // A relative link would point at the owner's own blyg (this page's
+    // origin, where the Studio cookie is): it points at the author's.
+    assert!(
+        html.contains("href=\"https://notes.example.com/api/items\""),
+        "{html}"
+    );
+    assert!(
+        html.contains("href=\"https://notes.example.com/studio/login\""),
+        "{html}"
+    );
+    assert!(!html.contains("href=\"/"), "{html}");
+    // And the allowlist's own marks: images carry no referrer.
+    assert!(html.contains("referrerpolicy=\"no-referrer\""), "{html}");
 }
