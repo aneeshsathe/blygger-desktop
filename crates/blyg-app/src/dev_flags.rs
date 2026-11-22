@@ -250,6 +250,18 @@ impl DevFlags {
     }
 }
 
+/// The NAMES of the process environment's variables, never their values
+/// (values can be tokens). Only for [`report_ignored`].
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the one reader of the environment's names"
+)]
+fn env_names() -> Vec<String> {
+    std::env::vars_os()
+        .filter_map(|(name, _)| name.into_string().ok())
+        .collect()
+}
+
 #[cfg(test)]
 impl TestEnv {
     #[expect(
@@ -273,12 +285,16 @@ impl TestEnv {
 static FLAGS: OnceLock<DevFlags> = OnceLock::new();
 
 /// Parse the environment (first thing in `main`). An error names the
-/// variable and what's wrong with it.
+/// variable and what's wrong with it. A `BLYGGER_*` variable this build
+/// ignores is an error in a debug build, and said once on stderr in a
+/// release build ([`report_ignored`]). Not in [`get`]: tests never call
+/// `init`, so they are not held to it.
 pub fn init() -> Result<&'static DevFlags, String> {
     if let Some(f) = FLAGS.get() {
         return Ok(f);
     }
     let f = DevFlags::from_env()?;
+    report_ignored(env_names().into_iter(), cfg!(debug_assertions))?;
     Ok(FLAGS.get_or_init(|| f))
 }
 
@@ -304,6 +320,218 @@ pub fn prefer_swap_chain() {
         // SAFETY: first thing in main, before any other thread exists.
         unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
     }
+}
+
+// ---- classes of every name ----
+// `never_rename_tests.rs` scans the names this file reads down to this line
+// only, and `every_blygger_name_has_a_class` holds those names to the table.
+
+/// Who reads a `BLYGGER_*` variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Class {
+    /// The app reads it in every build.
+    Always,
+    /// The app reads it in debug builds only.
+    DebugOnly,
+    /// Only the tests (`TestEnv` or a test) read it; the running app
+    /// ignores it.
+    TestsOnly,
+    /// A real name the app's process may see but dev_flags.rs does not act
+    /// on: another crate reads it, or a script exports it into the
+    /// environment the app inherits.
+    Elsewhere,
+}
+
+use Class::{Always, DebugOnly, Elsewhere, TestsOnly};
+
+/// Every `BLYGGER_*` name, and who reads it. A name not here is ignored by
+/// every build and said so at startup ([`ignored`]).
+pub const CLASSES: &[(&str, Class)] = &[
+    // Read by `DevFlags::parse`, in every build.
+    ("BLYGGER_FAKE", Always),
+    ("BLYGGER_FAKE_NO_READ", Always),
+    ("BLYGGER_FAKE_NO_PROVENANCE", Always),
+    ("BLYGGER_FAKE_STUDIO_LATEST", Always),
+    ("BLYGGER_TEST_TOKEN", Always),
+    ("BLYGGER_TIMING", Always),
+    ("BLYGGER_NO_ACTIVATE", Always),
+    ("BLYGGER_REDUCE_MOTION", Always),
+    ("BLYGGER_THEME", Always),
+    ("BLYGGER_NO_UPDATE", Always),
+    ("BLYGGER_NO_BLOCKLIST_DOWNLOAD", Always),
+    ("BLYGGER_MACRO_TRACE", Always),
+    ("BLYGGER_SNAPSHOT", Always),
+    ("BLYGGER_SNAPSHOT_DIR", Always),
+    ("BLYGGER_SNAPSHOT_WIDTH", Always),
+    ("BLYGGER_SNAPSHOT_HEIGHT", Always),
+    ("BLYGGER_DEMO", Always),
+    ("BLYGGER_DEMO_URL", Always),
+    ("BLYGGER_DEMO_URL2", Always),
+    ("BLYGGER_DEMO_SITE_URL", Always),
+    ("BLYGGER_DEMO_NOTE", Always),
+    ("BLYGGER_DEMO_FROM", Always),
+    ("BLYGGER_DEMO_HOVER", Always),
+    ("BLYGGER_DEMO_SCROLL", Always),
+    ("BLYGGER_DEMO_PREVIEW", Always),
+    ("BLYGGER_DEMO_SLOT", Always),
+    ("BLYGGER_DEMO_HOLD_MS", Always),
+    ("BLYGGER_DEMO_FOLD", Always),
+    // Used only under `cfg!(debug_assertions)` / `#[cfg(debug_assertions)]`.
+    // `platform_text.rs:48` (`Platform::spelling`), which `keymap::hint` asks.
+    ("BLYGGER_TEST_SPELLING", DebugOnly),
+    // `onboarding/whats_new.rs:130`.
+    ("BLYGGER_VERSION_AS", DebugOnly),
+    // `update/mod.rs:298` (`debug_overrides`; the release twin at `:315`
+    // reads neither).
+    ("BLYGGER_UPDATE_URL", DebugOnly),
+    ("BLYGGER_UPDATE_PUBKEY", DebugOnly),
+    // `update/mod.rs:596` (`smoke_hook`).
+    ("BLYGGER_UPDATE_SMOKE", DebugOnly),
+    // `browser/mod.rs:82` (`teardown_after`).
+    ("BLYGGER_BROWSER_TEARDOWN_MS", DebugOnly),
+    // `browser/surface.rs:431` and `:1028`.
+    ("BLYGGER_BROWSER_EPHEMERAL", DebugOnly),
+    // Read by `TestEnv` or a test; the running app never looks.
+    ("BLYGGER_LISTS_DIR", TestsOnly),
+    ("BLYGGER_UPDATE_DOCS", TestsOnly),
+    // `crates/blyg-core/tests/perf.rs:353`.
+    ("BLYGGER_PERF_DB", TestsOnly),
+    // Read by another crate (`blyg-core`: `config/paths.rs`, `discover.rs`).
+    ("BLYGGER_CONFIG", Elsewhere),
+    ("BLYGGER_DATA_DIR", Elsewhere),
+    ("BLYGGER_EXTENSIONS_DIR", Elsewhere),
+    ("BLYGGER_THEMES_DIR", Elsewhere),
+    ("BLYGGER_DISCOVER_URL", Elsewhere),
+    // Read by scripts, and inherited by the app they launch from the
+    // caller's environment (`scripts/browser-block-check.sh`,
+    // `scripts/verify/burrow-verify.sh`, `scripts/install.sh`).
+    ("BLYGGER_BIN", Elsewhere),
+    ("BLYGGER_RUNS", Elsewhere),
+    ("BLYGGER_REAL_LISTS", Elsewhere),
+    ("BLYGGER_DEST", Elsewhere),
+    ("BLYGGER_BASE_URL", Elsewhere),
+    ("BLYGGER_VERSION", Elsewhere),
+    ("BLYGGER_NO_VERIFY", Elsewhere),
+];
+
+fn class_of(name: &str) -> Option<Class> {
+    CLASSES.iter().find(|(n, _)| *n == name).map(|(_, c)| *c)
+}
+
+/// Why a variable is ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Why {
+    /// Not a name Burrow knows: probably misspelt.
+    Unknown { did_you_mean: Option<&'static str> },
+    /// Only the test suite reads it.
+    TestsOnly,
+    /// Only debug builds read it, and this is not one.
+    DebugOnly,
+}
+
+/// A `BLYGGER_*` variable present in the environment that this build does
+/// not act on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ignored {
+    pub name: String,
+    pub why: Why,
+}
+
+impl std::fmt::Display for Ignored {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: ", self.name)?;
+        match &self.why {
+            Why::Unknown {
+                did_you_mean: Some(n),
+            } => write!(f, "not a variable Burrow reads (did you mean {n}?)"),
+            Why::Unknown { did_you_mean: None } => write!(f, "not a variable Burrow reads"),
+            Why::TestsOnly => write!(f, "read only by the test suite"),
+            Why::DebugOnly => write!(f, "read only by debug builds"),
+        }
+    }
+}
+
+/// `a` and `b` differ by at most one inserted, deleted or changed byte.
+fn within_one_edit(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if long.len() - short.len() > 1 {
+        return false;
+    }
+    let same = short.iter().zip(long).take_while(|(x, y)| x == y).count();
+    if short.len() == long.len() {
+        short.get(same + 1..) == long.get(same + 1..)
+    } else {
+        short[same..] == long[same + 1..]
+    }
+}
+
+/// Of `names` (the variable NAMES present in the environment) the
+/// `BLYGGER_*` ones this build will not act on, in name order, each with
+/// why. `Always`, `Elsewhere` and (in a debug build) `DebugOnly` names
+/// return nothing; other prefixes are never looked at.
+pub fn ignored(names: impl Iterator<Item = String>, debug: bool) -> Vec<Ignored> {
+    let mut out: Vec<Ignored> = names
+        .filter_map(|name| {
+            // Windows looks variables up without regard to case; so do we.
+            let key = if cfg!(windows) {
+                name.to_ascii_uppercase()
+            } else {
+                name.clone()
+            };
+            if !key.starts_with("BLYGGER_") {
+                return None;
+            }
+            let why = match class_of(&key) {
+                Some(Always | Elsewhere) => return None,
+                Some(DebugOnly) if debug => return None,
+                Some(DebugOnly) => Why::DebugOnly,
+                Some(TestsOnly) => Why::TestsOnly,
+                None => Why::Unknown {
+                    did_you_mean: CLASSES
+                        .iter()
+                        .map(|(n, _)| *n)
+                        .find(|n| within_one_edit(n, &key)),
+                },
+            };
+            Some(Ignored { name, why })
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.dedup_by(|a, b| a.name == b.name);
+    out
+}
+
+/// The `init` error of a debug build: every ignored variable, why, and what
+/// to do. `main` prints it after `blygger: `.
+fn refusal(list: &[Ignored]) -> String {
+    let mut text = String::from(
+        "these environment variables are ignored by this build, so a debug build will not start with them set:",
+    );
+    for i in list {
+        text.push_str("\n  ");
+        text.push_str(&i.to_string());
+    }
+    text.push_str(
+        "\nUnset them, or use what reads them: a debug build, or the test suite (`cargo test`).",
+    );
+    text
+}
+
+/// Debug build: any ignored variable is an `Err`. Release build: each is
+/// said once on stderr and the app starts. Never prints a value.
+fn report_ignored(names: impl Iterator<Item = String>, debug: bool) -> Result<(), String> {
+    let list = ignored(names, debug);
+    if list.is_empty() {
+        return Ok(());
+    }
+    if debug {
+        return Err(refusal(&list));
+    }
+    for i in &list {
+        eprintln!("blygger: {i}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -452,15 +680,15 @@ mod tests {
         assert!(text.contains("BLYGGER_FAKEE"));
         assert!(text.contains("did you mean BLYGGER_FAKE"));
         assert!(text.contains("BLYGGER_UPDATE_DOCS: read only by the test suite"));
-        assert!(text.contains("nset"), "ends with what to do: {text}");
+        assert!(text.contains("Unset"), "ends with what to do: {text}");
     }
 
     #[test]
     fn the_table_names_each_variable_once() {
         let mut seen = Vec::new();
-        for (name, _) in CLASSES {
+        for &(name, _) in CLASSES {
             assert!(name.starts_with("BLYGGER_"), "{name}");
-            assert!(!seen.contains(name), "{name} is classed twice");
+            assert!(!seen.contains(&name), "{name} is classed twice");
             seen.push(name);
         }
     }
