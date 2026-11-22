@@ -934,3 +934,40 @@ fn a_plain_word_property_needs_an_anchor_near_its_name() {
     assert!(Tests::of(vec!["h.get(\"ifNoneMatch\")".into()]).covers(&camel));
     assert!(Tests::of(vec!["x.if_none_match".into()]).covers(&camel));
 }
+
+/// A property of a schema whose name is another's prefix: a test about
+/// `AgenticEditionInput` doesn't anchor `AgenticEdition`'s properties.
+#[test]
+fn an_owner_anchors_only_as_a_whole_identifier() {
+    let parent = |owner: &str| Rule::property("why", owner, None, &["find", "replace"]);
+    for text in [
+        "let i = AgenticEditionInput::default();\nassert_eq!(j[\"why\"], \"x\");",
+        "fn agentic_edition_input() {\n    j[\"why\"]\n}",
+    ] {
+        let t = Tests::of(vec![text.into()]);
+        assert!(!t.covers(&parent("AgenticEdition")), "{text}");
+        assert!(t.covers(&parent("AgenticEditionInput")), "{text}");
+    }
+    let own = Tests::of(vec![
+        "let i = AgenticEdition::default();\nassert_eq!(j[\"why\"], \"x\");".into(),
+        "fn agentic_edition() {\n    j[\"why\"]\n}".into(),
+    ]);
+    assert!(own.covers(&parent("AgenticEdition")));
+    assert!(!own.covers(&parent("AgenticEditionInput")));
+}
+
+/// Real lines of `crates/blyg-ext/tests/reading.rs` (a reading row) hold
+/// `"id"`, `"origin"` and `"version"`, common words that sit together in
+/// many unrelated rows: they don't make `CatchUp.cards[].id` or `.origin`
+/// tested.
+#[test]
+fn common_word_siblings_do_not_anchor() {
+    let all = items(&current()).0;
+    let reading_row = Tests::of(vec![
+        "        \"origin\": \"https://blyg.example.com\", \"kind\": \"thread\", \"state\": \"current\",\n        \"version\": version, \"created\": \"2026-10-01T09:00:00Z\", \"updated\": null,\n        \"observed_at\": \"2026-10-01T09:05:00Z\",\n        \"content_md\": md, \"content_html\": format!(\"<p>{md}</p>\"),\n        \"author\": {\"name\": \"Rue\", \"url\": null}, \"page\": null, \"thumb\": null, \"hoppers\": [],\n        \"stub_of\": {\"origin\": \"https://other.example.com\", \"id\": \"p7\", \"version\": 2},\n".into(),
+    ]);
+    for name in ["id", "origin", "version"] {
+        let key = format!("property:CatchUp.cards[].{name}");
+        assert!(!reading_row.covers(&all[&key].rule), "{key}");
+    }
+}
