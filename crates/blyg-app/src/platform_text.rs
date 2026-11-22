@@ -648,17 +648,17 @@ mod tests {
                 let text = std::fs::read_to_string(&p).expect("read");
                 for (n, line) in text.lines().enumerate() {
                     // The helper's own file holds the literals it hides.
-                    if p != this_file {
-                        if let Some(k) = windows_edit_key(line) {
-                            let helper = windows_edit_row(k).map_or("", |r| r.2);
-                            let rel = p.strip_prefix(&root).expect("under src");
-                            edit.push(format!(
-                                "  {}:{}: {} (call {helper})",
-                                rel.display(),
-                                n + 1,
-                                line.trim()
-                            ));
-                        }
+                    if p != this_file
+                        && let Some(k) = windows_edit_key(line)
+                    {
+                        let helper = windows_edit_row(k).map_or("", |r| r.2);
+                        let rel = p.strip_prefix(&root).expect("under src");
+                        edit.push(format!(
+                            "  {}:{}: {} (call {helper})",
+                            rel.display(),
+                            n + 1,
+                            line.trim()
+                        ));
                     }
                     for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
                         let Some(at) = line.find(call) else { continue };
