@@ -41,12 +41,18 @@ fn the_mount_is_whatever_comes_before_burrow_in_the_pages_path() {
     assert_eq!(api::mount_of("/"), Some(""));
     assert_eq!(api::mount_of("/notes/"), Some(""));
     // The page asks the same question.
-    assert_eq!(Burrow::mount_of("/notes/burrow/").as_deref(), Some("/notes"));
+    assert_eq!(
+        Burrow::mount_of("/notes/burrow/").as_deref(),
+        Some("/notes")
+    );
 }
 
 #[test]
 fn the_api_is_under_the_mount_never_the_host_root() {
-    assert_eq!(api::api_url("/burrow/", "/api/items").as_deref(), Some("/api/items"));
+    assert_eq!(
+        api::api_url("/burrow/", "/api/items").as_deref(),
+        Some("/api/items")
+    );
     assert_eq!(
         api::api_url("/notes/burrow/", "/api/items?limit=100").as_deref(),
         Some("/notes/api/items?limit=100")

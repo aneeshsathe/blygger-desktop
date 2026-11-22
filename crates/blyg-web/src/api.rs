@@ -261,7 +261,8 @@ fn plain_mount(m: &str) -> bool {
                 !s.is_empty()
                     && s != "."
                     && s != ".."
-                    && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
             })
         })
 }

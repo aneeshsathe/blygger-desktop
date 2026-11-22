@@ -628,11 +628,7 @@ fn a_mentions_open_link_is_http_or_nothing() {
 #[test]
 fn a_peeked_posts_own_page_is_http_or_nothing() {
     let good = "https://far.example.org/t/X1/";
-    for (url, want) in BAD_LINKS
-        .iter()
-        .map(|b| (*b, ""))
-        .chain([(good, good)])
-    {
+    for (url, want) in BAD_LINKS.iter().map(|b| (*b, "")).chain([(good, good)]) {
         let mut b = live();
         b.wr_do("peek_url", &json!({ "url": good }).to_string(), NOW);
         let next = v(b.wr_done(

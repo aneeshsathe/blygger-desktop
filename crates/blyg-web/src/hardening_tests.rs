@@ -40,11 +40,7 @@ fn a_mount_is_empty_or_plain_segments() {
         assert_eq!(api::mount_of(p), None, "{p}");
         assert_eq!(Burrow::mount_of(p), None, "{p}");
         assert_eq!(api::api_url(p, "/api/items"), None, "{p}");
-        assert_eq!(
-            api::site_base("https://blyg.example.com", p),
-            None,
-            "{p}"
-        );
+        assert_eq!(api::site_base("https://blyg.example.com", p), None, "{p}");
     }
 }
 

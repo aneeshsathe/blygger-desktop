@@ -71,7 +71,9 @@ pub const CLASSES: &[&str] = &[
 fn known_classes(value: &str) -> Option<Cow<'_, str>> {
     let kept: Vec<&str> = value
         .split_ascii_whitespace()
-        .filter(|c| CLASSES.contains(c) || c.strip_prefix("language-").is_some_and(|l| !l.is_empty()))
+        .filter(|c| {
+            CLASSES.contains(c) || c.strip_prefix("language-").is_some_and(|l| !l.is_empty())
+        })
         .collect();
     (!kept.is_empty()).then(|| kept.join(" ").into())
 }
