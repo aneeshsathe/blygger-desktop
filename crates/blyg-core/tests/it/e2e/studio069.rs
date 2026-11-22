@@ -320,7 +320,10 @@ fn a_word_learned_offline_reaches_the_blyg_on_the_next_read() {
     assert!(matches!(learned, Err(CoreError::Offline)), "{learned:?}");
 
     let d = me.dictionary().unwrap().expect("offered");
-    assert!(d.owner_words().iter().any(|w| w == &word), "sent on the read");
+    assert!(
+        d.owner_words().iter().any(|w| w == &word),
+        "sent on the read"
+    );
     let other_dir = tempfile::tempdir().unwrap();
     let other = manual(other_dir.path());
     let seen = other.dictionary().unwrap().expect("offered");

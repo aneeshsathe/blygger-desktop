@@ -131,7 +131,10 @@ fn queued_edits_keep_the_last_for_each_word_and_round_trip() {
     let back = Pending::parse(Some(&p.to_meta()));
     assert_eq!(back, p);
     let held = vec!["tidepool".to_string(), "blyg".into()];
-    assert_eq!(back.apply(&held), vec!["blyg".to_string(), "gunwale".into()]);
+    assert_eq!(
+        back.apply(&held),
+        vec!["blyg".to_string(), "gunwale".into()]
+    );
     assert!(Pending::parse(Some("not json")).is_empty());
 }
 

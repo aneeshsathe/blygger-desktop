@@ -183,7 +183,11 @@ impl Pending {
             self.0
                 .iter()
                 .map(|e| {
-                    let op = if matches!(e, Edit::Add(_)) { "add" } else { "remove" };
+                    let op = if matches!(e, Edit::Add(_)) {
+                        "add"
+                    } else {
+                        "remove"
+                    };
                     json!({ "op": op, "word": e.word() })
                 })
                 .collect(),
