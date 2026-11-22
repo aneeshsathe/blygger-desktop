@@ -27,25 +27,6 @@ fn row_of<'a>(rows: &'a [ReadingItem], sub: &str, id: &str) -> &'a ReadingItem {
         .unwrap_or_else(|| panic!("{sub}/{id} isn't held"))
 }
 
-/// Unsubscribes when dropped, so a failed test leaves no subscription
-/// behind (the next test's subscribe would get a 409).
-struct Subscribed<'a>(&'a LiveBackend, SubId);
-
-impl Drop for Subscribed<'_> {
-    fn drop(&mut self) {
-        let _ = self.0.unsubscribe(&self.1);
-    }
-}
-
-/// Puts a rule back on when dropped.
-struct RuleBackOn<'a>(&'a LiveBackend, &'static str);
-
-impl Drop for RuleBackOn<'_> {
-    fn drop(&mut self) {
-        let _ = self.0.save_background_rule(self.1, true);
-    }
-}
-
 /// The studio's rules as stored (`GET /api/settings`).
 fn stored_rules(base: &str) -> Value {
     let (st, v) = owner("GET", base, "/api/settings", None);
@@ -107,6 +88,8 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         return;
     };
     assert!(rules.on(BURST), "on by default");
+    // `superseded` would hold each part too, whatever `burst` says.
+    let _superseded = superseded_off(&me);
     let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("burst");
     let (_, p1) = published(
@@ -122,7 +105,7 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         None,
     );
     let sub = me.subscribe(&src_url, None).unwrap();
-    let _unsub = Subscribed(&me, sub.id.clone());
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&p1, &p2]);
 
     let thread_text =
@@ -238,7 +221,7 @@ fn wordless_and_unchanged_republishes_go_to_background() {
         None,
     );
     let sub = me.subscribe(&src_url, None).unwrap();
-    let _unsub = Subscribed(&me, sub.id.clone());
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&quoted, &again]);
     let (_, only_quotes) = published(&source, Kind::Thread, &format!("![[{quoted}]]"), None);
     poll(&me, &sub.id, &only_quotes, 1);

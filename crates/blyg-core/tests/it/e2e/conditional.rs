@@ -450,8 +450,17 @@ fn idle_sync_costs_less_with_conditional_reads() {
         out.push(w);
     }
     let per = |w: &Wire| w.bytes / PULLS;
-    // With counters an idle pull is one `/changes` either way.
-    assert_eq!(out[0].requests, out[1].requests, "{out:?}");
+    if super::has_changes() {
+        // With counters an idle pull is one `/changes` either way.
+        assert_eq!(out[0].requests, out[1].requests, "{out:?}");
+    } else {
+        // Without them (studio 0.67+) the "counters" runs have none either:
+        // each idle pull asks its lists, and conditional reads answer them
+        // with 304s (it may ask a list more, since a 304 is cheap).
+        assert_eq!(out[0].not_modified, 0, "{out:?}");
+        assert!(out[1].not_modified > 0, "{out:?}");
+        assert!(per(&out[1]) * 5 < per(&out[0]) * 3, "{out:?}");
+    }
     // The safety net and the counter-less pulls cost at least 40% fewer
     // bytes on the wire (gzip already shrinks the bodies; what's left is
     // mostly response headers).

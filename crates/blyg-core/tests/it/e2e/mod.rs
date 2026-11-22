@@ -1727,6 +1727,7 @@ fn subscriptions_reading_and_pinned_versions() {
         Some(format!("{src_url}/").as_str())
     );
     let sub = me.subscribe(&src_url, Some("A neighbour")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
     assert_eq!(sub.kind, SubscriptionKind::Blyg);
     assert!(me.subscriptions().iter().any(|s| s.id == sub.id));
     sync_until_held(&me, &[&rid]);
@@ -1858,6 +1859,7 @@ fn reading_items_carry_the_published_html() {
     source.pin(&tid, 1).unwrap();
 
     let sub = me.subscribe(&src_url, Some("html")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("the thread is in the reading list");
     eprintln!("reading content_html = {}", r.content_html);
@@ -1921,6 +1923,7 @@ fn read_state_syncs_between_two_macs() {
     let t = tag("read");
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
     let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();
+    let _unsub = Unsub(&mac1, sub.id.clone());
     sync_until_held(&mac1, &[&rid]);
     sync_until_held(&mac2, &[&rid]);
     assert!(reading_item(&mac1, &rid).unwrap().is_unread());
@@ -2309,6 +2312,7 @@ fn a_subscription_change_is_picked_up_by_revision() {
     // Without counters every list is asked; none asks `/changes` again.
     let api = Api::new(&e.url, e.cred.clone());
     let sub = api.subscribe(&url_b(), Some("Revision test")).unwrap();
+    let _unsub = ApiUnsub(&api, sub.clone());
     b.pull_now().unwrap();
     let seen = proxy.take();
     assert!(
@@ -3719,6 +3723,15 @@ impl Drop for Unsub<'_> {
     }
 }
 
+/// [`Unsub`] for a subscription made straight through the owner API.
+struct ApiUnsub<'a>(&'a Api, SubId);
+
+impl Drop for ApiUnsub<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.delete_subscription(&self.1);
+    }
+}
+
 /// The baked quotes in a published page (`blockquote.blyg-transclusion`).
 fn baked_quotes(page: &str) -> Vec<String> {
     page.split("<blockquote class=\"blyg-transclusion")
@@ -4176,6 +4189,7 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
     // a subscribes to b and holds both.
     let off = manual(d1.path());
     let sub = off.subscribe(&src_url, Some("Lineage source")).unwrap();
+    let _unsub = Unsub(&off, sub.id.clone());
     sync_until_held(&off, &[&frag, &thread]);
     let keys = vec![
         imported_key(&sub.id, &RemoteId::from(&frag)),
@@ -4359,6 +4373,7 @@ fn opml_import_and_export() {
 
     // Rue is already followed, and filed by the user.
     let followed = me.subscribe(&rue, None).expect("subscribe to a local feed");
+    let _unsub = Unsub(&me, followed.id.clone());
     let mine = me.create_folder(&format!("Mine {t}")).unwrap();
     me.set_subscription_folder(&followed.id, Some(&mine.id))
         .unwrap();
@@ -5191,6 +5206,7 @@ fn withdrawn_posts_are_background() {
     let t = tag("background");
     let (local, rid) = published(&source, Kind::Fragment, &format!("{t} soon gone"), None);
     let sub = me.subscribe(&src_url, None).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&rid]);
     assert!(me.background_reading().iter().all(|r| r.remote_id != rid));
 
@@ -5275,6 +5291,28 @@ fn studio_background(base: &str) -> HashSet<(SubId, RemoteId)> {
     }
 }
 
+/// Puts a Background rule back on when dropped.
+struct RuleBackOn<'a>(&'a LiveBackend, &'static str);
+
+impl Drop for RuleBackOn<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.save_background_rule(self.1, true);
+    }
+}
+
+/// Turn studio 0.68's `superseded` rule off until the guard drops (an item
+/// followed by a newer one from its blyg within 15 minutes, as every post a
+/// test publishes is), so a test sees only the rules it's about. `None` on
+/// a studio without the rule.
+fn superseded_off(me: &LiveBackend) -> Option<RuleBackOn<'_>> {
+    use blyg_core::background::SUPERSEDED;
+    let rules = me.background_rules().unwrap()?;
+    rules.offers(SUPERSEDED).then(|| {
+        me.save_background_rule(SUPERSEDED, false).unwrap();
+        RuleBackOn(me, SUPERSEDED)
+    })
+}
+
 /// --- background --- What Burrow lists under Background: every row it
 /// holds (the reading list, the withdrawn posts, your own posts and your
 /// withdrawn ones, as the app builds them), placed by what it read of the
@@ -5318,12 +5356,14 @@ fn burrows_background_is_the_studios() {
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
+    let _superseded = superseded_off(&me);
     let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("bgset");
     let (_, moved) = published(&source, Kind::Fragment, &format!("{t} moved by hand"), None);
     let (_, plain) = published(&source, Kind::Fragment, &format!("{t} plain"), None);
     let (gone_local, gone) = published(&source, Kind::Fragment, &format!("{t} soon gone"), None);
     let sub = me.subscribe(&src_url, None).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&moved, &plain, &gone]);
     me.sync_now().unwrap();
     assert!(me.background_served(), "the capability was noted");
@@ -5891,8 +5931,11 @@ fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
     );
 
     // Another Mac reads the blyg's order (`addedAt`).
+    // App → shim (counts 304s) → proxy (logs requests) → Worker.
+    let counters = has_changes();
     let proxy = Proxy::start(&e.url);
-    let other = backend_at(d2.path(), &proxy.url, e.cred.clone(), false);
+    let shim = conditional::Shim::start(&proxy.url, false);
+    let other = backend_at(d2.path(), &shim.url, e.cred.clone(), false);
     other.sync_now().unwrap();
     assert_eq!(other.hopper_order().get(&h.id), Some(&want));
     let seen = proxy.take();
@@ -5900,13 +5943,28 @@ fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
         seen.iter().any(|r| r.ends_with("/memberships")),
         "the first pull reads the memberships: {seen:?}"
     );
-    // Nothing changed: no hopper is read again.
+    // Nothing changed: with counters no hopper is read again; without them
+    // (studio 0.67+) every list is asked, the hoppers too, and each answer
+    // is a 304.
+    shim.take();
     other.pull_now().unwrap();
     let seen = proxy.take();
-    assert!(
-        !seen.iter().any(|r| r.contains("/api/hoppers")),
-        "an unchanged pull reads no hopper: {seen:?}"
-    );
+    let wire = shim.take();
+    if counters {
+        assert!(
+            !seen.iter().any(|r| r.contains("/api/hoppers")),
+            "an unchanged pull reads no hopper: {seen:?}"
+        );
+    } else {
+        assert!(
+            seen.iter().any(|r| r.ends_with("/memberships")),
+            "the memberships are asked: {seen:?}"
+        );
+        assert_eq!(
+            wire.not_modified, wire.requests,
+            "an unchanged pull is all 304s: {wire:?} {seen:?}"
+        );
+    }
     // A membership changed elsewhere: read again, in order.
     me.set_in_hopper(
         &h.id,
