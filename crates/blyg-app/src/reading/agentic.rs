@@ -9,8 +9,11 @@
 //! on Your Blyg…), else "Agentic feed".
 //!
 //! The tab lists the edition's posts held here, in the edition's order, so
-//! j/k, ⏎ and space move through them as through any list, and a click
-//! opens one beside it. The edition is read when the tab is chosen and
+//! j/k, ⏎ and space move through them as through any list. With no post
+//! open the edition is a page across the reading pane, as the studio sets
+//! it; a card (or j/k) opens its post, the edition narrows to the list
+//! column beside it, and esc puts the page back. Formulas in a card read
+//! as text (`maths_text`). The edition is read when the tab is chosen and
 //! whenever Reading refreshes while it's shown; Burrow never writes one.
 //! A blyg without editions (its capabilities don't list `getAgentic`) shows
 //! the tab empty, saying what it's for.
@@ -147,17 +150,17 @@ pub struct Card {
     pub held: bool,
 }
 
-/// The post's text after its title, on one line.
-fn words_after_title(md: &str) -> String {
-    let all = blyg_core::plain_text(md);
-    match blyg_core::plain_title(md) {
-        Some(t) => all
-            .strip_prefix(t.as_str())
-            .unwrap_or(&all)
-            .trim()
-            .to_string(),
-        None => all,
-    }
+/// The post's own title and its text after the title, on one line, with
+/// formulas as text (a card is plain text: `\int_0^1` reads as markup).
+fn title_and_words(md: &str) -> (Option<String>, String) {
+    let held = super::maths_text::hold_maths(md);
+    let all = blyg_core::plain_text(&held.md);
+    let title = blyg_core::plain_title(&held.md);
+    let after = match &title {
+        Some(t) => all.strip_prefix(t.as_str()).unwrap_or(&all).trim(),
+        None => all.as_str(),
+    };
+    (title.map(|t| held.back(&t)), held.back(after))
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -167,12 +170,14 @@ fn clip(s: &str, n: usize) -> String {
 
 /// A card for `p`, from the post as held here (`None`: not held yet).
 pub fn card(p: &Placed, held: Option<&ReadingItem>) -> Card {
-    let own_title = held
-        .and_then(|r| blyg_core::plain_title(&r.content_md))
-        .filter(|t| !t.is_empty());
-    let after = held.map(|r| words_after_title(&r.content_md));
+    let (own_title, after) = match held.map(|r| title_and_words(&r.content_md)) {
+        Some((t, a)) => (t.filter(|t| !t.is_empty()), Some(a)),
+        None => (None, None),
+    };
+    // The assistant's words may hold formulas too.
+    let said = |s: &Option<String>| s.as_deref().map(super::maths_text::plain_maths);
     let (headline, headline_generated) = match (&p.headline, own_title) {
-        (Some(h), _) => (h.clone(), true),
+        (Some(h), _) => (super::maths_text::plain_maths(h), true),
         (None, Some(t)) => (t, false),
         (None, None) => match after.as_deref().filter(|a| !a.is_empty()) {
             Some(a) => (clip(a, 90), false),
@@ -184,9 +189,9 @@ pub fn card(p: &Placed, held: Option<&ReadingItem>) -> Card {
             headline,
             headline_generated,
             byline: "Not on this computer yet · it arrives with the next sync".into(),
-            summary: p.summary.clone(),
+            summary: said(&p.summary),
             excerpt: None,
-            reason: p.reason.clone(),
+            reason: said(&p.reason),
             held: false,
         };
     };
@@ -209,9 +214,9 @@ pub fn card(p: &Placed, held: Option<&ReadingItem>) -> Card {
         headline,
         headline_generated,
         byline,
-        summary: p.summary.clone(),
+        summary: said(&p.summary),
         excerpt,
-        reason: p.reason.clone(),
+        reason: said(&p.reason),
         held: true,
     }
 }
@@ -308,9 +313,10 @@ impl MainView {
         .detach();
     }
 
-    /// The list pane's body on the Agentic feed tab: the edition, or what
-    /// the tab is for.
-    pub(super) fn render_agentic_edition(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// The Agentic feed tab's edition, or what the tab is for. `wide`: it
+    /// takes the reading pane (no post open), set as a page, as the studio
+    /// sets it; else it's the list column beside the open post.
+    pub(super) fn render_agentic_edition(&self, wide: bool, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette.on_page();
         let a = &self.reading.agentic;
         let Some(ed) = a.edition() else {
@@ -331,27 +337,27 @@ impl MainView {
                 .text_size(px(size))
                 .line_height(relative(1.4))
                 .text_color(p.accent)
-                .child(t)
+                .child(super::maths_text::plain_maths(&t))
         };
+        // The page's type is larger across the pane.
+        let k = if wide { 1.25 } else { 1.0 };
         let when = l
             .generated_at
             .as_deref()
             .or(ed.updated_at.as_deref())
             .and_then(day_words);
         let mut col = div()
-            .id("agentic-edition")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
+            .w_full()
+            .when(wide, |d| d.max_w(px(760.)).mx_auto().pt(px(18.)))
             .px(px(14.))
             .pb(px(16.))
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(px(6. * k))
             .child(
                 div()
                     .pt(px(8.))
-                    .text_size(px(17.))
+                    .text_size(px(if wide { 26. } else { 17. }))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.ink)
                     .italic()
@@ -360,11 +366,12 @@ impl MainView {
             .child(
                 div()
                     .font_family(self.chrome())
-                    .text_size(px(11.))
+                    .text_size(px(11. * k))
                     .text_color(p.muted)
+                    .when(wide, |d| d.pb(px(6.)).border_b_1().border_color(p.line))
                     .child(masthead_meta(l, when)),
             )
-            .children(l.lede.clone().map(|t| said(t, 13.)));
+            .children(l.lede.clone().map(|t| said(t, 13. * k)));
         let mut n = 0usize;
         for (si, s) in l.sections.iter().enumerate() {
             col = col.child(
@@ -374,9 +381,9 @@ impl MainView {
                     .border_b_1()
                     .border_color(p.line)
                     .text_size(if s.kind == SectionKind::Lead {
-                        px(14.)
+                        px(14. * k)
                     } else {
-                        px(12.)
+                        px(12. * k)
                     })
                     .font_weight(FontWeight::SEMIBOLD)
                     .italic()
@@ -384,7 +391,7 @@ impl MainView {
                     .child(s.title.clone()),
             );
             if let Some(note) = &s.note {
-                col = col.child(said(note.clone(), 12.));
+                col = col.child(said(note.clone(), 12. * k));
             }
             for g in grouped(&s.entries) {
                 let lead = (g.lead, &s.entries[g.lead]);
@@ -395,12 +402,21 @@ impl MainView {
                     lead,
                     &also,
                     s.kind == SectionKind::Briefs,
+                    k,
                     cx,
                 ));
                 n += 1;
             }
         }
-        col.into_any_element()
+        div()
+            .id("agentic-edition")
+            .debug_selector(|| "agentic-edition".into())
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .overflow_y_scroll()
+            .child(col)
+            .into_any_element()
     }
 
     /// The card at section `si`'s entry `ei`: as built on the last change,
@@ -422,6 +438,7 @@ impl MainView {
         (lead_ix, lead): (usize, &Placed),
         also: &[(usize, &Placed)],
         brief: bool,
+        k: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette.on_page();
@@ -452,7 +469,7 @@ impl MainView {
             .on_click(open(key))
             .child(
                 div()
-                    .text_size(px(if brief { 12.5 } else { 13.5 }))
+                    .text_size(px(if brief { 12.5 } else { 13.5 } * k))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(if c.headline_generated {
                         p.accent
@@ -465,7 +482,7 @@ impl MainView {
             .child(
                 div()
                     .font_family(self.chrome())
-                    .text_size(px(10.5))
+                    .text_size(px(10.5 * k))
                     .text_color(p.muted)
                     .child(c.byline.clone()),
             );
@@ -473,7 +490,7 @@ impl MainView {
             d = d.child(
                 div()
                     .italic()
-                    .text_size(px(12.))
+                    .text_size(px(12. * k))
                     .text_color(p.accent)
                     .child(s.clone()),
             );
@@ -481,7 +498,7 @@ impl MainView {
         if let Some(x) = &c.excerpt {
             d = d.child(
                 div()
-                    .text_size(px(12.))
+                    .text_size(px(12. * k))
                     .line_height(relative(1.4))
                     .text_color(p.ink)
                     .child(x.clone()),
@@ -491,7 +508,7 @@ impl MainView {
             d = d.child(
                 div()
                     .italic()
-                    .text_size(px(11.))
+                    .text_size(px(11. * k))
                     .text_color(p.muted)
                     .child(format!("✦ {r}")),
             );
@@ -506,7 +523,7 @@ impl MainView {
                         id.0, id.1
                     )))
                     .pl(px(10.))
-                    .text_size(px(11.5))
+                    .text_size(px(11.5 * k))
                     .text_color(if oc.headline_generated {
                         p.accent
                     } else {

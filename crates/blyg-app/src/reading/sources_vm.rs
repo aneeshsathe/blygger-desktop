@@ -502,8 +502,11 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Disliked) => "Nothing thumbed down. 👎 a post to list it here.",
         Source::Smart(Smart::Threads) => "No threads to read.",
         Source::Smart(Smart::Fragments) => "No fragments to read.",
-        // --- shelf sync ---
-        Source::Smart(Smart::Shelf) => "Nothing saved yet. “+ Save” on any post puts it here.",
+        // --- shelf sync --- the key too, spelled as this platform's are
+        // (Ctrl+Shift+A on Windows).
+        Source::Smart(Smart::Shelf) => {
+            crate::keymap::hint("Nothing saved yet. ⌥⌘B or “+ Save” on any post puts it here.")
+        }
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",

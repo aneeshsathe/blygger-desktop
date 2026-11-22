@@ -43,7 +43,8 @@ pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
-pub(crate) mod marks; // --- read/unread --- (and Mark All Read…)
+pub(crate) mod marks;
+pub(crate) mod maths_text; // --- ux 0.28 --- formulas in cards, as text // --- read/unread --- (and Mark All Read…)
 // --- catch up --- the conversation leading to a post, oldest first (⇧C).
 pub(crate) mod catchup;
 mod mentions;
@@ -112,6 +113,8 @@ mod stream_tests;
 mod studio069_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ux_reading_tests; // --- ux 0.28 ---
 
 use std::collections::{HashMap, HashSet};
 
@@ -1170,6 +1173,19 @@ impl MainView {
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);
+                true
+            }
+            // --- ux 0.28 --- esc on the Agentic feed closes the post: the
+            // edition takes the reading pane again.
+            (View::Reading, "escape")
+                if !stream
+                    && self.reading.opened.is_some()
+                    && self.reading.source
+                        == sources_vm::Source::Smart(sources_vm::Smart::Agentic) =>
+            {
+                self.reading.opened = None;
+                self.set_pane(sources_vm::Pane::List, cx);
+                cx.notify();
                 true
             }
             (View::Reading, "/") => {
