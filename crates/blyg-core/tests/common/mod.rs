@@ -165,6 +165,10 @@ pub struct State {
     // fixture, so tests that use these mark the paths unchecked)
     /// What `GET /api/capabilities` says instead of `CONTRACT_VERSION`.
     pub contract_version: Option<String>,
+    /// Operations `GET /api/capabilities` lists beyond the 5.0.0 fixture's
+    /// (`listContacts`…): Burrow gates each feature on these, not on the
+    /// version.
+    pub operations: Vec<String>,
     /// `GET /api/contacts` (`None`: not served, 404).
     pub contacts: Option<Vec<Value>>,
     /// Handles a publish reports as `unresolvedHandles`.
@@ -1060,6 +1064,7 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
                 .operation_ids()
                 .into_iter()
                 .filter(|id| !id.starts_with("ext"))
+                .chain(s.operations.iter().cloned())
                 .collect();
             (
                 200,

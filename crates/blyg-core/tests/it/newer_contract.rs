@@ -32,6 +32,7 @@ fn env_at(contract: &str) -> Env {
         let mut st = env.mock.state();
         st.contract_version = Some(contract.into());
         st.unchecked.push("/api/contacts".into());
+        st.operations.push("listContacts".into());
         st.add_item("fragment", "made in the studio");
         st.subs = vec![json!({
             "id": "S1", "kind": "blyg", "origin": "https://them.example/",

@@ -1,0 +1,75 @@
+//! Features gated on the operations a blyg's capabilities list, never on
+//! its `contractVersion` (skill `capability-gating`): a contract Burrow
+//! can't read ("next") that lists them gets them, and one whose number
+//! says yes but whose list doesn't, doesn't.
+
+use crate::common::*;
+use blyg_core::api::Api;
+
+fn env_at(contract: &str, ops: &[&str]) -> Env {
+    let env = Env::new();
+    {
+        let mut st = env.mock.state();
+        st.contract_version = Some(contract.into());
+        st.operations = ops.iter().map(|o| o.to_string()).collect();
+    }
+    env
+}
+
+#[test]
+fn changelog_follows_summarize_changelog() {
+    let env = env_at("next", &["summarizeChangelog"]);
+    assert!(Api::new(&env.mock.url, TOKEN).serves_changelog().unwrap());
+    let env = env_at("6.1.0", &[]);
+    assert!(!Api::new(&env.mock.url, TOKEN).serves_changelog().unwrap());
+}
+
+#[test]
+fn contacts_follow_list_contacts() {
+    let env = env_at("7.0.0", &["listContacts"]);
+    assert!(Api::new(&env.mock.url, TOKEN).serves_contacts().unwrap());
+    let env = env_at("6.1.0", &[]);
+    assert!(!Api::new(&env.mock.url, TOKEN).serves_contacts().unwrap());
+}
+
+#[test]
+fn mention_groups_follow_their_operations() {
+    let both = ["listMentionGroups", "getMentionSummary"];
+    let env = env_at("next", &both);
+    assert!(Api::new(&env.mock.url, TOKEN).serves_groups().unwrap());
+    let env = env_at("6.1.0", &["listMentionGroups"]);
+    assert!(!Api::new(&env.mock.url, TOKEN).serves_groups().unwrap());
+}
+
+/// `wholeBlyg` on `POST /api/subscriptions` has no operation of its own.
+/// Only the floor contract (5.0) is known to refuse it; anything else is
+/// sent it, and a studio whose strict body refuses it (400) is asked again
+/// without it, and remembered.
+#[test]
+fn whole_blyg_is_tried_and_a_refusal_remembered() {
+    // The mock's request schema is 5.0.0's: it refuses the key with 400.
+    let env = env_at("next", &[]);
+    env.mock.state().unchecked.push("/api/subscriptions".into());
+    let api = Api::new(&env.mock.url, TOKEN);
+    let p = api.preview_subscription("https://them.example/").unwrap();
+    assert_eq!(p.title, "Their blyg");
+    api.preview_subscription("https://them.example/").unwrap();
+    let posts = env.mock.state().count("POST /api/subscriptions");
+    assert_eq!(posts, 3, "with the key (400), without it, then without only");
+
+    // The floor contract is never sent it.
+    let env = env_at("5.0.0", &[]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    api.preview_subscription("https://them.example/").unwrap();
+    assert_eq!(env.mock.state().count("POST /api/subscriptions"), 1);
+}
+
+#[test]
+fn only_the_floor_contract_is_known_to_refuse_whole_blyg() {
+    use blyg_core::api::takes_whole_blyg;
+    assert!(!takes_whole_blyg("5.0.0"));
+    assert!(!takes_whole_blyg(" 5.0.3 "));
+    for v in ["5.1.0", "6.0.0", "7.0.0", "next", "5"] {
+        assert!(takes_whole_blyg(v), "{v}");
+    }
+}

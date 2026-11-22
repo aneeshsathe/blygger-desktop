@@ -30,6 +30,17 @@ fn a_newer_major_syncs_without_pruning() {
     );
 }
 
+/// A feature is offered when the capabilities list its operation, as an
+/// array of names or an object keyed by them (skill `capability-gating`).
+#[test]
+fn an_operation_is_offered_when_the_capabilities_list_it() {
+    let caps = json!({ "contractVersion": "next", "operations": ["listContacts"] });
+    assert!(offers(&caps, "listContacts"));
+    assert!(!offers(&caps, "getShelf"));
+    assert!(offers(&json!({ "operations": { "getShelf": {} } }), "getShelf"));
+    assert!(!offers(&json!({}), "getShelf"));
+}
+
 #[test]
 fn a_version_that_isnt_a_number_is_newer() {
     assert_eq!(contract(Some("next")), Contract::Newer("next".into()));

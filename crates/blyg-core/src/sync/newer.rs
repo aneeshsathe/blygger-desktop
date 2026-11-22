@@ -56,6 +56,10 @@ impl Engine {
 }
 
 #[cfg(test)]
+#[path = "newer_tests.rs"]
+mod engine_tests;
+
+#[cfg(test)]
 mod tests {
     use super::keep_held;
 

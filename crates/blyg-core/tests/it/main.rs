@@ -10,6 +10,7 @@
 mod common;
 
 mod auth;
+mod capability_gates;
 mod changelog_stitch;
 mod config;
 mod config_docs;
