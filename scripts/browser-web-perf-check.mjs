@@ -121,6 +121,11 @@ async function seed() {
     if (t % 10 === 9) console.log(`  a holds ${held} of ${N}…`);
   }
   if (held < N) throw new Error(`a imported ${held} of b's ${N} posts`);
+  // Seeded minutes apart at most, every post but the newest is `superseded`
+  // (studio 0.69's Background rule: its blyg followed it within 15 min), so
+  // the Background lens would hold the whole list. The check is about a
+  // large list you read: that rule is off on `a` (a partial settings write).
+  await a.call('PATCH', '/api/settings', { backgroundRules: { superseded: false } });
   console.log(`seed: ${held} reading posts, ${OWN} own posts (${Math.round((Date.now() - t0) / 1000)} s)`);
 }
 

@@ -9,9 +9,14 @@
 // 2. Opens Burrow web on `a` through dev-proxy.py in headless Chromium,
 //    signed in with a Studio session, and leaves it alone.
 // 3. Idle: counts the page's /api/ requests over 60 s with nothing
-//    changing (budget: 5 a minute).
+//    changing. The budgets come from the page's own refresh interval
+//    (`Burrow.refresh_every`, src/live.rs `Pace::every`): on a studio with
+//    `/api/changes` (15 s), at most 5 requests a minute; without it
+//    (contract 6, 60 s), at most one conditional read per list per
+//    interval, every one answered 304.
 // 4. Makes changes through the API, as another client would, and times
-//    each one until it's on screen with no interaction (budget: 20 s): a
+//    each one until it's on screen with no interaction (budget: 20 s with
+//    `/api/changes`, else one interval and 15 s): a
 //    new own post, a republish, a withdrawal, a new subscription post, a
 //    hopper change and a thumb; with studio 0.61, a post shelved elsewhere
 //    (in the Shelf lens) and one taken off the shelf here (on the blyg).
@@ -32,9 +37,12 @@ const require = createRequire(`${env('PLAYWRIGHT_DIR')}/`);
 const { chromium } = require('playwright');
 const secret = (k) => fs.readFileSync(env(k), 'utf8').trim();
 
-const BUDGET_MS = 20_000;
+// With /api/changes (the 15 s poll); without it, from the page's interval.
+const CHANGES_BUDGET_MS = 20_000;
+const CHANGES_IDLE_MAX = 5;
+const MARGIN_MS = 15_000;
 const IDLE_MS = 60_000;
-const IDLE_MAX = 5;
+let BUDGET_MS = CHANGES_BUDGET_MS;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function client(base, tokenFile) {
@@ -81,6 +89,11 @@ const b = client(env('LIVE_URL_B'), 'LIVE_TOKEN_B_FILE');
 
 // ------------------------------------------------------------ seed
 // Invented sample content only. Distinct seconds keep the order stable.
+// Posted a second apart, b's posts would each be `superseded` by the next
+// (studio 0.69's Background rule: its blyg followed it within 15 min) and
+// leave every list but Background, the Thumbed count among them. The check
+// is about updates reaching the lists, so that rule is off on `a`.
+await a.call('PATCH', '/api/settings', { backgroundRules: { superseded: false } });
 for (let i = 1; i <= 3; i++) { await b.post(`Sample note B0${i}: invented notes about tide pools.`); await sleep(1100); }
 for (let i = 1; i <= 3; i++) { await a.post(`Own post A0${i}: invented notes on example topics.`); await sleep(1100); }
 let sub = await a.call('POST', '/api/subscriptions', { url: b.base });
@@ -112,10 +125,26 @@ try {
     const u = new URL(req.url());
     if (u.pathname.startsWith('/api/')) api.push({ at: Date.now(), what: `${req.method()} ${u.pathname}` });
   });
+  const answers = [];
+  page.on('response', (res) => {
+    const u = new URL(res.url());
+    if (u.pathname.startsWith('/api/')) answers.push({ at: Date.now(), what: `${res.request().method()} ${u.pathname}`, status: res.status() });
+  });
   page.on('pageerror', (e) => { console.log(`page error: ${e.message}`); failed++; });
   await page.goto(`${ORIGIN}/burrow/`);
   await page.waitForSelector('#list .row', { timeout: 30_000 });
   await sleep(5000); // the first refresh, and the first scheduled check
+
+  // Which cadence the page runs: the studio's /api/changes, or conditional
+  // reads (contract 6). Asked of the page's own WebAssembly, the module
+  // app.js already started.
+  const changes = (await fetch(`${a.base}/api/changes`, { headers: { authorization: `Bearer ${secret('LIVE_TOKEN_A_FILE')}` } })).status === 200;
+  const every = await page.evaluate(async (c) => {
+    const m = await import(new URL('pkg/blyg_web.js', location.href).href);
+    return m.Burrow.refresh_every(c);
+  }, changes);
+  BUDGET_MS = changes ? CHANGES_BUDGET_MS : every + MARGIN_MS;
+  console.log(`cadence: ${changes ? '/api/changes' : 'conditional reads'}, every ${every / 1000} s; on screen within ${BUDGET_MS / 1000} s`);
 
   const rows = () => page.$$eval('#list .row', (cs) => cs.map((c) => c.innerText.replace(/\s+/g, ' ')));
   const cards = () => page.$$eval('#d-stream .card', (cs) => cs.map((c) => c.innerText.replace(/\s+/g, ' ')));
@@ -142,11 +171,32 @@ try {
 
   // ---------------------------------------------------------- idle
   const idleFrom = api.length;
+  const idleAnswers = answers.length;
   await sleep(IDLE_MS);
   const idle = api.slice(idleFrom);
-  const perMin = idle.length * (60_000 / IDLE_MS);
-  console.log(`${perMin <= IDLE_MAX ? 'ok' : 'FAIL'}: idle: ${idle.length} requests in ${IDLE_MS / 1000} s (${[...new Set(idle.map((r) => r.what))].join(', ') || 'none'})`);
-  if (perMin > IDLE_MAX) failed++;
+  const idleList = [...new Set(idle.map((r) => r.what))].join(', ') || 'none';
+  if (changes) {
+    const perMin = idle.length * (60_000 / IDLE_MS);
+    console.log(`${perMin <= CHANGES_IDLE_MAX ? 'ok' : 'FAIL'}: idle: ${idle.length} requests in ${IDLE_MS / 1000} s (${idleList})`);
+    if (perMin > CHANGES_IDLE_MAX) failed++;
+  } else {
+    // Each list at most once per interval, and nothing changed: all 304,
+    // but for a list's first read in this page (nothing kept to ask with:
+    // the hoppers' and thumbs' own reads wait for a refresh that doesn't
+    // read the whole reading list).
+    const each = Math.ceil(IDLE_MS / every);
+    const counts = {};
+    for (const r of idle) counts[r.what] = (counts[r.what] ?? 0) + 1;
+    const over = Object.entries(counts).filter(([, n]) => n > each);
+    const before = new Set(answers.slice(0, idleAnswers).map((r) => r.what));
+    const whole = answers.slice(idleAnswers).filter((r, i, all) =>
+      r.status !== 304 && (before.has(r.what) || all.slice(0, i).some((x) => x.what === r.what)));
+    const ok = over.length === 0 && whole.length === 0;
+    console.log(`${ok ? 'ok' : 'FAIL'}: idle: ${idle.length} requests in ${IDLE_MS / 1000} s, at most ${each} per list (${idleList})` +
+      (over.length ? `; asked more often: ${over.map(([w, n]) => `${w} ×${n}`).join(', ')}` : '') +
+      (whole.length ? `; not 304: ${whole.map((r) => `${r.what} ${r.status}`).join(', ')}` : ''));
+    if (!ok) failed++;
+  }
 
   // ---------------------------------------------------------- posts
   const items = await a.all('/api/items');
@@ -188,6 +238,8 @@ try {
       await a.call('PUT', '/api/shelf', { entries: [...cur.entries, { sub: subId, remoteId: rid('B03') }], expectedRevision: cur.revision });
     }, async () => (await cards()).some((c) => c.includes('B03')));
     await page.click('#d-stream .card .ex');
+    // The shelf button sits behind ⋯ More (since the chips row was split).
+    await page.click('#d-moreRA');
     await page.waitForSelector('#d-shelfRA', { state: 'visible', timeout: 10_000 });
     const label = await page.$eval('#d-shelfRA', (e) => e.textContent);
     if (!/Remove from shelf/.test(label)) { console.log(`FAIL: the open post's shelf button says "${label}"`); failed++; }

@@ -1164,6 +1164,14 @@ impl Burrow {
         })
     }
 
+    /// How often the page refreshes (ms): with `/api/changes` (`changes`)
+    /// or by conditional reads without it (`Pace::every`). Exported for
+    /// `scripts/browser-web-live-check.mjs`, which derives its budgets
+    /// from it.
+    pub fn refresh_every(changes: bool) -> f64 {
+        Pace::every(changes)
+    }
+
     /// The blyg's mount from the page's path (`api::mount_of`), for
     /// `live.js` to check `net.js`'s copy of the rule against.
     pub fn mount_of(pathname: &str) -> String {

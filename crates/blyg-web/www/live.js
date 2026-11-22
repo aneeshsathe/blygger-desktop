@@ -285,7 +285,7 @@ async function syncShelf(rev) {
     if (S.B.wr_ops_known()) S.B.changes_accept('shelf', rev, now(), undefined);
     return {};
   }
-  const g = await call('GET', '/api/shelf');
+  const g = await getCond('/api/shelf');
   let step = JSON.parse(S.B.shelf_answer(g.status, g.body));
   let changed = !!step.changed;
   for (let i = 0; step.put && i < 2; i++) {
