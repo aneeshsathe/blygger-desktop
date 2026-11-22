@@ -1114,6 +1114,21 @@ impl MainView {
             (s @ (Scene::ExtSlots | Scene::ExtSlotsInspect), n) => {
                 self.slots_demo(s, n, window, cx)
             } // --- reading slots ---
+            // --- ux 0.28 --- Allow on cross-post's first-start question
+            // (config `extension = cross-post`), then a published post
+            // edited and ⌘⏎: the Publish sheet with "Then cross-post to".
+            (Scene::ExtAutoCrosspost | Scene::ExtAutoCrosspostPalette, 1) => {
+                self.ext_allow(window, cx)
+            }
+            (Scene::ExtAutoCrosspostPalette, 2) => {
+                self.open(&blyg_core::LocalId("01J9PX1".into()), window, cx);
+                self.ext_toggle_palette(window, cx);
+            }
+            (Scene::ExtAutoCrosspost, 2) => {
+                self.open(&blyg_core::LocalId("01J9PX1".into()), window, cx);
+                self.demo_type(" Then the rain came.", window, cx);
+                self.publish(window, cx);
+            }
             (Scene::ExtPalette, 1) => self.ext_toggle_palette(window, cx),
             (Scene::ExtManage, 1) => self.ext_open_manage(window, cx),
             (Scene::ExtNotes, 1) => self.ext_lib_show(window, cx),
