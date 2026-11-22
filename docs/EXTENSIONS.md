@@ -181,7 +181,7 @@ the template's text stands. The user sees and can edit the text, Burrow
 runs the steps up to the first `submit`, shows what the composer now
 holds, and runs `submit` only when the user clicks Post. Only granted
 macros of running extensions are offered (`Host::macros`), as ⇧⌘P rows
-titled "<title> ↗ <site title>", when a published post is open. The
+titled "<title> ↗ <site title>" (just "<title>" when it names the site), when a published post is open. The
 template's `{{excerpt}}` is the post's opening paragraph (not a heading,
 quote or embed), cut at 280 characters on a word boundary. An error from
 `macro.prepare` is a toast, and nothing runs.

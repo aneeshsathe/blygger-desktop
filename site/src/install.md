@@ -196,7 +196,8 @@ WebView2 download page.
   when you last clicked inside a web page (the browser pane or the preview).
   In the browser pane's page, the page sees Esc too (a site's own pop-up
   closes), so the first Esc only gives the keyboard back to Burrow and the
-  pane stays open; a second Esc closes it. A click anywhere else in the
+  pane stays open ("Keyboard back in Burrow · Esc again closes the pane");
+  a second Esc closes it. A click anywhere else in the
   window takes the keyboard back from the page. A video in full screen keeps
   Esc to leave full screen.
 - **Cross-posting.** cross-post works on Windows too. [On Windows, step by

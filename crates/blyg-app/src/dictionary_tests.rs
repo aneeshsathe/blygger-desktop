@@ -236,3 +236,12 @@ fn a_read_only_sign_in_learns_on_this_computer_only(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(fake.dictionary().unwrap().unwrap(), before);
 }
+
+/// User testing, 0.28: the sheet opened on a 60-word paragraph. Its intro
+/// is a couple of short sentences.
+#[test]
+fn the_dictionary_sheet_opens_on_a_short_intro() {
+    let words = super::INTRO.split_whitespace().count();
+    assert!(words <= 30, "{words} words: {}", super::INTRO);
+    assert!(super::INTRO.contains("Learn Spelling"));
+}

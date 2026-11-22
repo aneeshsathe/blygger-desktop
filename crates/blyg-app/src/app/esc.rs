@@ -4,6 +4,15 @@
 //! by itself.
 
 use super::*;
+use crate::platform_text::{Text, ui_text_per_platform};
+
+/// The toast after the pane's first Esc, which only takes the keyboard
+/// back: without it that Esc looked like it did nothing (user testing,
+/// 0.28).
+pub(crate) const PANE_ESC_HINT: Text = ui_text_per_platform(
+    "Keyboard back in Burrow · esc again closes the pane",
+    "Keyboard back in Burrow · Esc again closes the pane",
+);
 
 impl MainView {
     /// --- esc --- Esc was pressed in a web view that had the keyboard (the
@@ -22,7 +31,7 @@ impl MainView {
     /// app's "close the pane", which could fold away a half-written post
     /// or a cross-post's composer: the keyboard comes back to the app, and
     /// only an open sheet or palette closes. A second Esc, now in the app,
-    /// closes the pane.
+    /// closes the pane; a toast says so (`PANE_ESC_HINT`).
     pub(crate) fn escape_from_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.hand_back_keyboard_from_web_views();
         let over = self.sheet.is_open()
@@ -32,6 +41,8 @@ impl MainView {
             || self.ai.has_overlay();
         if over {
             Self::dispatch_escape(window, cx);
+        } else if self.browser.open {
+            self.show_toast(PANE_ESC_HINT.get(), None, cx);
         }
     }
 

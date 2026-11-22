@@ -65,6 +65,34 @@ pub fn goes_on_after(out: &Outcome) -> bool {
     )
 }
 
+/// How many sites the Publish sheet's keys reach: ⌥1 to ⌥9.
+const KEYED: usize = 9;
+
+/// A chip's text: its key, its tick and its site (`⌥1 ☑ Bluesky`; the
+/// tenth on has no key).
+pub fn chip_label(n: usize, site: &str, on: bool) -> String {
+    let tick = if on { "☑" } else { "☐" };
+    if n < KEYED {
+        crate::keymap::hint_owned(format!("⌥{} {tick} {site}", n + 1))
+    } else {
+        format!("{tick} {site}")
+    }
+}
+
+/// The line under the chips: their keys, and what ticking one means.
+fn keys_hint(sites: usize) -> String {
+    let last = sites.min(KEYED);
+    let keys = if last == 1 {
+        crate::keymap::hint_owned("⌥1 ticks it".to_string())
+    } else {
+        crate::keymap::hint_owned(format!("⌥1–⌥{last} tick one"))
+    };
+    format!(
+        "{keys}. Remembered for this post. Each one still shows you the text, and posts only \
+         when you click Post."
+    )
+}
+
 impl MainView {
     fn auto_host(&self, cx: &App) -> String {
         crate::settings::blyg_url(cx)
@@ -107,6 +135,34 @@ impl MainView {
             .collect()
     }
 
+    /// Hook (a key down in the Publish sheet for post `id`): ⌥1–⌥9 tick
+    /// or untick that site's chip. Only a site's own key is taken, so the
+    /// note field still types the rest. True when it was one.
+    pub(crate) fn auto_crosspost_key(
+        &mut self,
+        id: &LocalId,
+        ks: &Keystroke,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let m = &ks.modifiers;
+        if !m.alt || m.control || m.platform || m.shift || m.function {
+            return false;
+        }
+        let Some(n) = ks
+            .key
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=KEYED).contains(n))
+        else {
+            return false;
+        };
+        let Some(site) = self.auto_crosspost_sites().into_iter().nth(n - 1) else {
+            return false;
+        };
+        self.toggle_auto_crosspost(id, &site.ext, &site.spec.id, cx);
+        true
+    }
+
     /// Turn cross-posting to one site on or off for post `id`.
     pub(crate) fn toggle_auto_crosspost(
         &mut self,
@@ -123,7 +179,24 @@ impl MainView {
     }
 
     /// Turn cross-posting to one site on (`on`) or off for post `id`, and
-    /// write it to `state.json`.
+    /// write it to `state.json` (in the tour, for the session only).
+    pub(crate) fn auto_crosspost_set(
+        &mut self,
+        id: &LocalId,
+        ext: &str,
+        macro_id: &str,
+        on: bool,
+        cx: &App,
+    ) {
+        self.auto_set_choice(id, ext, macro_id, on, cx);
+    }
+
+    /// Forget the choices read, so the next use reads `state.json` again
+    /// (the tour's sample choice goes with the tour).
+    pub(crate) fn auto_crosspost_reload(&mut self) {
+        self.ext.auto.chosen = None;
+    }
+
     fn auto_set_choice(&mut self, id: &LocalId, ext: &str, macro_id: &str, on: bool, cx: &App) {
         let key = post_key(&self.auto_host(cx), id);
         let m = macro_key(ext, macro_id);
@@ -137,6 +210,9 @@ impl MainView {
         let now: Vec<String> = set.iter().cloned().collect();
         if now.is_empty() {
             chosen.remove(&key);
+        }
+        if self.ext_tour_on() {
+            return; // --- onboarding --- the sample's, never written.
         }
         if let Some(d) = Self::tray_data_dir(cx) {
             let _ = blyg_core::state::AppState::update(&d, |s| {
@@ -350,6 +426,7 @@ impl MainView {
             .gap(px(6.))
             .text_size(px(12.))
             .child(div().text_color(p.muted).child("Then cross-post to"));
+        let count = sites.len();
         for (n, m) in sites.into_iter().enumerate() {
             let on = chosen.contains(&macro_key(&m.ext, &m.spec.id));
             let (pid, ext, macro_id) = (id.clone(), m.ext.clone(), m.spec.id.clone());
@@ -365,7 +442,7 @@ impl MainView {
                     .when(on, |d| d.text_color(p.accent))
                     .cursor_pointer()
                     .hover(|s| s.border_color(p.accent))
-                    .child(format!("{} {}", if on { "☑" } else { "☐" }, m.site.title))
+                    .child(chip_label(n, &m.site.title, on))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_auto_crosspost(&pid, &ext, &macro_id, cx)
                     })),
@@ -376,13 +453,12 @@ impl MainView {
                 .child(row)
                 .child(
                     div()
+                        .id("auto-crosspost-keys")
+                        .debug_selector(|| "auto-crosspost-keys".into())
                         .mt(px(4.))
                         .text_size(px(11.5))
                         .text_color(p.muted)
-                        .child(
-                            "Remembered for this post. Each one still shows you the text, \
-                             and posts only when you click Post.",
-                        ),
+                        .child(keys_hint(count)),
                 )
                 .into_any_element(),
         )

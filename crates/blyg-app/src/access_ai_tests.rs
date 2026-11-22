@@ -188,14 +188,32 @@ fn server_ai_changes_a_model_and_a_switch_and_saves(cx: &mut TestAppContext) {
             |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
         )
     });
+    // ↓ to `row` (rows the studio doesn't offer are passed over).
+    let down_to = |cx: &mut VisualTestContext, row: super::server_ai::Row| {
+        let at = super::server_ai::ROWS
+            .iter()
+            .position(|r| *r == row)
+            .unwrap();
+        for _ in 0..super::server_ai::ROWS.len() {
+            let sel = view.read_with(cx, |v, _| {
+                v.sheet
+                    .get::<crate::app::server_ai::ServerAiSheet>()
+                    .map(|s| s.sel)
+            });
+            if sel == Some(at) {
+                return;
+            }
+            keys(cx, "down");
+        }
+        panic!("never reached {row:?}");
+    };
     // TK: sonnet → the next text model (haiku).
     keys(cx, "right");
-    // Change notes' automatic drafting (row 3): off → on.
-    keys(cx, "down");
-    keys(cx, "down");
+    // Change notes' automatic drafting: off → on.
+    down_to(cx, super::server_ai::Row::AutoNotes);
     keys(cx, "space");
-    // The classifier (row 4): clef-flash → none.
-    keys(cx, "down");
+    // The classifier: clef-flash → none.
+    down_to(cx, super::server_ai::Row::Model(AiFunction::Classify));
     keys(cx, "left");
     view.read_with(cx, |v, _| {
         let Some(s) = v.sheet.get::<crate::app::server_ai::ServerAiSheet>() else {
@@ -348,4 +366,43 @@ fn an_unedited_draft_publishes_as_generated_and_no_ai_means_a_plain_publish(
     cx.dispatch_action(DraftChangeNote);
     cx.run_until_parked();
     assert!(toast(&view, cx).contains("change-notes model"));
+}
+
+/// User testing, 0.28: studio 0.69's rows (the text helpers' model, the
+/// Agentic feed's tab name) were below the fold, and the header spoke of
+/// models.json and wrangler. They come first now, under a header in plain
+/// words.
+#[gpui_kit::test]
+fn server_ai_shows_the_new_rows_first_in_plain_words(cx: &mut TestAppContext) {
+    use super::server_ai::{MODELS_FROM, MODELS_FROM_LOCAL, ROWS, Row};
+    let at = |r: Row| ROWS.iter().position(|x| *x == r).unwrap();
+    assert!(at(Row::Model(AiFunction::Helpers)) < at(Row::Model(AiFunction::Changelog)));
+    assert!(at(Row::Model(AiFunction::Feed)) < at(Row::Model(AiFunction::Changelog)));
+    for t in [MODELS_FROM, MODELS_FROM_LOCAL] {
+        for jargon in ["models.json", "wrangler", "Worker"] {
+            assert!(!t.contains(jargon), "{t}");
+        }
+    }
+    let (view, fake, cx) = setup(cx);
+    fake.set_server_ai(|s| {
+        s.model_helpers = Some("claude-haiku-4-5".into());
+        s.agentic_title = Some("Agentic".into());
+    });
+    cx.dispatch_action(ShowServerAi);
+    settle(cx, |cx| {
+        view.read_with(
+            cx,
+            |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
+        )
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let notes = Box::leak(
+        format!("server-ai-row-{}", at(Row::Model(AiFunction::Changelog))).into_boxed_str(),
+    );
+    let notes = cx.debug_bounds(notes).expect("the change notes' row");
+    let tab = cx
+        .debug_bounds("server-ai-agentic-title")
+        .expect("the tab name");
+    assert!(tab.top() < notes.top(), "{tab:?} above {notes:?}");
 }

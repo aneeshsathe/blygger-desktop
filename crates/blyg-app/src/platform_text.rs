@@ -34,7 +34,9 @@ impl Platform {
     /// The platform whose spelling the app's text uses: [`Self::HERE`].
     /// Tests can pick either ([`spelled_as`] for one test,
     /// `BLYGGER_TEST_SPELLING=windows` for the whole suite), so a macOS run
-    /// checks Windows' wording too. Outside tests it's the constant.
+    /// checks Windows' wording too. A debug build reads the same variable
+    /// (a DevFlag), so a scene on a Mac shows Windows' words
+    /// (`burrow-verify.sh`); a release build is the constant.
     #[inline]
     pub fn spelling() -> Platform {
         #[cfg(test)]
@@ -43,6 +45,11 @@ impl Platform {
         }
         #[cfg(not(test))]
         {
+            if cfg!(debug_assertions)
+                && let Some(p) = crate::dev_flags::get().spelling
+            {
+                return p;
+            }
             Self::HERE
         }
     }
@@ -74,11 +81,7 @@ mod test_spelling {
 
     fn default() -> Platform {
         static DEFAULT: OnceLock<Platform> = OnceLock::new();
-        *DEFAULT.get_or_init(|| {
-            crate::dev_flags::TestEnv::from_env()
-                .spelling
-                .unwrap_or(Platform::HERE)
-        })
+        *DEFAULT.get_or_init(|| crate::dev_flags::get().spelling.unwrap_or(Platform::HERE))
     }
 
     pub fn current() -> Platform {

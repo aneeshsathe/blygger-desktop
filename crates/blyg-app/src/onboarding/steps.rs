@@ -303,6 +303,10 @@ pub enum Setup {
     CrossPost,
     /// The ⇧⌘P Extensions palette, open.
     Palette,
+    /// --- auto cross-post --- Posts, the sample's published post open and
+    /// set to cross-post to Bluesky (for the session; the tour's sample
+    /// cross-post lists its sites).
+    AutoCrossPost,
     /// A sample consent sheet for markdown-notes (answering it writes
     /// nothing).
     Consent,
@@ -1761,17 +1765,17 @@ pub const STEPS: &[Step] = &[
         since: "0.28.0",
         title: ui_text("Cross-post a post each time you publish it"),
         caption: ui_text(
-            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site, and \
-                  each time you publish that post Burrow starts its cross-post by itself, one \
-                  site after another. Post › Extensions… has the same on/off rows for the open \
-                  post. It only starts the run: you still check the text and click Post. \
-                  (A sample: nothing runs.)",
+            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site (⌥ and \
+                  its number), and each time you publish that post Burrow starts its \
+                  cross-post by itself, one site after another. Press ⇧⌘P: this post has an \
+                  on/off row per site there too, Bluesky on. It only starts the run: you \
+                  still check the text and click Post. (A sample: nothing runs.)",
         ),
-        keys: &[Key::ExtPalette],
-        key_label: ui_text("Post menu"),
+        keys: &[Key::Palette],
+        key_label: ui_text("⇧⌘P"),
         region: Region::Whole,
         button: None,
-        setup: Setup::Posts,
+        setup: Setup::AutoCrossPost,
         pause_ms: 1600,
         settle: false,
         stay: true,

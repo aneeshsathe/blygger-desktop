@@ -1372,10 +1372,11 @@ pub fn respell_for_windows(key: &str) -> String {
 /// (`⇧⌘G` → `Ctrl+Shift+G`, `⌘Y` → `Ctrl+Shift+Y`). Interned, so it can
 /// stand wherever the literal did.
 pub fn hint(text: &'static str) -> &'static str {
-    // Compiled on Windows, and in tests on every platform (a test can ask
-    // for Windows' spelling: `platform_text::spelled_as`). A macOS build
-    // is just `text`.
-    #[cfg(any(target_os = "windows", test))]
+    // Compiled on Windows, in tests on every platform (a test can ask for
+    // Windows' spelling: `platform_text::spelled_as`), and in debug builds
+    // (`BLYGGER_TEST_SPELLING=windows` shows a scene in Windows' words). A
+    // macOS release build is just `text`.
+    #[cfg(any(target_os = "windows", test, debug_assertions))]
     {
         use crate::platform_text::Platform;
         use std::collections::HashMap;
@@ -1396,7 +1397,7 @@ pub fn hint(text: &'static str) -> &'static str {
             .entry((p, text))
             .or_insert_with(|| Box::leak(windows_hint(text).into_boxed_str()))
     }
-    #[cfg(not(any(target_os = "windows", test)))]
+    #[cfg(not(any(target_os = "windows", test, debug_assertions)))]
     text
 }
 
