@@ -14,9 +14,11 @@
 //!   the `"why"` of an unrelated JSON row once counted as
 //!   `SpellcheckIssue.why`, so its honest exemption failed as stale and was
 //!   deleted. Such a name needs its quoted form within 6 lines of the schema
-//!   or operation it lives in (its name, snake_case, or an operation's path)
-//!   or of a sibling property that is itself distinctive (not a plain word
-//!   of under 5 letters);
+//!   or operation it lives in (its name or snake_case, each as a whole
+//!   identifier: `AgenticEditionInput` doesn't name `AgenticEdition`; or an
+//!   operation's path) or of a sibling property that is itself distinctive
+//!   (not a plain word of under 5 letters, nor a common one in `COMMON`:
+//!   `origin`, `version` and `id` sit together in unrelated rows);
 //! - `enum:{where}={value}`: a test holds `"value"` within 3 lines of the
 //!   property or parameter it belongs to (a bare `"link"` is too common);
 //! - `param:{operationId}/{in}:{name}`: a test holds `"name"` in the
@@ -51,8 +53,17 @@ use serde_json::Value;
 /// Lines either side of a plain-word property's name that may hold its anchor.
 const WINDOW: usize = 6;
 /// A sibling property anchors a plain-word property unless it is itself a
-/// plain lowercase word shorter than this.
+/// plain lowercase word shorter than this, or one of `COMMON`.
 const MIN_SIBLING: usize = 5;
+
+/// Plain words too common as JSON keys to vouch for a sibling: they sit
+/// together in unrelated rows (a reading row's `origin`, `version`, `source`,
+/// a lineage node's `partial`, `depth`), which once made
+/// `CatchUp.cards[].id` look tested.
+const COMMON: &[&str] = &[
+    "origin", "version", "source", "label", "title", "author", "created", "updated", "content",
+    "status", "items", "cursor", "count", "value", "partial", "depth",
+];
 
 const HINT: &str = "write a test that names it (e2e against a real studio, see skills/real-server-testing), or add it to crates/blyg-core/tests/fixtures/contract-coverage.toml with a reason";
 
@@ -187,7 +198,7 @@ impl Prop {
         self.siblings
             .iter()
             .map(String::as_str)
-            .filter(|s| !(plain_word(s) && s.len() < MIN_SIBLING))
+            .filter(|s| !(plain_word(s) && (s.len() < MIN_SIBLING || COMMON.contains(s))))
     }
 
     /// What a test must hold for an uncovered plain-word name, for the
@@ -217,8 +228,8 @@ impl Prop {
     /// lives in.
     fn anchored_in(&self, window: &str) -> bool {
         let lower = window.to_ascii_lowercase();
-        lower.contains(&self.owner.to_ascii_lowercase())
-            || lower.contains(&snake(&self.owner))
+        has_word(&lower, &self.owner.to_ascii_lowercase())
+            || has_word(&lower, &snake(&self.owner))
             || self.path.as_ref().is_some_and(|p| has_path(window, p))
             || self.distinctive_siblings().any(|s| {
                 window.contains(&format!("\"{s}\""))
