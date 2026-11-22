@@ -356,6 +356,10 @@ impl Resolver for StoreResolver {
 }
 
 #[cfg(test)]
+#[path = "resolver_closure_tests.rs"]
+mod closure_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use blyg_core::{Author, LocalId, ServerId};

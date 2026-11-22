@@ -289,3 +289,79 @@ fn history_lists_each_row_once_in_key_order() {
     );
     assert!(h[0].thread);
 }
+
+/// A fixture of the spec's pace-layered order (RFC-3) as Burrow's items.
+fn feed_fixture(case: &serde_json::Value) -> Vec<PaceItem> {
+    let strs = |v: &serde_json::Value| -> Vec<Key> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|q| k(q.as_str().unwrap()))
+            .collect()
+    };
+    case["history"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| PaceItem {
+            key: k(i["id"].as_str().unwrap()),
+            thread: i["kind"] == "thread",
+            withdrawn: i["withdrawn"].as_bool().unwrap_or(false),
+            versions: i["versions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| PaceVersion {
+                    version: u32::try_from(v["version"].as_u64().unwrap()).unwrap(),
+                    at: crate::util::parse_ts_ms(v["at"].as_str().unwrap()).unwrap(),
+                    pinned: v["pinned"].as_bool().unwrap_or(false),
+                    quotes: strs(&v["quotes"]),
+                    maintenance: v["maintenance"].as_bool().unwrap_or(false),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// The spec's pace-layered order fixtures (blygger-spec
+/// `conformance/feeds/`, RFC-3), vendored verbatim in
+/// `tests/fixtures/feeds/`; `scripts/feeds-conformance.sh` checks the copy
+/// against the pinned spec commit. Each history, replayed with the
+/// reference constants, gives its `expected` order, and the reader's
+/// positions start with it.
+#[test]
+fn the_specs_feed_fixtures_give_their_expected_order() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/feeds");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 9, "the nine RFC-3 fixtures");
+    let mut wrong = Vec::new();
+    for path in &files {
+        let name = path.file_name().unwrap().to_string_lossy();
+        let case: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let items = feed_fixture(&case);
+        let expected: Vec<&str> = case["expected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        let order = pace_layered_order(&items);
+        if ids(&order) != expected {
+            wrong.push(format!("{name}: expected {expected:?}, got {:?}", ids(&order)));
+        }
+        let positions = reader_positions(&items);
+        if ids(&positions).get(..expected.len()) != Some(&expected[..]) {
+            wrong.push(format!(
+                "{name} (reader positions): expected {expected:?} first, got {:?}",
+                ids(&positions)
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
