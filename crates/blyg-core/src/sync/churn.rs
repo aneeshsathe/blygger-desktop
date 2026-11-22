@@ -30,16 +30,32 @@ impl Churn {
     /// Whether this pull may read the list. A pull that may not counts down
     /// the sit-out, so ask only when the list would otherwise be read.
     pub(crate) fn due(&mut self) -> bool {
-        true
+        if self.skip > 0 {
+            self.skip -= 1;
+            false
+        } else {
+            true
+        }
     }
 
     /// The list was read to its end: every pull again.
-    pub(crate) fn read(&mut self) {}
+    pub(crate) fn read(&mut self) {
+        *self = Churn {
+            reported: self.reported,
+            ..Churn::default()
+        };
+    }
 
     /// The list changed under every walk again. True the first time a
     /// list starts sitting pulls out this session: say so, once.
     pub(crate) fn expired(&mut self) -> bool {
-        false
+        self.streak += 1;
+        if self.streak < STREAK {
+            return false;
+        }
+        self.wait = (self.wait * 2).clamp(1, MAX_SKIP);
+        self.skip = self.wait;
+        !std::mem::replace(&mut self.reported, true)
     }
 }
 
