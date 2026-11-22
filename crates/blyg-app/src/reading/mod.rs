@@ -18,6 +18,8 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+#[cfg(test)]
+mod agentic_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
 #[cfg(test)]
 mod background_tests;
@@ -104,6 +106,8 @@ mod read_mark_tests;
 mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
+#[cfg(test)]
+mod studio069_tests;
 #[cfg(test)]
 mod tests;
 

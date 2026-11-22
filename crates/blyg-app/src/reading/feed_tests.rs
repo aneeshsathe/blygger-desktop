@@ -297,7 +297,7 @@ fn the_tabs_are_named_as_the_studio_names_them() {
     assert_eq!(Smart::Raw.label(), "Raw");
     assert_eq!(super::feed::kind_label(Smart::All), "All");
     assert!(
-        super::sources_vm::empty_label(&Source::Smart(Smart::Agentic)).starts_with("Coming soon.")
+        super::sources_vm::empty_label(&Source::Smart(Smart::Agentic)).starts_with("No edition yet.")
     );
     assert!(super::sources_vm::empty_label(&Source::Smart(Smart::Shelf)).contains("“+ Save”"));
 }
