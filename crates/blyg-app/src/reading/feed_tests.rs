@@ -230,6 +230,63 @@ fn raw_lists_what_came_in_and_the_agentic_feed_nothing() {
     );
 }
 
+/// The places are worked out off the UI thread, and rebuilds can overlap:
+/// only the latest one's places land. Until the first do, the Feed is held.
+#[test]
+fn only_the_latest_rebuilds_places_land() {
+    let rows = sample();
+    let mut feed = Feed::new(ReaderOrder::PaceLayered);
+    assert!(feed.held(), "no places yet");
+    let first = feed.start_rebuild();
+    let latest = feed.start_rebuild();
+    let mut late = Feed::new(ReaderOrder::PaceLayered);
+    late.rebuild(&rows, &Default::default());
+    let key = |id: &str| {
+        (
+            rows[0].subscription_id.clone(),
+            blyg_core::RemoteId::from(id),
+        )
+    };
+    let old: std::collections::HashMap<_, _> = [(key("a"), 0), (key("b"), 1), (key("c"), 2)].into();
+    let new: std::collections::HashMap<_, _> = [(key("c"), 0), (key("a"), 1), (key("b"), 2)].into();
+    assert!(feed.land(latest, new), "the latest lands");
+    assert!(
+        !feed.land(first, old),
+        "an older one, answering late, doesn't"
+    );
+    assert!(!feed.held());
+    assert_eq!(feed.place(&key("c")), Some(0));
+    // Chronological has nothing to wait for.
+    assert!(!Feed::new(ReaderOrder::Newest).held());
+}
+
+/// Two quick choices (Pace-layered → Chronological → Pace-layered): an
+/// answer to the first save that arrives after the second choice is
+/// dropped; the latest choice's answer decides, and a failed save goes
+/// back to the order last confirmed.
+#[test]
+fn a_saves_late_answer_cant_undo_a_later_choice() {
+    let mut feed = Feed::new(ReaderOrder::PaceLayered);
+    let first = feed.choose(ReaderOrder::Newest);
+    let second = feed.choose(ReaderOrder::PaceLayered);
+    assert_eq!(feed.order, ReaderOrder::PaceLayered);
+    assert_eq!(
+        feed.answer(second, Some(ReaderOrder::PaceLayered)),
+        Some(ReaderOrder::PaceLayered)
+    );
+    assert_eq!(
+        feed.answer(first, Some(ReaderOrder::Newest)),
+        None,
+        "late: dropped"
+    );
+    let third = feed.choose(ReaderOrder::Newest);
+    assert_eq!(
+        feed.answer(third, None),
+        Some(ReaderOrder::PaceLayered),
+        "failed: back to the order last confirmed"
+    );
+}
+
 /// The tabs' names: studio 0.68's, on Burrow's sources.
 #[test]
 fn the_tabs_are_named_as_the_studio_names_them() {
@@ -328,6 +385,65 @@ mod app {
         cx.simulate_click(pace.center(), Modifiers::none());
         settle(cx);
         assert_eq!(fake.reader_order(), ReaderOrder::PaceLayered);
+    }
+
+    /// Reading opens on the Feed held, not newest first: nothing is listed
+    /// (and no "nothing here" note) until the first places arrive, then the
+    /// pace-layered order.
+    #[gpui_kit::test]
+    fn the_feed_waits_for_its_first_places(cx: &mut TestAppContext) {
+        let (view, _fake, cx) = setup(cx);
+        view.update_in(cx, |v, window, cx| v.show_view(View::Reading, window, cx));
+        view.read_with(cx, |v, _| {
+            assert!(v.reading.feed.held());
+            assert!(v.reading.shown.is_empty(), "held, not listed newest first");
+        });
+        settle(cx);
+        view.read_with(cx, |v, _| {
+            assert!(!v.reading.feed.held());
+            assert!(!v.reading.shown.is_empty());
+            let places: Vec<usize> = v
+                .reading
+                .shown_rows()
+                .map(|r| {
+                    v.reading
+                        .feed
+                        .place(&crate::app::reading::vm::key(r))
+                        .unwrap()
+                })
+                .collect();
+            let mut sorted = places.clone();
+            sorted.sort();
+            assert_eq!(places, sorted, "in the Feed's order");
+        });
+    }
+
+    /// The real path: a row of an RSS subscription (the studio's l0) lends
+    /// no quotes, even when it carries one; a blyg's row does.
+    #[gpui_kit::test]
+    fn an_rss_rows_quotes_dont_count(cx: &mut TestAppContext) {
+        use crate::fake::reading_seed::{ADA_FINISHED, ADA_TIDES, OMAR_YEAR};
+        let (view, fake, cx) = setup(cx);
+        let quote = |id: &str| -> blyg_core::TransclusionRef {
+            serde_json::from_value(serde_json::json!({ "id": id, "version": 1 })).unwrap()
+        };
+        fake.with_reading(|rows| {
+            for r in rows.iter_mut() {
+                if r.remote_id == OMAR_YEAR || r.remote_id == ADA_FINISHED {
+                    r.transclusions = vec![quote(if r.remote_id == OMAR_YEAR {
+                        "01k20mar0other000000000001"
+                    } else {
+                        ADA_TIDES
+                    })];
+                }
+            }
+        });
+        view.update_in(cx, |v, window, cx| v.show_view(View::Reading, window, cx));
+        settle(cx);
+        let facts = view.read_with(cx, |v, _| v.feed_facts());
+        let of = |id: &str| facts.iter().find(|f| f.key.1 == id).unwrap();
+        assert!(of(OMAR_YEAR).quotes.is_empty(), "RSS: none");
+        assert_eq!(of(ADA_FINISHED).quotes.len(), 1, "a blyg's: its quote");
     }
 
     fn order(view: &Entity<MainView>, cx: &mut VisualTestContext) -> ReaderOrder {
