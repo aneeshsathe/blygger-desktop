@@ -2104,6 +2104,10 @@ impl Backend for LiveBackend {
         self.e().background_served()
     }
 
+    fn background_placing(&self) -> bool {
+        self.e().background_placing()
+    }
+
     fn background_set(&self) -> Option<crate::background::BackgroundSet> {
         self.e().store.background_set()
     }
@@ -2114,15 +2118,19 @@ impl Backend for LiveBackend {
         withdrawn: bool,
         placement: Option<crate::background::Placement>,
     ) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().set_reading_placement(key, withdrawn, placement)
     }
 
     fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         let rows = self.e().store.reading_rows_of(sub);
         self.e().set_blyg_background(sub, on, &rows)
@@ -2137,8 +2145,10 @@ impl Backend for LiveBackend {
         rule: &str,
         on: bool,
     ) -> Result<crate::background::BackgroundRules> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().track(self.e().api.put_background_rule(rule, on))
     }

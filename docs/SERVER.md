@@ -22,10 +22,12 @@ blyg is too old):
    `https://blyg.example.com/blyg/` answers at `https://blyg.example.com/blyg/api/…`).
    It is authenticated, so a refused credential stops the check (`401`), never passing
    as "an older studio".
-2. Its `contractVersion` decides: **majors 5 and 6** are spoken. Anything older, or
-   no capabilities route (a `404`: a studio before 0.49.7, or a Worker fork), is too
-   old. A newer major, or a version that isn't a number, is a contract this Burrow
-   doesn't know yet.
+2. Its `contractVersion` decides. **Majors 5 and 6** are spoken in full. Anything
+   older, or no capabilities route (a `404`: a studio before 0.49.7, or a Worker
+   fork), is too old. A newer major, or a version that isn't a number, is **newer**:
+   Burrow warns once a session, keeps syncing what the capabilities offer, and prunes
+   nothing held here on that studio's lists' word (below). The check runs again on
+   each safety-net pull and before a removal, so an upgrade mid-session is seen.
 3. A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
 
 **Too old:** nothing is pushed or pulled. Burrow says "Your blyg needs updating" once

@@ -6,11 +6,11 @@
 
 use super::Store;
 use crate::backend::Result;
-use crate::background::{BackgroundSet, SERVED_META, SET_META};
+use crate::background::{BackgroundSet, PLACING_META, SERVED_META, SET_META};
 
 impl Store {
-    /// Whether the blyg serves Background (its capabilities list
-    /// `setReadingPlacement`), as of the last check.
+    /// Whether the blyg serves Background (its lens was read, or may be:
+    /// `background::serves`), as of the last check.
     pub fn background_served(&self) -> bool {
         self.meta(SERVED_META).as_deref() == Some("1")
     }
@@ -23,6 +23,17 @@ impl Store {
             self.delete_meta(SET_META)?;
         }
         Ok(())
+    }
+
+    /// Whether this sign-in may place posts in Background (its
+    /// capabilities list `setReadingPlacement`), as of the last check.
+    pub fn background_placing(&self) -> bool {
+        self.background_served() && self.meta(PLACING_META).as_deref() == Some("1")
+    }
+
+    /// Note whether it may.
+    pub fn set_background_placing(&self, on: bool) -> Result<()> {
+        self.set_meta(PLACING_META, if on { "1" } else { "0" })
     }
 
     /// The Background lens as last read; `None` when the blyg doesn't

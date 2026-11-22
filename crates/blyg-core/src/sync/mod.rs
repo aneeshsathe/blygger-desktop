@@ -743,7 +743,7 @@ impl Engine {
     pub fn earliest_due(&self) -> Option<i64> {
         let held = {
             let st = self.state();
-            st.read_denied || st.hopper_denied || self.store.lists_prune() == Prune::Withheld
+            st.read_denied || st.hopper_denied || self.shelf_held().is_some()
         };
         if !held {
             return self.store.earliest_due();
@@ -1781,8 +1781,9 @@ impl Engine {
     fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
         (st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread))
             || (st.hopper_denied && op.kind == OpKind::Hopper) // --- hoppers ---
-            // --- newer contract --- the shelf isn't written to such a blyg.
-            || (op.kind == OpKind::Shelf && self.store.lists_prune() == Prune::Withheld)
+            // --- newer contract --- the shelf isn't written to such a blyg,
+            // nor by a sign-in that may only read it.
+            || (op.kind == OpKind::Shelf && self.shelf_held().is_some())
     }
 
     /// A read-state write answered 403 (`e`, which names the missing scope,

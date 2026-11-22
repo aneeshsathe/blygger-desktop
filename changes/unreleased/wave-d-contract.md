@@ -21,3 +21,8 @@ section: Changed
   what the blyg's settings show, so a token that can't draft still sees them.
   Following a whole blyg (`wholeBlyg`) is sent to every studio but the
   oldest, and asked again without it only when the blyg refuses that key.
+- **A read-only sign-in sees Background and Saved.** The Background lens is read
+  with `listReading` and Saved with `getShelf`, both owner:read; placing posts
+  needs `setReadingPlacement` and writing Saved needs `putShelf`. With read access
+  only, Background shows without its chips, and a change to Saved is kept on this
+  Mac, which Saved now says (as it does on a newer studio) instead of "syncing".

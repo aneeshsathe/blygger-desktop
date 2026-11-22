@@ -33,18 +33,38 @@ use serde_json::{Value, json};
 
 use crate::model::{OWN_SUBSCRIPTION, ReadingItem, RemoteId, SubId};
 
-/// The capability that says a studio has Background (`PUT
-/// /api/reading/placement`); `GET /api/reading?background=true`, the
-/// `background` on subscriptions and `backgroundRules` in Settings came with it.
+/// The capability that lets this sign-in place posts and blygs in
+/// Background (`PUT /api/reading/placement`, owner:manage; the
+/// `background` on subscriptions and `backgroundRules` in Settings came
+/// with it). The studio lists only what a sign-in's scopes grant, so a
+/// read-only one doesn't list it, and still reads the lens.
 pub const OPERATION: &str = "setReadingPlacement";
+
+/// The read the Background lens comes from: `GET
+/// /api/reading?background=true` (owner:read). Every studio lists it; one
+/// before 0.61 refuses the filter, or answers rows without a `background`
+/// ([`is_lens`]), and so has no Background here.
+pub const LENS_OPERATION: &str = "listReading";
 
 /// Store meta: "1" when the blyg serves Background, "0" when it doesn't.
 pub const SERVED_META: &str = "background.served";
+/// Store meta: "1" when this sign-in may place posts ([`OPERATION`]).
+pub const PLACING_META: &str = "background.placing";
 /// Store meta: the last [`BackgroundSet`] read, as JSON.
 pub const SET_META: &str = "background.set";
 
 /// What Burrow says when the blyg has no Background.
 pub const NOT_SERVED: &str = "Your blyg needs blygger-studio 0.61 or later for Background";
+
+/// What Burrow says when this sign-in may read Background but not change
+/// it (no `setReadingPlacement`).
+pub const NOT_PLACING: &str = "This sign-in can read Background on your blyg but not change it";
+
+/// Why a Background change can't be made: [`NOT_PLACING`] where the lens
+/// is `served`, else [`NOT_SERVED`].
+pub fn not_placing(served: bool) -> String {
+    if served { NOT_PLACING } else { NOT_SERVED }.to_string()
+}
 
 /// The rules an owner can turn off, in the order Settings lists them
 /// (studio `BACKGROUND_RULES`), which is also the order a card picks its
@@ -598,9 +618,23 @@ pub fn rule_label(rule: &str) -> (&'static str, &'static str) {
     }
 }
 
-/// Whether a `GET /api/capabilities` answer lists [`OPERATION`].
+/// Whether a `GET /api/capabilities` answer lists [`LENS_OPERATION`]: the
+/// lens may be read (and [`is_lens`] decides).
 pub fn serves(capabilities: &Value) -> bool {
+    crate::api::offers(capabilities, LENS_OPERATION)
+}
+
+/// Whether it lists [`OPERATION`]: this sign-in may place posts.
+pub fn places(capabilities: &Value) -> bool {
     crate::api::offers(capabilities, OPERATION)
+}
+
+/// Whether a lens read answered the Background lens: every entry carries
+/// its `background`. A studio that ignores the filter answers plain rows.
+pub fn is_lens(entries: &[Value]) -> bool {
+    entries
+        .iter()
+        .all(|e| e.get("background").is_some_and(Value::is_object))
 }
 
 /// `PUT /api/reading/placement`'s body for the row `key` (your own posts

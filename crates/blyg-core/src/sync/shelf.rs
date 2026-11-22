@@ -2,9 +2,13 @@
 //! (studio 0.61's `GET/PUT /api/shelf`; the shapes and the merge are in
 //! `crate::shelf`).
 //!
-//! - Offered only when the blyg's capabilities list `getShelf` and
-//!   `putShelf` (noted once a session, with the contract check). Otherwise
-//!   the shelf stays on this computer, as before, and nothing is sent.
+//! - Read when the blyg's capabilities list `getShelf`, and written only
+//!   when they list `putShelf` too (noted once a session, with the
+//!   contract check; the studio lists only what a sign-in's scopes grant).
+//!   Without `getShelf` the shelf stays on this computer, as before, and
+//!   nothing is sent. With `getShelf` alone (a read-only sign-in) it's
+//!   shown as on a newer contract, below: the union, and changes made here
+//!   kept here (`SyncState::HeldReadOnly`).
 //! - Read when the `shelf` change counter moved (`SHELF_DEPS`, with the
 //!   rest of a pull), and on the first pull of a session.
 //! - Sent when it changed here (a queued `shelf` op, or a pull that finds
@@ -30,7 +34,8 @@ use crate::api::shelf_api::PutShelf;
 use crate::backend::{CoreError, Result};
 use crate::model::CoreEvent;
 use crate::shelf::{
-    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, cap, merge, overflow_message,
+    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, WRITES_META, cap, merge,
+    overflow_message,
 };
 use crate::store::Op;
 
@@ -44,6 +49,29 @@ impl Engine {
     pub(super) fn note_shelf_served(&self) {
         if let Ok(on) = self.api.serves_shelf() {
             self.set_shelf_served(on);
+        }
+        if let Ok(on) = self.api.takes_shelf() {
+            let _ = self.store.set_meta(WRITES_META, if on { "1" } else { "0" });
+        }
+    }
+
+    /// Whether this sign-in may write the shelf, as of the last check.
+    fn shelf_writes(&self) -> bool {
+        self.store.meta(WRITES_META).as_deref() == Some("1")
+    }
+
+    /// Why a change made here isn't sent: the blyg's contract is newer than
+    /// Burrow knows, or this sign-in may only read the shelf. `None`: it's
+    /// sent (or there's no synced shelf to hold it for).
+    pub(super) fn shelf_held(&self) -> Option<SyncState> {
+        if !self.shelf_served() {
+            None
+        } else if self.store.lists_prune() == crate::api::Prune::Withheld {
+            Some(SyncState::HeldNewer)
+        } else if !self.shelf_writes() {
+            Some(SyncState::HeldReadOnly)
+        } else {
+            None
         }
     }
 
@@ -63,6 +91,14 @@ impl Engine {
     pub fn shelf_state(&self) -> SyncState {
         if !self.shelf_served() {
             SyncState::Local
+        } else if let Some(held) = self.shelf_held() {
+            // Shown as the blyg has it plus what's kept here; only a change
+            // made here is worth a word.
+            if self.store.shelf_waiting() {
+                held
+            } else {
+                SyncState::Synced
+            }
         } else if self.store.shelf_waiting() || self.shelf_unsent() {
             SyncState::Waiting
         } else {
@@ -100,9 +136,8 @@ impl Engine {
     /// the result when it differs. True when the shelf here changed.
     pub(super) fn sync_shelf(&self) -> Result<bool> {
         match self.api.get_shelf()? {
-            Some(server) if self.store.lists_prune() == crate::api::Prune::Withheld => {
-                self.show_shelf_union(&server) // --- newer contract ---
-            }
+            // --- newer contract --- and a read-only sign-in: shown, not written.
+            Some(server) if self.shelf_held().is_some() => self.show_shelf_union(&server),
             Some(server) => self.settle_shelf(server, true),
             None => {
                 // No route after all: the shelf stays here.

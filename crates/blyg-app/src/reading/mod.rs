@@ -774,6 +774,7 @@ impl MainView {
         let fresh = self.reading_with_own();
         let r = &mut self.reading;
         r.background.served = self.backend.background_served(); // --- background ---
+        r.background.placing = self.backend.background_placing();
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
         // --- reader folders ---
@@ -851,6 +852,7 @@ impl MainView {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
                 self.reading.background.served = self.backend.background_served(); // --- background ---
+                self.reading.background.placing = self.backend.background_placing();
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
