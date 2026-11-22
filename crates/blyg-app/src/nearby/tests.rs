@@ -91,10 +91,13 @@ fn sub(id: &str, kind: SubscriptionKind) -> Subscription {
 /// and a fragment).
 fn seed(dir: &std::path::Path) -> (LocalId, LocalId) {
     let s = Store::open(&dir.join("blygger.db")).unwrap();
-    s.replace_subscriptions(&[
-        sub("lin", SubscriptionKind::Blyg),
-        sub("feed", SubscriptionKind::Rss),
-    ])
+    s.take_served_subscriptions(
+        &[
+            sub("lin", SubscriptionKind::Blyg),
+            sub("feed", SubscriptionKind::Rss),
+        ],
+        blyg_core::api::Prune::Allowed,
+    )
     .unwrap();
     s.merge_all(&[
         published(
@@ -364,7 +367,8 @@ fn timing_nearby_at_scale() {
     let dir = tempfile::tempdir().unwrap();
     {
         let s = Store::open(&dir.path().join("blygger.db")).unwrap();
-        s.replace_subscriptions(&synth::subscriptions()).unwrap();
+        s.take_served_subscriptions(&synth::subscriptions(), blyg_core::api::Prune::Allowed)
+            .unwrap();
         s.merge_reading(&synth::reading(n, 3), true, &synth::kinds())
             .unwrap();
     }

@@ -37,7 +37,7 @@ fn setup<'a>(
     {
         let store = Store::open(&dir.join("blygger.db")).unwrap();
         store
-            .replace_subscriptions(&synth::subscriptions())
+            .take_served_subscriptions(&synth::subscriptions(), blyg_core::api::Prune::Allowed)
             .unwrap();
         store
             .merge_reading(&synth::reading(ROWS, 3), true, &synth::kinds())
