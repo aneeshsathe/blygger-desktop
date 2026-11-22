@@ -37,7 +37,8 @@ pub struct Candidate {
     /// --- contacts --- In your address book (listed first).
     pub contact: bool,
     /// --- contacts --- The contact's handle, when the blyg rewrites
-    /// `@handle` on publish: ⏎ writes `@handle` instead of the link.
+    /// `@handle` on publish: ⏎ writes `@handle ` (with a space, from studio
+    /// 0.66; see [`insert`]) instead of the link.
     pub handle: Option<String>,
 }
 
@@ -406,13 +407,22 @@ pub fn query(text: &str, at: usize, cursor: usize) -> Option<&str> {
 }
 
 /// Replace the typed `@query` (`at..cursor`) with the link. Returns the new
-/// text and the caret (just after the link). A contact's `@handle` is
-/// followed by a space, as the studio's picker writes it (`handleInsert`);
-/// punctuation typed next takes it back ([`punctuation_after_pick`]).
-pub fn insert(text: &str, at: usize, cursor: usize, c: &Candidate) -> (String, usize) {
+/// text and the caret (just after the link). Where the studio reads
+/// natural grammar (`natural`, studio 0.66: `blyg_core::contacts::natural_grammar`),
+/// a contact's `@handle` is followed by a space, as the studio's picker
+/// writes it (`handleInsert`); punctuation typed next takes it back
+/// ([`punctuation_after_pick`]). On an older studio `@lin-driven` would
+/// publish as text, so the pick writes the bare handle, as before.
+pub fn insert(
+    text: &str,
+    at: usize,
+    cursor: usize,
+    c: &Candidate,
+    natural: bool,
+) -> (String, usize) {
     let range: Range<usize> = at.min(text.len())..cursor.min(text.len());
     let mut link = c.link();
-    if c.handle.is_some() {
+    if natural && c.handle.is_some() {
         link.push(' ');
     }
     let mut out = String::with_capacity(text.len() + link.len());
@@ -581,7 +591,7 @@ mod tests {
     #[test]
     fn insert_replaces_the_typed_query_only() {
         let c = cand(Some("Ada"), None, "https://ada.blyg.example.org/", 0);
-        let (t, caret) = insert("Thanks @ad, see you", 7, 10, &c);
+        let (t, caret) = insert("Thanks @ad, see you", 7, 10, &c, true);
         assert_eq!(t, "Thanks [Ada](https://ada.blyg.example.org/), see you");
         assert_eq!(&t[..caret], "Thanks [Ada](https://ada.blyg.example.org/)");
     }

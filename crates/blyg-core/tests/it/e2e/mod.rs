@@ -6566,6 +6566,26 @@ fn a_handle_publishes_as_the_h_card_the_preview_shows() {
         &blyg_render::RenderOpts::default(),
     );
     assert!(preview.html.contains(card), "{}", preview.html);
+
+    // Studio 0.66 (#158): natural grammar, published and previewed alike.
+    let natural = format!("@{handle}-driven, and @{handle}'s.");
+    let (_, sid) = published(
+        &b,
+        Kind::Fragment,
+        &format!("{} {natural}", tag("hcard-natural")),
+        None,
+    );
+    let doc = public_json(&format!("{}/items/{sid}.json", e2e().url));
+    let html = doc["content_html"].as_str().unwrap_or_default();
+    let want = format!("{card}-driven, and {card}'s.");
+    assert!(html.contains(&want), "{doc}");
+    let preview = blyg_render::render_preview(
+        &natural,
+        blyg_render::Kind::Fragment,
+        &book,
+        &blyg_render::RenderOpts::default(),
+    );
+    assert!(preview.html.contains(&want), "{}", preview.html);
     b.delete_contact(&c.id).expect("delete");
 }
 

@@ -192,7 +192,7 @@ pub fn render_preview(
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
     // h-cards with the `[[id]]` tokens below (`withMentionCards`).
-    let handles = handles::consume(md, &|h| resolver.contact(h));
+    let handles = handles::consume(md, &|h| resolver.contact(h), resolver.natural_handles());
     let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use blyg_core::Backend;
-use gpui_kit::base::input::{InputEvent, RopeExt as _, TextareaState};
+use gpui_kit::base::input::{InputEvent, RopeExt as _, TextareaState, Undo};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -97,10 +97,8 @@ pub struct Assist {
     /// The next edit is a paste: it never opens the mention popup.
     pasting: bool,
     mention: Option<MentionPopup>,
-    /// Where the last mention pick left the caret, and the text it left:
-    /// punctuation typed straight after closes up its space
-    /// (`mention::punctuation_after_pick`).
-    picked: Option<(usize, String)>,
+    /// A contact pick's close-up in progress (studio 0.66, [`PickMark`]).
+    pick_mark: Option<PickMark>,
     picker: Option<PickerPopup>,
     /// Bumped per picker search; a stale answer is dropped.
     pick_gen: usize,
@@ -158,7 +156,7 @@ impl Assist {
             last,
             pasting: false,
             mention: None,
-            picked: None,
+            pick_mark: None,
             picker: None,
             pick_gen: 0,
             menu: None,
@@ -185,7 +183,7 @@ impl Assist {
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         self.last = self.editor.read(cx).value().to_string();
         self.mention = None;
-        self.picked = None;
+        self.pick_mark = None;
         self.picker = None;
         self.menu = None;
         self.misspelled.clear();
@@ -231,17 +229,35 @@ impl Assist {
         self.menu = None;
         let old = std::mem::replace(&mut self.last, text);
         let text = &self.last;
-        // A mention pick's own change keeps its mark; the edit after it
-        // reads the mark once: punctuation typed there takes the pick's space.
-        let close_up = match self.picked.take() {
-            Some((at, after)) if *text == after => {
-                self.picked = Some((at, after));
-                None
+        // A contact pick's close-up (`PickMark`): the pick's own change keeps
+        // the mark; the edit after it reads it once, and punctuation typed
+        // there is undone and written again over the pick's space, so the
+        // two are one undo step.
+        let mut undo_key = false;
+        let mut close_up = None;
+        match self.pick_mark.take() {
+            Some(PickMark::Picked { at, after }) if *text == after => {
+                self.pick_mark = Some(PickMark::Picked { at, after });
             }
-            Some((at, after)) if old == after && !pasting => typed_at(&old, text, at, cursor)
-                .and_then(|typed| mention::punctuation_after_pick(&old, at, typed)),
-            _ => None,
-        };
+            Some(PickMark::Picked { at, after }) if old == after && !pasting => {
+                if let Some((fixed, caret)) = typed_at(&old, text, at, cursor)
+                    .and_then(|typed| mention::punctuation_after_pick(&old, at, typed))
+                {
+                    self.pick_mark = Some(PickMark::Closing {
+                        after,
+                        fixed,
+                        caret,
+                    });
+                    undo_key = true;
+                }
+            }
+            Some(PickMark::Closing {
+                after,
+                fixed,
+                caret,
+            }) if *text == after => close_up = Some((fixed, caret)),
+            _ => {}
+        }
 
         let mut search = false;
         if let Some(pk) = self.picker.as_mut() {
@@ -274,6 +290,10 @@ impl Assist {
         }
         if search {
             self.search_picker(cx);
+        }
+        if undo_key {
+            // The editor's own undo, so the key leaves its history too.
+            window.dispatch_action(Box::new(Undo), cx);
         }
         if let Some((new, caret)) = close_up {
             let current = self.last.clone();
@@ -528,11 +548,16 @@ impl Assist {
         if mention::query(&text, m.at, cursor).is_none() {
             return;
         }
-        let (new, caret) = mention::insert(&text, m.at, cursor, c);
-        let handle = c.handle.is_some();
+        // Studio 0.66 reads `@lin-driven`; an older one would publish it as text.
+        let natural = blyg_core::contacts::natural_grammar_at(&*self.backend);
+        let (new, caret) = mention::insert(&text, m.at, cursor, c, natural);
+        let close_up = natural && c.handle.is_some();
         self.splice(&text, &new, caret, window, cx);
-        if handle {
-            self.picked = Some((caret, new));
+        if close_up {
+            self.pick_mark = Some(PickMark::Picked {
+                at: caret,
+                after: new,
+            });
         }
     }
 
@@ -1072,6 +1097,24 @@ impl Assist {
             .into_any_element(),
         )
     }
+}
+
+/// A contact pick's close-up (studio 0.66, #158, `punctuationAfterPick`):
+/// a pick writes `@handle `, and punctuation typed straight after takes the
+/// space's place. GPUI's textarea has no `beforeinput` and no public undo
+/// grouping, so the key lands, is undone through the editor's own `Undo`,
+/// and the closed-up text is written over the pick in one replacement: one
+/// undo step, back to the pick.
+enum PickMark {
+    /// A pick left the caret at `at` and the text `after`.
+    Picked { at: usize, after: String },
+    /// Punctuation landed after the pick and its undo is on the way: when
+    /// the text is `after` again, it becomes `fixed`, caret at `caret`.
+    Closing {
+        after: String,
+        fixed: String,
+        caret: usize,
+    },
 }
 
 /// The one character `old -> new` typed at `at`, the caret now after it, if

@@ -259,7 +259,11 @@ handle reads in natural grammar: a word that names no contact falls back
 to its longest prefix ending before a `-` or `_` that does, so `@lin's`,
 `@lin-driven` and `@lin_ish` all name Lin, while a longer handle in the
 book (`@lin-k-led` → `lin-k`) still wins. Only `@` and the handle become
-the link; the rest of the word stays.
+the link; the rest of the word stays. Studio 0.56–0.65 publish only a
+whole-token handle, so the fallback runs only when
+`Resolver::natural_handles` says so: the app's resolver asks
+`blyg_core::contacts::natural_grammar` of the studio version `blyg.json`
+names (0.66 or later, or unknown).
 
 A line map follows every rewrite (`linemap.rs`), so each top-level block can
 carry `data-line="N"` (0-based source line) for source ↔ preview jumping.

@@ -365,10 +365,11 @@ quote it. It's never put in for you.
 - **Mentions.** Type `@` to pick from the blygs you know: the people in your
   blyg's address book first (studio 0.56's contacts), then subscriptions,
   blogroll and authors you read. Where your blyg turns `@handle` into a link
-  when it publishes (studio 0.56), picking a contact writes `@handle ` with a
-  space, and the popup shows the link it becomes; an apostrophe, hyphen or
-  closing punctuation typed straight after the pick takes the space's place,
-  so `@lin's notes` and an `@lin-driven agenda` both link Lin (studio 0.66).
+  when it publishes (studio 0.56), picking a contact writes `@handle`, and
+  the popup shows the link it becomes. On studio 0.66 or later the pick ends
+  in a space, and an apostrophe, hyphen or closing punctuation typed straight
+  after it takes the space's place, so `@lin's notes` and an `@lin-driven
+  agenda` both link Lin.
   Publish tells you about any handle it couldn't find. Otherwise it inserts a
   plain link to that blyg. Either way it notifies no one.
   The preview shows a contact's handle as the link it will become (the

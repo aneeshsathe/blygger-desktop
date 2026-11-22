@@ -38,6 +38,10 @@ pub struct StoreResolver {
     /// (`snapshot`: read now; `lazy`: on the first handle). Empty: every
     /// `@handle` stays prose, as publish leaves it on such a blyg.
     handles: OnceCell<Vec<blyg_core::contacts::Contact>>,
+    /// --- contacts --- Whether the blyg reads `@handle`s in natural grammar
+    /// (studio 0.66; `snapshot`: read now; `lazy`: on the first handle;
+    /// `new`: yes).
+    natural: OnceCell<bool>,
 }
 
 /// --- contacts --- The book, when publish would rewrite handles.
@@ -91,6 +95,7 @@ impl StoreResolver {
             mount: mount.to_string(),
             stack: RefCell::new(Vec::new()),
             handles: OnceCell::new(), // --- contacts ---
+            natural: OnceCell::new(),
         }
     }
 
@@ -104,6 +109,7 @@ impl StoreResolver {
             .collect();
         let r = Self::new(backend.items(), backend.reading(), &rss, mount);
         let _ = r.handles.set(handle_book(backend)); // --- contacts ---
+        let _ = r.natural.set(blyg_core::contacts::natural_grammar_at(backend));
         r
     }
 
@@ -270,6 +276,16 @@ impl Resolver for StoreResolver {
             name: c.display_name().to_string(),
             url: c.origin.clone(),
             ids: c.checked_ids().into_iter().map(str::to_string).collect(),
+        })
+    }
+
+    /// --- contacts --- Natural grammar (`@lin-driven`) only where the
+    /// studio reads it, so the preview never links what publish won't.
+    fn natural_handles(&self) -> bool {
+        *self.natural.get_or_init(|| {
+            self.source
+                .as_deref()
+                .is_none_or(blyg_core::contacts::natural_grammar_at)
         })
     }
 

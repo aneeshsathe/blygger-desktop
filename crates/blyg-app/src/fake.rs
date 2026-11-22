@@ -765,6 +765,16 @@ impl FakeBackend {
     pub fn set_rewrites_handles(&self, on: bool) {
         self.lock().book.rewrites = on;
     }
+    /// The studio version `blyg.json` names (`None`: unknown), which decides
+    /// whether handles read in natural grammar (studio 0.66).
+    #[cfg(test)]
+    pub fn set_studio_version(&self, version: Option<&str>) {
+        self.lock().site.update = version.map(|v| blyg_core::site::StudioUpdate {
+            current: Some(v.into()),
+            latest: v.into(),
+            checked_at: String::new(),
+        });
+    }
     /// Serve the blyg's Mentions lens (`None`: not served).
     #[cfg(test)]
     pub fn set_mentions_lens(&self, keys: Option<Vec<(SubId, RemoteId)>>) {
