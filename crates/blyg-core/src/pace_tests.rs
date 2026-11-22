@@ -353,7 +353,10 @@ fn the_specs_feed_fixtures_give_their_expected_order() {
             .collect();
         let order = pace_layered_order(&items);
         if ids(&order) != expected {
-            wrong.push(format!("{name}: expected {expected:?}, got {:?}", ids(&order)));
+            wrong.push(format!(
+                "{name}: expected {expected:?}, got {:?}",
+                ids(&order)
+            ));
         }
         let positions = reader_positions(&items);
         if ids(&positions).get(..expected.len()) != Some(&expected[..]) {

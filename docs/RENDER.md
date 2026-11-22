@@ -595,6 +595,14 @@ block's quotes inside the block, #105), so a re-sync is its own task. The
 rewrites follow the spec where the studio differs; studio 0.59 already
 bakes `data-blyg-label` exactly as rewritten.
 
+**Protocol 0.4 r21 rewrite** (2026-11-22, decision #114, §16.15; studio
+0.69's sanitizer). `blyg-render` keeps an integer `start` on `ol`, so
+`SPEC_REWRITES` restores it in `tr_sanitize_markdown`, whose 0.64.1
+fixture dropped it (the spec's reader case `whole-list-start-kept`,
+`docs/CONFORMANCE.md`). #114's other half, a partial quote of list items
+that keeps their structure, waits for the re-sync to 0.69. Until then
+Burrow flattens those items to paragraphs, which the spec also allows.
+
 Results (studio 0.68.0). Tests compare after collapsing whitespace between
 tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
@@ -603,7 +611,7 @@ tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 293 | 293 (272 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 293 | 293 (271 byte-identical; 6 rewritten to the spec: 5 to r15, 1 to r21; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |

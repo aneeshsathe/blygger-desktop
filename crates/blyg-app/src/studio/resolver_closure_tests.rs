@@ -69,6 +69,10 @@ fn quoting_itself_is_still_the_self_quote_refusal() {
 fn a_cycle_the_publishing_thread_is_not_in_publishes() {
     let r = StoreResolver::new(store(), vec![], &[], "/blyg").publishing(Some(OTHER));
     let out = publish(&r, OTHER, &format!("Another thread quotes B\n\n![[{B}]]"));
-    assert!(out.stats.unresolved.is_empty(), "{:?}", out.stats.unresolved);
+    assert!(
+        out.stats.unresolved.is_empty(),
+        "{:?}",
+        out.stats.unresolved
+    );
     assert_eq!(out.stats.quotes, 1);
 }
