@@ -26,7 +26,7 @@
 
 use std::path::Path;
 
-fn crates_dir() -> &'static Path {
+pub(crate) fn crates_dir() -> &'static Path {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
 }
 
@@ -55,7 +55,7 @@ fn rust_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
 
 /// The workspace members' sources, tests, examples, benches and build
 /// scripts, relative to `crates/` (a leftover crate directory isn't built).
-fn workspace_files(root: &Path) -> Vec<String> {
+pub(crate) fn workspace_files(root: &Path) -> Vec<String> {
     let manifest: toml::Table =
         toml::from_str(&std::fs::read_to_string(root.join("../Cargo.toml")).unwrap()).unwrap();
     let members = manifest["workspace"]["members"].as_array().unwrap();
@@ -78,7 +78,7 @@ fn workspace_files(root: &Path) -> Vec<String> {
 
 /// `src` with comments, string and char literals blanked to spaces (byte
 /// for byte, newlines kept), so offsets and line numbers still match.
-fn code_only(src: &str) -> String {
+pub(crate) fn code_only(src: &str) -> String {
     let b = src.as_bytes();
     let mut out = b.to_vec();
     let blank = |out: &mut Vec<u8>, from: usize, to: usize| {
@@ -171,12 +171,12 @@ fn code_only(src: &str) -> String {
     String::from_utf8(out).unwrap()
 }
 
-fn is_ident(c: u8) -> bool {
+pub(crate) fn is_ident(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
 /// The index just past the bracket that closes the one at `open`.
-fn close_of(code: &[u8], open: usize) -> usize {
+pub(crate) fn close_of(code: &[u8], open: usize) -> usize {
     let mut depth = 0i32;
     for (i, &c) in code.iter().enumerate().skip(open) {
         match c {
@@ -352,7 +352,7 @@ fn measured_names(code: &str) -> Vec<Measured> {
 
 /// The end of the statement starting at `from`: the first `;` (or the
 /// unmatched closing bracket) outside brackets.
-fn statement_end(code: &[u8], from: usize) -> usize {
+pub(crate) fn statement_end(code: &[u8], from: usize) -> usize {
     let mut depth = 0i32;
     for (i, &c) in code.iter().enumerate().skip(from) {
         match c {
@@ -464,7 +464,7 @@ fn compare_bound(cond: &str, measured: &[&str]) -> Option<&'static str> {
     }
 }
 
-fn line_of(code: &str, at: usize) -> usize {
+pub(crate) fn line_of(code: &str, at: usize) -> usize {
     code[..at].matches('\n').count() + 1
 }
 
