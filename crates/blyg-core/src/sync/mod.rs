@@ -2428,3 +2428,5 @@ mod read_held_tests; // --- read/unread ---
 
 #[cfg(test)]
 mod cadence_tests; // issue #71
+#[cfg(test)]
+mod churn_tests;
