@@ -489,6 +489,73 @@ mod tests {
         assert!(seen > 100, "the fixtures hold classes: {seen}");
     }
 
+    /// The classes only the page shell writes (`blyg_render::article_html`
+    /// and the stub citation): put round the body after it's cleaned, never
+    /// in a post's own HTML.
+    const SHELL_CLASSES: [&str; 6] = [
+        "compact",
+        "fragment",
+        "item-content",
+        "label",
+        "stub-cite",
+        "thread",
+    ];
+
+    /// Every class blyg-render writes into a post's body survives on its
+    /// own (no substring luck); the shell's are written only by the shell
+    /// and appear in no studio body.
+    #[test]
+    fn every_class_the_renderer_writes_in_a_body_survives() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../blyg-render/src");
+        let mut body = std::collections::BTreeSet::new();
+        for f in std::fs::read_dir(&src).unwrap() {
+            let path = f.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            let text = std::fs::read_to_string(&path).unwrap();
+            for chunk in text.split("class=\\\"").skip(1) {
+                let Some(end) = chunk.find("\\\"") else { continue };
+                let value = &chunk[..end];
+                if value.contains('{') || value.contains('"') {
+                    continue; // built from a variable; its values are literals elsewhere
+                }
+                for c in value.split_whitespace() {
+                    if name == "shell.rs" {
+                        assert!(SHELL_CLASSES.contains(&c), "shell.rs writes {c}: list it");
+                    } else {
+                        body.insert(c.to_string());
+                    }
+                }
+            }
+        }
+        assert!(body.len() > 15, "{body:?}");
+        for c in &body {
+            assert!(
+                known_classes(c).as_deref() == Some(c.as_str()),
+                "the renderer writes class {c} in a body; the sanitizer drops it"
+            );
+            let out = clean(&format!("<p class=\"{c}\">x</p>"));
+            assert_eq!(out, format!("<p class=\"{c}\">x</p>"));
+        }
+        // And no studio body (the parity fixtures) carries a shell class.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../blyg-render/tests/fixtures/parity");
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let path = f.unwrap().path();
+            let fixture: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let Some(html) = fixture["html"].as_str() else {
+                continue;
+            };
+            for (_, attr, value) in attrs(html) {
+                if attr == "class" {
+                    for c in value.split_whitespace() {
+                        assert!(!SHELL_CLASSES.contains(&c), "{path:?}: a body with {c}");
+                    }
+                }
+            }
+        }
+    }
+
     /// `(tag, attribute, value)` for each double-quoted attribute.
     fn attrs(html: &str) -> Vec<(String, String, String)> {
         let mut out = Vec::new();

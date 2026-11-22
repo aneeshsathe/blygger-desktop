@@ -81,9 +81,14 @@ fn inline_importmap(html: &str) -> &str {
 fn the_page_loads_under_a_content_security_policy() {
     let html = include_str!("../www/index.html");
     let map = inline_importmap(html);
-    let hash = base64::engine::general_purpose::STANDARD.encode(Sha256::digest(map.as_bytes()));
+    let sha = |s: &str| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(s.as_bytes()));
+    let hash = sha(map);
+    // A `srcdoc` frame (the preview, a version as published) inherits this
+    // policy on top of its own nonce policy, so its one script (fixed text;
+    // a meta policy can't take a per-render nonce) is named by its hash too.
+    let preview = sha(&blyg_render::preview_script());
     let csp = format!(
-        "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self' 'wasm-unsafe-eval' 'sha256-{hash}'; object-src 'none'; base-uri 'none'\">"
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self' 'wasm-unsafe-eval' 'sha256-{hash}' 'sha256-{preview}'; object-src 'none'; base-uri 'none'; form-action 'self'; connect-src 'self'\">"
     );
     assert!(html.contains(&csp), "index.html needs {csp}");
     // Before any script, so it covers them all.

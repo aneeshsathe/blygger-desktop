@@ -96,6 +96,9 @@ const b = client(env('LIVE_URL_B'), 'LIVE_TOKEN_B_FILE');
 await a.call('PATCH', '/api/settings', { backgroundRules: { superseded: false } });
 for (let i = 1; i <= 3; i++) { await b.post(`Sample note B0${i}: invented notes about tide pools.`); await sleep(1100); }
 for (let i = 1; i <= 3; i++) { await a.post(`Own post A0${i}: invented notes on example topics.`); await sleep(1100); }
+// For the preview under the page's Content-Security-Policy: a bare video
+// link (the preview's own script turns it into a poster) and a formula.
+await a.post('Own post A05 with a video and $e^x$:\n\nhttps://www.youtube.com/watch?v=Qa1b2C3d4E5');
 let sub = await a.call('POST', '/api/subscriptions', { url: b.base });
 if (sub?.needsConfirm) sub = await a.call('POST', '/api/subscriptions', { url: b.base, confirm: true });
 const subs = await a.all('/api/subscriptions');
@@ -131,6 +134,10 @@ try {
     if (u.pathname.startsWith('/api/')) answers.push({ at: Date.now(), what: `${res.request().method()} ${u.pathname}`, status: res.status() });
   });
   page.on('pageerror', (e) => { console.log(`page error: ${e.message}`); failed++; });
+  // Anything the policy refuses, in the page or a frame, is a failure.
+  page.on('console', (m) => {
+    if (/Content.Security.Policy/i.test(m.text())) { console.log(`FAIL: CSP: ${m.text()}`); failed++; }
+  });
   await page.goto(`${ORIGIN}/burrow/`);
   await page.waitForSelector('#list .row', { timeout: 30_000 });
   await sleep(5000); // the first refresh, and the first scheduled check
@@ -213,6 +220,19 @@ try {
   times.withdraw = await timed('a withdrawal',
     () => a.call('POST', `/api/items/${a02.id}/withdraw`, { expectedRevision: a02.revision }),
     async () => (await rows()).some((r) => r.includes('A02') && /withdrawn/i.test(r)));
+
+  // ---------------------------------------------------------- preview
+  // The preview is a srcdoc frame: it inherits the page's policy on top of
+  // its own, so its script must be allowed by both. It ran when the bare
+  // video link became the poster.
+  await page.click('#list .row:has-text("A05")');
+  await page.click('[data-pa="preview"]');
+  const poster = await page.frameLocator('#pv').locator('figure.blyg-yt .blyg-yt-poster')
+    .waitFor({ timeout: 10_000 }).then(() => true, () => false);
+  const formula = await page.frameLocator('#pv').locator('math').count().catch(() => 0);
+  if (poster && formula > 0) console.log('ok: the preview\'s script runs under the page\'s policy (video poster, formula drawn)');
+  else { console.log(`FAIL: preview: poster ${poster}, formulas ${formula}`); failed++; }
+  await page.click('[data-pa="preview"]');
 
   // ---------------------------------------------------------- reading
   await page.click('.views [data-view="reading"]');
