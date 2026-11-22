@@ -15,7 +15,7 @@ commit dc632c5 (branch ext/lineage-glyph, PR #53, studio 0.39.0; same
 license). The Rust types are in `src/lineage.rs`; its tests check them
 against this file, and the e2e checks a real studio's answers against it.
 
-`openapi-current.json` is the newest studio's contract (6.1.0, studio v0.68.0,
+`openapi-current.json` is the newest studio's contract (6.2.0, studio v0.69.0,
 same license). The e2e (`tests/it/e2e`) checks a real studio's answers against it
 (`contract::current()`); the mock keeps to `openapi.json`, the oldest contract
 Burrow supports, so it isn't taught every new field.

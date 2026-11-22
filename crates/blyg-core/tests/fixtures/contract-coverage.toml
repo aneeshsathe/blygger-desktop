@@ -5,8 +5,8 @@
 # openapi.json over openapi-current.json, move this pair (and the docs that
 # name it), then write the tests the coverage check lists, then build.
 [target]
-studio = "0.68.0"
-contract = "6.1.0"
+studio = "0.69.0"
+contract = "6.2.0"
 
 # Items Burrow doesn't use, one reason each ("Burrow doesn't use X because …").
 # An entry fails once a test names the item.

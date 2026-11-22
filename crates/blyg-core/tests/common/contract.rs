@@ -27,7 +27,7 @@ pub fn contract() -> &'static Contract {
 }
 
 /// The newest studio's contract (`tests/fixtures/openapi-current.json`,
-/// 6.1.0 from studio v0.68.0). The e2e checks a real studio's answers
+/// 6.2.0 from studio v0.69.0). The e2e checks a real studio's answers
 /// against it; the mock keeps to 5.0.0 (`contract()`), the oldest studio
 /// Burrow supports, so it isn't taught every new field.
 pub fn current() -> &'static Contract {
