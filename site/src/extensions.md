@@ -39,6 +39,43 @@ It never adds frontmatter to a note (any frontmatter it finds is left as it
 is), and it never deletes a note. If a note changed on disk after you opened
 it, your save is refused, so it never overwrites the other change.
 
+### Turning it on
+
+The easy way: **Settings › Notes folders › Add folder…**, then pick one or
+more folders. Burrow writes the config lines for you and asks for permission
+to use those folders.
+
+Or add the lines to the config file (**Burrow › Open Config File**) yourself,
+then reload it (⇧⌘,):
+
+```text
+extension = markdown-notes
+extension-setting = markdown-notes vault=~/Notes
+extension-setting = markdown-notes vault-work=~/Work/Vault
+```
+
+`vault` is your first folder of notes, and each `vault-<label>` adds another
+(the label is lowercase letters, digits and dashes). There's no default: with
+no folder, the Notes tab offers **Choose a folder…**, and Burrow never reads a
+folder you didn't pick. It has two more settings:
+
+```text
+# where new notes go, inside each folder (default: the top of the folder)
+extension-setting = markdown-notes folder=Inbox
+# how often it looks for changed notes, in milliseconds (default 2000)
+extension-setting = markdown-notes poll-ms=5000
+```
+
+## cross-post
+
+cross-post puts a post you've published on Substack Notes, Bluesky or
+Farcaster too: its opening paragraph and the link back to your blyg. It runs
+in Burrow's browser pane, where you're signed in to each site yourself, and it
+never posts without you clicking Post (or Cast). It works on macOS and on
+Windows. It needs no API key, app
+password or Farcaster signer: it fills in the same composer you would use by
+hand.
+
 ### On Windows, step by step
 
 This is the whole path on Windows, from nothing to a first cross-post. The
@@ -96,43 +133,6 @@ A few things to know on Windows:
   what the page had (never your text or the page's). See
   [Before you rely on it](#before-you-rely-on-it).
 - Burrow waits at least 60 seconds between two cross-posts to the same site.
-
-### Turning it on
-
-The easy way: **Settings › Notes folders › Add folder…**, then pick one or
-more folders. Burrow writes the config lines for you and asks for permission
-to use those folders.
-
-Or add the lines to the config file (**Burrow › Open Config File**) yourself,
-then reload it (⇧⌘,):
-
-```text
-extension = markdown-notes
-extension-setting = markdown-notes vault=~/Notes
-extension-setting = markdown-notes vault-work=~/Work/Vault
-```
-
-`vault` is your first folder of notes, and each `vault-<label>` adds another
-(the label is lowercase letters, digits and dashes). There's no default: with
-no folder, the Notes tab offers **Choose a folder…**, and Burrow never reads a
-folder you didn't pick. It has two more settings:
-
-```text
-# where new notes go, inside each folder (default: the top of the folder)
-extension-setting = markdown-notes folder=Inbox
-# how often it looks for changed notes, in milliseconds (default 2000)
-extension-setting = markdown-notes poll-ms=5000
-```
-
-## cross-post
-
-cross-post puts a post you've published on Substack Notes, Bluesky or
-Farcaster too: its opening paragraph and the link back to your blyg. It runs
-in Burrow's browser pane, where you're signed in to each site yourself, and it
-never posts without you clicking Post (or Cast). It works on macOS and on
-Windows. It needs no API key, app
-password or Farcaster signer: it fills in the same composer you would use by
-hand.
 
 ### Turning it on
 
