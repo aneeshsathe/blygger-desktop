@@ -18,7 +18,8 @@ section: Added
   blyg keeps a dictionary shared with Studio and other clients. Burrow's
   spellcheck accepts every word in it, Learn Spelling in the editor adds the
   word there too, and Blyg › Dictionary… lists your words, adds and takes
-  them out (a write that meets another client's merges onto it). Installed
+  them out (a write that meets another client's merges onto it; one made
+  offline waits on this computer and is sent when the blyg is back). Installed
   sets are listed by name (`crates/blyg-app/src/dictionary.rs`,
   `crates/blyg-core/src/dictionary.rs`).
 - **Blyg › AI on Your Blyg…: studio 0.69's settings.** A text helpers model,

@@ -7,7 +7,9 @@
 //! word in it, and Learn Spelling in the editor adds the word here as well
 //! as to the system's list, as Studio's "add to dictionary" does. The
 //! dictionary is read when the window opens, when this sheet opens, and
-//! again after a while on Reading's refreshes ([`READ_EVERY`]).
+//! again after a while on Reading's refreshes ([`READ_EVERY`]). A word
+//! learned or edited offline is kept on this computer
+//! (`blyg_core::dictionary::Pending`) and sent by the next read.
 //!
 //! Keys: type a word and ⏎ adds it; ↑/↓ choose one of your words, ⌘⌫
 //! takes it out; esc closes. A blyg without a dictionary (its capabilities
@@ -112,8 +114,9 @@ impl MainView {
         crate::composer::set_on_learn(
             std::sync::Arc::new(move |word: String| {
                 let b = learn.clone();
-                // A learned word goes on to the blyg off the UI thread; a
-                // blyg without a dictionary (or offline) keeps the system's.
+                // A learned word goes on to the blyg off the UI thread.
+                // Offline, the backend keeps it and the next read sends it;
+                // a blyg without a dictionary leaves the system's alone.
                 let _ = std::thread::Builder::new()
                     .name("blygger-dictionary-learn".into())
                     .spawn(move || {
@@ -217,7 +220,14 @@ impl MainView {
                 Err(e) => {
                     if let Some(s) = v.dictionary_sheet() {
                         s.busy = false;
-                        s.error = Some(format!("Couldn't save: {e}"));
+                        s.error = Some(match e {
+                            // Queued: the next read of the dictionary sends it.
+                            blyg_core::CoreError::Offline => {
+                                "Offline: kept on this computer, and sent when your blyg is back."
+                                    .into()
+                            }
+                            e => format!("Couldn't save: {e}"),
+                        });
                     }
                     cx.notify();
                 }

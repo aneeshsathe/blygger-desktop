@@ -129,17 +129,89 @@ impl Edit {
 /// studio's order).
 pub fn apply(words: &[String], edit: &Edit) -> Vec<String> {
     let w = edit.word();
-    let mut out: Vec<String> = match edit {
+    sorted(match edit {
         Edit::Add(_) if words.contains(&w) => words.to_vec(),
         Edit::Add(_) => words.iter().cloned().chain([w]).collect(),
         Edit::Remove(_) => words.iter().filter(|x| **x != w).cloned().collect(),
-    };
-    out.sort_by(|a, b| {
+    })
+}
+
+/// The studio's order: without regard to case, then as written.
+fn sorted(mut words: Vec<String>) -> Vec<String> {
+    words.sort_by(|a, b| {
         a.to_lowercase()
             .cmp(&b.to_lowercase())
             .then_with(|| a.cmp(b))
     });
-    out
+    words
+}
+
+/// The store meta key holding edits made while the blyg couldn't be
+/// reached ([`Pending`], JSON).
+pub const PENDING_META: &str = "dictionary.pending";
+
+/// Edits waiting for the blyg: Learn Spelling (or the Dictionary sheet)
+/// offline. Kept in the store's meta ([`PENDING_META`]) and sent, applied
+/// onto what the blyg holds then, by the next read of the dictionary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Pending(Vec<Edit>);
+
+impl Pending {
+    /// From the meta's value; missing or unreadable is an empty queue.
+    pub fn parse(meta: Option<&str>) -> Pending {
+        let Some(v) = meta.and_then(|m| serde_json::from_str::<Value>(m).ok()) else {
+            return Pending::default();
+        };
+        let edit = |e: &Value| -> Option<Edit> {
+            let w = e.get("word")?.as_str()?.to_string();
+            match e.get("op")?.as_str()? {
+                "add" => Some(Edit::Add(w)),
+                "remove" => Some(Edit::Remove(w)),
+                _ => None,
+            }
+        };
+        Pending(
+            v.as_array()
+                .map(|a| a.iter().filter_map(edit).collect())
+                .unwrap_or_default(),
+        )
+    }
+
+    /// The meta's value.
+    pub fn to_meta(&self) -> String {
+        Value::Array(
+            self.0
+                .iter()
+                .map(|e| {
+                    let op = if matches!(e, Edit::Add(_)) { "add" } else { "remove" };
+                    json!({ "op": op, "word": e.word() })
+                })
+                .collect(),
+        )
+        .to_string()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn edits(&self) -> &[Edit] {
+        &self.0
+    }
+
+    /// One more; it replaces an earlier edit of the same word.
+    pub fn push(&mut self, edit: Edit) {
+        let w = edit.word();
+        self.0.retain(|e| e.word() != w);
+        self.0.push(edit);
+    }
+
+    /// `words` with every queued edit applied, in order.
+    pub fn apply(&self, words: &[String]) -> Vec<String> {
+        self.0
+            .iter()
+            .fold(sorted(words.to_vec()), |out, e| apply(&out, e))
+    }
 }
 
 /// The `PUT /api/dictionary/{source}` body.

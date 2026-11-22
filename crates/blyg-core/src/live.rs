@@ -266,6 +266,51 @@ impl LiveBackend {
         self.engine.store.provenance(id)
     }
 
+    /// --- dictionary --- Send the queued edits (studio 0.69): read the
+    /// dictionary, apply them onto the owner's words, write back from that
+    /// revision; a 409 is another client's write, merged onto and sent
+    /// again (three tries). The queue is cleared once stored, kept while the
+    /// blyg can't be reached, and dropped when the blyg keeps no dictionary
+    /// or refuses the words (the error says why).
+    fn send_dictionary(
+        &self,
+        queued: &crate::dictionary::Pending,
+    ) -> Result<Option<crate::dictionary::Dictionary>> {
+        use crate::api::dictionary::PutDictionary;
+        use crate::dictionary::{OWNER, PENDING_META, SOURCE_WORDS_MAX};
+        let store = &self.engine.store;
+        let sent = (|| {
+            let api = &self.e().api;
+            let Some(mut d) = self.e().track(api.dictionary())? else {
+                return Ok(None);
+            };
+            for _ in 0..3 {
+                let words = queued.apply(d.owner_words());
+                if words.len() > SOURCE_WORDS_MAX {
+                    return Err(CoreError::Other(format!(
+                        "your dictionary holds at most {SOURCE_WORDS_MAX} words of your own"
+                    )));
+                }
+                match self
+                    .e()
+                    .track(api.put_dictionary_source(OWNER, &words, d.revision))?
+                {
+                    PutDictionary::Stored(now) => return Ok(Some(now)),
+                    PutDictionary::Conflict(Some(now)) => d = now,
+                    PutDictionary::Conflict(None) => break,
+                }
+            }
+            Err(CoreError::RevisionConflict)
+        })();
+        // An edit queued meanwhile (another thread) stays for the next send.
+        if !matches!(sent, Err(CoreError::Offline))
+            && store.meta(PENDING_META).as_deref() == Some(queued.to_meta().as_str())
+        {
+            store.delete_meta(PENDING_META)?;
+        }
+        sent
+    }
+
     /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
     pub fn server_hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
@@ -2446,42 +2491,36 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.agentic_edition(feed))
     }
 
+    /// The read also sends edits made offline (`dictionary::Pending`).
     fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
-        self.e().track(self.e().api.dictionary())
+        let queued = crate::dictionary::Pending::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::PENDING_META)
+                .as_deref(),
+        );
+        if queued.is_empty() {
+            return self.e().track(self.e().api.dictionary());
+        }
+        self.send_dictionary(&queued)
     }
 
+    /// Queued first, so a blyg that can't be reached gets it on the next
+    /// read; `CoreError::Offline` then says so.
     fn edit_dictionary(
         &self,
         edit: &crate::dictionary::Edit,
     ) -> Result<crate::dictionary::Dictionary> {
-        use crate::api::dictionary::PutDictionary;
-        use crate::dictionary::{OWNER, SOURCE_WORDS_MAX, apply, word_problem};
+        use crate::dictionary::{PENDING_META, Pending, word_problem};
         if let Some(p) = word_problem(&edit.word()) {
             return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
         }
-        let api = &self.e().api;
-        let mut d = self
-            .e()
-            .track(api.dictionary())?
-            .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))?;
-        // A conflict is another client's write: merge onto it and go again.
-        for _ in 0..3 {
-            let words = apply(d.owner_words(), edit);
-            if words.len() > SOURCE_WORDS_MAX {
-                return Err(CoreError::Other(format!(
-                    "your dictionary holds at most {SOURCE_WORDS_MAX} words of your own"
-                )));
-            }
-            match self
-                .e()
-                .track(api.put_dictionary_source(OWNER, &words, d.revision))?
-            {
-                PutDictionary::Stored(now) => return Ok(now),
-                PutDictionary::Conflict(Some(now)) => d = now,
-                PutDictionary::Conflict(None) => break,
-            }
-        }
-        Err(CoreError::RevisionConflict)
+        let store = &self.engine.store;
+        let mut queued = Pending::parse(store.meta(PENDING_META).as_deref());
+        queued.push(edit.clone());
+        store.set_meta(PENDING_META, &queued.to_meta())?;
+        self.send_dictionary(&queued)?
+            .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))
     }
 
     fn summarize_catch_up(
