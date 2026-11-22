@@ -6,7 +6,7 @@
 
 use crate::api::auth::Credential;
 use crate::api::{Api, Prune};
-use crate::shelf::{BASE_META, Entry, Remote, SERVED_META};
+use crate::shelf::{BASE_META, Entry, Remote, SERVED_META, SyncState, WRITES_META};
 use crate::store::{OpKind, Store};
 use crate::sync::{Engine, SyncOptions};
 
@@ -14,6 +14,7 @@ use crate::sync::{Engine, SyncOptions};
 fn engine() -> Engine {
     let store = Store::open_in_memory().unwrap();
     store.set_meta(SERVED_META, "1").unwrap();
+    store.set_meta(WRITES_META, "1").unwrap();
     store
         .set_entry_on_shelf(&Entry::new("s1", "A"), true)
         .unwrap();
@@ -35,6 +36,25 @@ fn a_shelf_change_waits_while_the_contract_is_newer() {
         e.next_op(None, true).unwrap().map(|o| o.kind),
         Some(OpKind::Shelf)
     );
+}
+
+/// A sign-in that may read Saved (`getShelf`) but not write it
+/// (`putShelf`, owner:manage): the change is held here as on a newer
+/// contract, and Saved says why rather than "syncing".
+#[test]
+fn a_read_only_sign_in_holds_a_shelf_change_and_says_so() {
+    let e = engine();
+    e.store.set_lists_prune(Prune::Allowed);
+    assert_eq!(e.shelf_state(), SyncState::Waiting, "a writer sends it");
+    e.store.set_meta(WRITES_META, "0").unwrap();
+    assert!(e.shelf_served(), "still read");
+    assert!(e.next_op(None, true).unwrap().is_none(), "held");
+    assert!(e.earliest_due().is_none(), "the worker doesn't wake for it");
+    assert!(e.store.shelf_waiting(), "still queued");
+    assert_eq!(e.shelf_state(), SyncState::HeldReadOnly);
+    e.store.set_meta(WRITES_META, "1").unwrap();
+    e.store.set_lists_prune(Prune::Withheld);
+    assert_eq!(e.shelf_state(), SyncState::HeldNewer);
 }
 
 #[test]

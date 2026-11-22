@@ -5,6 +5,7 @@
 
 use crate::common::*;
 use blyg_core::api::Api;
+use blyg_core::*;
 
 fn env_at(contract: &str, ops: &[&str]) -> Env {
     let env = Env::new();
@@ -77,6 +78,84 @@ fn mention_groups_follow_their_operations() {
     assert!(Api::new(&env.mock.url, TOKEN).serves_groups().unwrap());
     let env = env_at("6.1.0", &["listMentionGroups"]);
     assert!(!Api::new(&env.mock.url, TOKEN).serves_groups().unwrap());
+}
+
+/// Saved is read where `getShelf` is listed (owner:read) and written only
+/// where `putShelf` is too (owner:manage): a read-only sign-in still reads it.
+#[test]
+fn saved_reads_follow_get_shelf_and_writes_put_shelf() {
+    use blyg_core::shelf;
+    let caps = |ops: &[&str]| serde_json::json!({ "operations": ops });
+    assert!(shelf::serves(&caps(&["getShelf"])));
+    assert!(!shelf::takes(&caps(&["getShelf"])));
+    assert!(shelf::takes(&caps(&["getShelf", "putShelf"])));
+    assert!(!shelf::serves(&caps(&["putShelf"])));
+
+    let env = env_at("6.1.0", &["getShelf"]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(api.serves_shelf().unwrap());
+    assert!(!api.takes_shelf().unwrap());
+}
+
+/// The Background lens is read with `listReading` (owner:read, its
+/// `background` filter); placing a post needs `setReadingPlacement`
+/// (owner:manage).
+#[test]
+fn background_reads_follow_list_reading_and_placing_set_reading_placement() {
+    let env = env_at("6.1.0", &[]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(api.serves_background().unwrap(), "listReading is listed");
+    assert!(!api.places_background().unwrap());
+    let env = env_at("6.1.0", &["setReadingPlacement"]);
+    assert!(
+        Api::new(&env.mock.url, TOKEN)
+            .places_background()
+            .unwrap()
+    );
+}
+
+fn lens_entry(rid: &str) -> serde_json::Value {
+    serde_json::json!({
+        "imported": { "subscriptionId": "S1", "remoteId": rid },
+        "background": { "reasons": ["minor"] }
+    })
+}
+
+/// A read-only sign-in shows the blyg's Background, and offers no
+/// placement (that write would be refused).
+#[test]
+fn a_read_only_sign_in_shows_background_but_places_nothing() {
+    use blyg_core::background::{Key, Placement};
+    let env = env_at("6.1.0", &[]);
+    env.mock.state().background_lens = Some(vec![lens_entry("R1")]);
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    assert!(b.background_served());
+    assert!(!b.background_placing());
+    let set = b.background_set().expect("the lens was read");
+    assert!(set.entries.iter().any(|(k, _)| k.1.to_string() == "R1"));
+    let key: Key = ("S1".into(), "R1".into());
+    assert!(
+        b.set_reading_placement(&key, false, Some(Placement::Foreground))
+            .is_err()
+    );
+    assert_eq!(env.mock.state().count("PUT /api/reading/placement"), 0);
+}
+
+/// A studio before Background refuses the lens's filter: no Background here.
+#[test]
+fn a_studio_without_the_lens_has_no_background() {
+    let env = env_at("6.1.0", &[]);
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    assert!(!b.background_served());
+    assert!(b.background_set().is_none());
 }
 
 /// `wholeBlyg` on `POST /api/subscriptions` has no operation of its own.
