@@ -940,10 +940,12 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-c"))
         }
         "cross-post" => e.cx.simulate_keystrokes("escape"),
-        // The Post menu's item (the palette has ⇧⌘P now).
-        "auto-crosspost" | "extensions" => {
-            e.cx.dispatch_action(crate::app::extensions::ShowExtensions)
+        // ⇧⌘P: the command palette, with the open post's on/off rows.
+        "auto-crosspost" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
         }
+        // The Post menu's item (the palette has ⇧⌘P now).
+        "extensions" => e.cx.dispatch_action(crate::app::extensions::ShowExtensions),
         // Manage extensions… is the palette's last row.
         "manage" => e.cx.simulate_keystrokes("up enter"),
         "consent" => {
@@ -1791,6 +1793,47 @@ fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
         "the ring moves to the status bar"
     );
 
+    // Automatic cross-post: the tour runs a sample cross-post, the
+    // published sample post is open with one site on, and ⇧⌘P lists its
+    // on/off rows (user testing, 0.28: the step showed none).
+    enter(&mut e, "auto-crosspost");
+    wait(&mut e, "the sample cross-post's sites", |e| {
+        e.view
+            .read_with(e.cx, |v, _| v.auto_crosspost_sites().len() >= 3)
+    });
+    do_step(&mut e, "auto-crosspost");
+    e.cx.run_until_parked();
+    assert!(tour_done(&mut e));
+    let auto: Vec<String> = e.view.read_with(e.cx, |v, _| {
+        v.cmd_palette
+            .open
+            .as_ref()
+            .map(|o| {
+                o.entries
+                    .iter()
+                    .filter(|x| x.label.starts_with("Cross-post automatically to"))
+                    .map(|x| x.label.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    assert_eq!(auto.len(), 3, "{auto:?}");
+    assert_eq!(
+        auto.iter().filter(|l| l.ends_with(": on")).count(),
+        1,
+        "one site on in the sample: {auto:?}"
+    );
+    // Nothing loads a real website from the tour: a macro is refused.
+    let started = e.view.update_in(e.cx, |v, window, cx| {
+        let m = v.auto_crosspost_sites().remove(0);
+        v.ext_run_macro_for(m.ext, m.spec.id, None, window, cx)
+    });
+    assert!(!started, "the tour runs no macro");
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| !v.browser.automation.running())
+    );
+
     // ⇧⌘P, then Manage: Turn off and Forget permissions on the sample.
     enter(&mut e, "extensions");
     do_step(&mut e, "extensions");
@@ -2335,7 +2378,14 @@ fn the_extensions_tour_teaches_automatic_cross_posting() {
         .find(|s| s.id == "auto-crosspost")
         .expect("a step for automatic cross-posting");
     assert_eq!(step.since, "0.28.0");
-    assert!(matches!(step.setup, steps::Setup::Posts));
+    // A sample post with cross-post rows to show, and ⇧⌘P, which shows
+    // them (the Post menu's Extensions palette had none in the tour).
+    assert!(matches!(step.setup, steps::Setup::AutoCrossPost));
+    assert_eq!(step.keys, &[steps::Key::Palette]);
+    assert_eq!(
+        step.key_label.on(crate::platform_text::Platform::Mac),
+        "⇧⌘P"
+    );
     let tour = TOURS
         .iter()
         .find(|t| t.id == "extensions")

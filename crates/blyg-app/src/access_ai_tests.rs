@@ -349,3 +349,42 @@ fn an_unedited_draft_publishes_as_generated_and_no_ai_means_a_plain_publish(
     cx.run_until_parked();
     assert!(toast(&view, cx).contains("change-notes model"));
 }
+
+/// User testing, 0.28: studio 0.69's rows (the text helpers' model, the
+/// Agentic feed's tab name) were below the fold, and the header spoke of
+/// models.json and wrangler. They come first now, under a header in plain
+/// words.
+#[gpui_kit::test]
+fn server_ai_shows_the_new_rows_first_in_plain_words(cx: &mut TestAppContext) {
+    use super::server_ai::{MODELS_FROM, MODELS_FROM_LOCAL, ROWS, Row};
+    let at = |r: Row| ROWS.iter().position(|x| *x == r).unwrap();
+    assert!(at(Row::Model(AiFunction::Helpers)) < at(Row::Model(AiFunction::Changelog)));
+    assert!(at(Row::Model(AiFunction::Feed)) < at(Row::Model(AiFunction::Changelog)));
+    for t in [MODELS_FROM, MODELS_FROM_LOCAL] {
+        for jargon in ["models.json", "wrangler", "Worker"] {
+            assert!(!t.contains(jargon), "{t}");
+        }
+    }
+    let (view, fake, cx) = setup(cx);
+    fake.set_server_ai(|s| {
+        s.model_helpers = Some("claude-haiku-4-5".into());
+        s.agentic_title = Some("Agentic".into());
+    });
+    cx.dispatch_action(ShowServerAi);
+    settle(cx, |cx| {
+        view.read_with(
+            cx,
+            |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
+        )
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let notes = Box::leak(
+        format!("server-ai-row-{}", at(Row::Model(AiFunction::Changelog))).into_boxed_str(),
+    );
+    let notes = cx.debug_bounds(notes).expect("the change notes' row");
+    let tab = cx
+        .debug_bounds("server-ai-agentic-title")
+        .expect("the tab name");
+    assert!(tab.top() < notes.top(), "{tab:?} above {notes:?}");
+}

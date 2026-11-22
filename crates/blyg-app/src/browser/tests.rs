@@ -323,7 +323,18 @@ mod pane {
         view.read_with(cx, |v, _| {
             assert!(v.browser.open, "the pane stays open");
             assert_eq!(v.browser.page.url, "https://blyg.example.com/f/abc/");
+            // User testing, 0.28: the first Esc looked like it did nothing.
+            assert_eq!(
+                v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
+                Some(crate::app::esc::PANE_ESC_HINT.get()),
+                "a hint says what the second Esc does"
+            );
         });
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Windows, || crate::app::esc::PANE_ESC_HINT.get()),
+            "Keyboard back in Burrow · Esc again closes the pane"
+        );
     }
 
     /// --- esc --- Windows: with the command palette open over the pane,

@@ -341,4 +341,23 @@ mod tests {
         assert_eq!(f.demo.hold_ms, 0);
         assert!(!f.browser.macro_trace);
     }
+
+    /// `BLYGGER_TEST_SPELLING` is read here, so a debug build shows
+    /// Windows' wording on a Mac (`burrow-verify.sh` scenes), not only tests.
+    #[test]
+    fn the_test_spelling_is_a_dev_flag() {
+        use crate::platform_text::Platform;
+        assert_eq!(
+            parse(&[("BLYGGER_TEST_SPELLING", "windows")]).spelling,
+            Some(Platform::Windows)
+        );
+        assert_eq!(
+            parse(&[("BLYGGER_TEST_SPELLING", "Mac")]).spelling,
+            Some(Platform::Mac)
+        );
+        assert_eq!(parse(&[]).spelling, None);
+        let bad =
+            DevFlags::parse(&|k| (k == "BLYGGER_TEST_SPELLING").then(|| OsString::from("linux")));
+        assert!(bad.is_err_and(|e| e.contains("BLYGGER_TEST_SPELLING=linux")));
+    }
 }

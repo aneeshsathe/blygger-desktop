@@ -735,7 +735,8 @@ mod macros {
     use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
 
     const XP: &str = blyg_ext_crosspost::NAME;
-    const ROW: &str = "Cross-post to Substack Notes… ↗ Substack Notes";
+    // The macro's title names its site: the row doesn't say it twice.
+    const ROW: &str = "Cross-post to Substack Notes…";
     const POST: &str = "Tide pools are small oceans that forget, twice a day, that they \
                         belong to a larger one.\n\nThe second paragraph stays home.\n";
     const TEMPLATE: &str = "{{excerpt}} (via {{permalink}})";
@@ -1105,6 +1106,116 @@ mod macros {
             })
         });
         assert_eq!(fake.item(&post).unwrap().status, Status::Public);
+    }
+
+    /// Every site cross-post knows granted: its rows fill the palette.
+    fn config_all_sites() -> String {
+        format!(
+            "{}extension-allow = {XP} browser.automate:https://bsky.app\n\
+             extension-allow = {XP} browser.automate:https://farcaster.xyz\n",
+            config(true)
+        )
+    }
+
+    /// --- auto cross-post --- The Publish sheet's "Then cross-post to"
+    /// chips take keys: ⌥1 (Alt+1 on Windows) ticks the first site and
+    /// again unticks it, while the note field keeps the keyboard, and the
+    /// chip and the key row say so.
+    #[gpui_kit::test]
+    fn the_publish_sheets_cross_post_chips_take_keys(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config_all_sites());
+        stub_pane(cx);
+        started(&view, cx);
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| {
+            v.sheet.is::<crate::app::sheet::publish::PublishSheet>()
+        }));
+        let first = view.read_with(cx, |v, _| {
+            let m = v.auto_crosspost_sites().into_iter().next().expect("a site");
+            super::super::auto_crosspost::macro_key(&m.ext, &m.spec.id)
+        });
+        assert!(cx.debug_bounds("auto-crosspost-0").is_some(), "its chip");
+        assert!(
+            cx.debug_bounds("auto-crosspost-keys").is_some(),
+            "the key hint"
+        );
+        cx.simulate_keystrokes("alt-1");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).contains(&first), "on");
+            let note = v
+                .sheet
+                .get::<crate::app::sheet::publish::PublishSheet>()
+                .map(|s| s.note.read(cx).value().to_string());
+            assert_eq!(note.as_deref(), Some(""), "the key typed nothing");
+        });
+        cx.simulate_keystrokes("alt-1");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(!v.auto_crosspost_chosen(&post, cx).contains(&first), "off");
+        });
+        // A key past the last site does nothing.
+        cx.simulate_keystrokes("alt-9");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty())
+        });
+        // The chip names its key, as each platform spells it.
+        use crate::platform_text::{Platform, spelled_as};
+        let mac = spelled_as(Platform::Mac, || {
+            super::super::auto_crosspost::chip_label(0, "Bluesky", true)
+        });
+        assert_eq!(mac, "⌥1 ☑ Bluesky");
+        let win = spelled_as(Platform::Windows, || {
+            super::super::auto_crosspost::chip_label(1, "Bluesky", false)
+        });
+        assert_eq!(win, "Alt+2 ☐ Bluesky");
+    }
+
+    /// The Extensions palette with cross-post's rows (ten here) keeps its
+    /// key row in view: the list scrolls, not the sheet. Row 10's key is 0.
+    #[gpui_kit::test]
+    fn a_long_extensions_palette_keeps_its_keys_in_view(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config_all_sites());
+        cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(560.)));
+        stub_pane(cx);
+        started(&view, cx);
+        published(&view, &fake, cx);
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        cx.run_until_parked();
+        let n = view.read_with(cx, |v, _| match &v.ext.overlay {
+            Some(Overlay::Palette { rows, .. }) => rows.len(),
+            _ => 0,
+        });
+        assert!(n >= 10, "{n} rows");
+        let sheet = cx.debug_bounds("ext-sheet").expect("the palette");
+        let keys = cx.debug_bounds("ext-pal-keys").expect("its key row");
+        assert!(
+            keys.bottom() <= sheet.bottom(),
+            "the key row is cut off: {keys:?} in {sheet:?}"
+        );
+        // ↑ from the first row: the last (Manage), scrolled into view.
+        cx.simulate_keystrokes("up");
+        cx.run_until_parked();
+        let last = cx
+            .debug_bounds(Box::leak(format!("ext-pal-{}", n - 1).into_boxed_str()))
+            .expect("the last row");
+        assert!(last.bottom() <= keys.top(), "{last:?} above {keys:?}");
+        // 0 runs row 10 (Manage extensions…, the last of ten).
+        cx.simulate_keystrokes("0");
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(
+                !matches!(v.ext.overlay, Some(Overlay::Palette { .. })),
+                "0 ran row 10"
+            )
+        });
     }
 
     /// --- auto cross-post --- A run that posted without its copy recorded

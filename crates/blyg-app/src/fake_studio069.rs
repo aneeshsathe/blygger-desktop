@@ -133,3 +133,15 @@ pub fn catch_up_summary() -> CatchUpSummary {
         cached: false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The sample Catch up summary is about the sample thread it sums up
+    /// (Rue's "Do quotes outlive links?"), not another subject.
+    #[test]
+    fn the_sample_summary_matches_the_sample_thread() {
+        let s = super::catch_up_summary().summary.to_lowercase();
+        assert!(s.contains("quote") && s.contains("link"), "{s}");
+        assert!(!s.contains("tide"), "{s}");
+    }
+}
