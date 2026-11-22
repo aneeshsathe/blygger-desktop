@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Blygger Studio API",
-    "version": "5.14.0",
+    "version": "6.1.0",
     "description": "Private authoring and reading API. Protocol files remain a separate public interface."
   },
   "servers": [
@@ -261,98 +261,6 @@
           "extensions"
         ]
       },
-      "ChangeState": {
-        "type": "object",
-        "properties": {
-          "epoch": {
-            "type": "string",
-            "minLength": 1
-          },
-          "domains": {
-            "type": "object",
-            "properties": {
-              "items": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "reading": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "subscriptions": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "hoppers": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "signals": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "settings": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "feed": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "mentions": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "responses": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "interactions": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "browse": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "shelf": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "items",
-              "reading",
-              "subscriptions",
-              "hoppers",
-              "signals",
-              "settings",
-              "feed",
-              "mentions",
-              "responses",
-              "interactions",
-              "browse",
-              "shelf"
-            ]
-          }
-        },
-        "required": [
-          "epoch",
-          "domains"
-        ]
-      },
       "Item": {
         "type": "object",
         "properties": {
@@ -583,6 +491,48 @@
           "version"
         ]
       },
+      "Syndication": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyndicationEntry"
+            },
+            "description": "Copies of the item on other networks, in the owner's order. Spec 0.4 §16.14: the publisher's claim, carried on the live item document only."
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "entries",
+          "revision"
+        ]
+      },
+      "SyndicationEntry": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "An absolute https: URL at which the copy can be read. Use the most stable URL the network offers."
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "The version of the item the copy was made from."
+          }
+        },
+        "required": [
+          "url",
+          "version"
+        ],
+        "additionalProperties": false
+      },
       "Settings": {
         "type": "object",
         "properties": {
@@ -702,6 +652,14 @@
             "type": "string",
             "description": "Owner instructions for changelog summaries: the public-page and reader summaries, and a change note drafted with \"summarize full history to date\"."
           },
+          "readerOrder": {
+            "type": "string",
+            "enum": [
+              "newest",
+              "pace-layered"
+            ],
+            "description": "The Feed tab's order: pace-layered (the default), the home page's order run over everything you read (ROADMAP row 69), or newest first, shown as chronological. Hoppers and Saved keep their own order."
+          },
           "backgroundRules": {
             "type": "object",
             "properties": {
@@ -714,7 +672,19 @@
               "maintenance": {
                 "type": "boolean"
               },
+              "quotes-refreshed": {
+                "type": "boolean"
+              },
+              "quotes-material": {
+                "type": "boolean"
+              },
+              "near-same": {
+                "type": "boolean"
+              },
               "minor": {
+                "type": "boolean"
+              },
+              "superseded": {
                 "type": "boolean"
               }
             },
@@ -722,7 +692,11 @@
               "burst",
               "wordless",
               "maintenance",
-              "minor"
+              "quotes-refreshed",
+              "quotes-material",
+              "near-same",
+              "minor",
+              "superseded"
             ],
             "description": "Which Background rules count in the reader, all on by default (blygger-spec docs/background-plan.md). Withdrawn items are always in Background. Reader-only: nothing published changes, and nothing is marked read."
           },
@@ -896,6 +870,7 @@
           "changelogDisplay",
           "readerChangelogDisplay",
           "changelogSummaryPrompt",
+          "readerOrder",
           "backgroundRules",
           "acceptMentions",
           "updateCheck",
@@ -1588,6 +1563,16 @@
               "null"
             ],
             "items": {}
+          },
+          "syndication": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SyndicationEntry"
+            },
+            "description": "The origin's `syndication` member (spec 0.4 §16.14) as last fetched, kept to well-formed https: entries: copies the publisher says they made on other networks. The publisher's claim, never a reason to hide or merge another post. Absent or null when there are none. Fetched with the item document, so an entry added after the held version arrives with the next one."
           }
         },
         "required": [
@@ -2247,6 +2232,13 @@
                   "null"
                 ],
                 "description": "The highest version the owner has marked read; null when unread or cleared."
+              },
+              "syndication": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SyndicationEntry"
+                },
+                "description": "The origin's `syndication` member (spec 0.4 §16.14) as last fetched, https: entries only: copies the publisher says they made on other networks. The publisher's claim; absent when none."
               }
             },
             "required": [
@@ -2403,6 +2395,16 @@
             ],
             "description": "The highest version the owner has marked read; null when unread or cleared."
           },
+          "syndication": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SyndicationEntry"
+            },
+            "description": "The origin's `syndication` member (spec 0.4 §16.14) as last fetched, https: entries only. Null when none."
+          },
           "origin": {
             "type": "string"
           },
@@ -2521,6 +2523,7 @@
           "sourceUrl",
           "version",
           "readVersion",
+          "syndication",
           "origin",
           "created",
           "contentMd",
@@ -3901,158 +3904,6 @@
               "ETag": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Request failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/changes": {
-      "get": {
-        "operationId": "getChanges",
-        "tags": [
-          "studio"
-        ],
-        "security": [
-          {
-            "ownerSession": []
-          },
-          {
-            "ownerOAuth": [
-              "owner:read"
-            ]
-          }
-        ],
-        "deprecated": true,
-        "description": "Deprecated: retained unchanged in Studio 0.65 and 0.66; removed in Studio 0.67 / private contract 6.0.0. Poll the resources you need with conditional GETs instead. This legacy endpoint always returns its complete change state with 200 and Cache-Control: no-store; it does not support ETags or 304.",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChangeState"
                 }
               }
             }
@@ -7118,6 +6969,385 @@
         }
       }
     },
+    "/items/{id}/syndication": {
+      "get": {
+        "operationId": "getSyndication",
+        "tags": [
+          "studio"
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "ownerOAuth": [
+              "owner:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Previously accepted ETag for this exact resource and request context."
+            },
+            "required": false,
+            "description": "Previously accepted ETag for this exact resource and request context.",
+            "name": "if-none-match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator for this representation."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Syndication"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified. No body; reuse the representation paired with the supplied ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putSyndication",
+        "tags": [
+          "studio"
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "ownerOAuth": [
+              "owner:publish"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SyndicationEntry"
+                    },
+                    "maxItems": 20,
+                    "description": "The whole list, in order (at most 20). Replaces the stored list; a repeated url keeps its first position. Every url must be an absolute https: URL and every version one of the item's published versions, or the request is refused."
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Required: the item's revision, as for a pin. A replace bumps it."
+                  }
+                },
+                "required": [
+                  "entries",
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Syndication"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/items/{id}/restore": {
       "post": {
         "operationId": "restoreItem",
@@ -7913,6 +8143,14 @@
                     "type": "string",
                     "description": "Owner instructions for changelog summaries: the public-page and reader summaries, and a change note drafted with \"summarize full history to date\"."
                   },
+                  "readerOrder": {
+                    "type": "string",
+                    "enum": [
+                      "newest",
+                      "pace-layered"
+                    ],
+                    "description": "The Feed tab's order: pace-layered (the default), the home page's order run over everything you read (ROADMAP row 69), or newest first, shown as chronological. Hoppers and Saved keep their own order."
+                  },
                   "backgroundRules": {
                     "type": "object",
                     "properties": {
@@ -7925,7 +8163,19 @@
                       "maintenance": {
                         "type": "boolean"
                       },
+                      "quotes-refreshed": {
+                        "type": "boolean"
+                      },
+                      "quotes-material": {
+                        "type": "boolean"
+                      },
+                      "near-same": {
+                        "type": "boolean"
+                      },
                       "minor": {
+                        "type": "boolean"
+                      },
+                      "superseded": {
                         "type": "boolean"
                       }
                     },
@@ -17321,6 +17571,19 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "The Raw tab: imported entries as they came in, newest first, with no Background rule, placement or fold applied and withdrawn ones included. Only sub and kind narrow it."
+            },
+            "required": false,
+            "description": "The Raw tab: imported entries as they came in, newest first, with no Background rule, placement or fold applied and withdrawn ones included. Only sub and kind narrow it.",
+            "name": "raw",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Previously accepted ETag for this exact resource and request context."
             },
             "required": false,
@@ -17618,6 +17881,33 @@
             "required": false,
             "description": "Only shelved entries (GET /shelf), in the owner's shelf order, whatever their Background placement. Own drafts are left out: they are not reading entries.",
             "name": "shelf",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "The Raw tab: imported entries as they came in, newest first, with no Background rule, placement or fold applied and withdrawn ones included. Only sub and kind narrow it."
+            },
+            "required": false,
+            "description": "The Raw tab: imported entries as they came in, newest first, with no Background rule, placement or fold applied and withdrawn ones included. Only sub and kind narrow it.",
+            "name": "raw",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pace-layered",
+                "newest"
+              ],
+              "description": "The order for this request; without it, the readerOrder setting. Hoppers and the Shelf keep their own order, and raw is always newest first."
+            },
+            "required": false,
+            "description": "The order for this request; without it, the readerOrder setting. Hoppers and the Shelf keep their own order, and raw is always newest first.",
+            "name": "order",
             "in": "query"
           },
           {
