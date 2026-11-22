@@ -14,6 +14,7 @@ section: Development
   then exits with code 2. A release build starts, and says each one once on
   stderr. Values are never read or printed. A new variable cannot be added
   without a class: the test `every_blygger_name_has_a_class` fails first.
-  `blygger --version` and `--help` are handled after the environment check,
-  as they always were, so in a debug build they too stop while such a
-  variable is set.
+  The check runs only when `main` has decided to start the app, after
+  `cli::run`, so `blygger --version`, `--help` and every `+action` are never
+  blocked or delayed by it. `tests/cli.rs` removes the test-only names from
+  the environment of every `blygger` it spawns, reading them from the table.

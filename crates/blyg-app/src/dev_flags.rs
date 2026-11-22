@@ -251,7 +251,7 @@ impl DevFlags {
 }
 
 /// The NAMES of the process environment's variables, never their values
-/// (values can be tokens). Only for [`report_ignored`].
+/// (values can be tokens). Only for [`refuse_ignored`].
 #[expect(
     clippy::disallowed_methods,
     reason = "the one reader of the environment's names"
@@ -285,16 +285,14 @@ impl TestEnv {
 static FLAGS: OnceLock<DevFlags> = OnceLock::new();
 
 /// Parse the environment (first thing in `main`). An error names the
-/// variable and what's wrong with it. A `BLYGGER_*` variable this build
-/// ignores is an error in a debug build, and said once on stderr in a
-/// release build ([`report_ignored`]). Not in [`get`]: tests never call
-/// `init`, so they are not held to it.
+/// variable and what's wrong with its value. It does not look for ignored
+/// variables ([`refuse_ignored`] does, once `main` knows this is an app
+/// start), so `--version` and `--help` are never held up by them.
 pub fn init() -> Result<&'static DevFlags, String> {
     if let Some(f) = FLAGS.get() {
         return Ok(f);
     }
     let f = DevFlags::from_env()?;
-    report_ignored(env_names().into_iter(), cfg!(debug_assertions))?;
     Ok(FLAGS.get_or_init(|| f))
 }
 
@@ -346,6 +344,9 @@ use Class::{Always, DebugOnly, Elsewhere, TestsOnly};
 
 /// Every `BLYGGER_*` name, and who reads it. A name not here is ignored by
 /// every build and said so at startup ([`ignored`]).
+/// `tests/cli.rs` parses this table (one `("NAME", Class)` entry per line) to
+/// find the `TestsOnly` names it removes from the environment of every
+/// `blygger` it spawns: keep that shape.
 pub const CLASSES: &[(&str, Class)] = &[
     // Read by `DevFlags::parse`, in every build.
     ("BLYGGER_FAKE", Always),
@@ -516,6 +517,13 @@ fn refusal(list: &[Ignored]) -> String {
         "\nUnset them, or use what reads them: a debug build, or the test suite (`cargo test`).",
     );
     text
+}
+
+/// `main` calls this after `cli::run` has declined (an app start, not a
+/// `--` option or `+action`), before any window or backend work. Not in
+/// [`get`] or [`init`]: tests never call it. See [`report_ignored`].
+pub fn refuse_ignored() -> Result<(), String> {
+    report_ignored(env_names().into_iter(), cfg!(debug_assertions))
 }
 
 /// Debug build: any ignored variable is an `Err`. Release build: each is
