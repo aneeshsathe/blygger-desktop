@@ -186,3 +186,53 @@ fn offered_only_when_the_capabilities_list_get_agentic() {
         "never by version"
     );
 }
+
+/// The feed list (`GET /api/agentic`) follows its own operation,
+/// `listAgenticFeeds`; an edition follows `getAgentic`.
+#[test]
+fn the_feed_list_follows_list_agentic_feeds() {
+    use blyg_core::agentic::serves_feeds;
+    assert!(serves_feeds(&json!({ "operations": ["listAgenticFeeds"] })));
+    assert!(!serves_feeds(&json!({ "operations": ["getAgentic"] })));
+    assert!(!serves_feeds(&json!({ "contractVersion": "6.2.0" })));
+}
+
+/// An edition is an outside assistant's writing: whatever it sends, each
+/// text is clipped and the sections and their entries are capped, so a
+/// runaway edition can't swamp the tab.
+#[test]
+fn an_edition_is_bounded_however_much_it_says() {
+    use blyg_core::agentic::{ENTRIES_MAX, SECTIONS_MAX, SHORT_MAX, TEXT_MAX};
+    let long = "w".repeat(20_000);
+    let mut entries = vec![json!({
+        "sub": "sub-a", "remoteId": "r-long",
+        "headline": long, "summary": long, "reason": long
+    })];
+    entries.extend((0..ENTRIES_MAX + 20).map(|i| json!({ "sub": "sub-a", "remoteId": format!("r{i}") })));
+    let mut sections = vec![json!({ "title": long, "kind": "section", "note": long, "entries": entries })];
+    sections.extend((0..SECTIONS_MAX + 5).map(|_| json!({ "title": "More", "entries": [] })));
+    let v = json!({
+        "revision": 1,
+        "layout": {
+            "title": long, "lede": long,
+            "agent": { "name": long, "model": long },
+            "sections": sections
+        }
+    });
+    let l = parse_edition(&v).unwrap().layout.unwrap();
+    let n = |s: &str| s.chars().count();
+    assert_eq!(l.sections.len(), SECTIONS_MAX);
+    assert_eq!(l.sections[0].entries.len(), ENTRIES_MAX);
+    assert!(n(l.title.as_deref().unwrap()) <= SHORT_MAX);
+    assert!(n(l.lede.as_deref().unwrap()) <= TEXT_MAX);
+    assert!(n(&l.agent.name) <= SHORT_MAX);
+    assert!(n(l.agent.model.as_deref().unwrap()) <= SHORT_MAX);
+    let s = &l.sections[0];
+    assert!(n(&s.title) <= SHORT_MAX);
+    assert!(n(s.note.as_deref().unwrap()) <= TEXT_MAX);
+    let p = &s.entries[0];
+    assert!(n(p.headline.as_deref().unwrap()) <= SHORT_MAX);
+    assert!(n(p.summary.as_deref().unwrap()) <= TEXT_MAX);
+    assert!(n(p.reason.as_deref().unwrap()) <= TEXT_MAX);
+    assert!(SHORT_MAX < TEXT_MAX && TEXT_MAX < 20_000);
+}

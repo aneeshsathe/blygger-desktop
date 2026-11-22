@@ -103,13 +103,86 @@ fn a_put_sends_the_whole_list_and_the_revision_it_read() {
     assert_eq!(OWNER, "owner");
 }
 
+/// Reading follows `getDictionary` alone (a read-only token still gets the
+/// accepted words); writing follows `putDictionarySource`.
 #[test]
-fn offered_only_when_the_capabilities_list_both_operations() {
-    assert!(serves(
-        &json!({ "operations": ["getDictionary", "putDictionarySource"] })
-    ));
-    assert!(!serves(&json!({ "operations": ["getDictionary"] })));
+fn reading_and_writing_each_follow_their_own_operation() {
+    use blyg_core::dictionary::serves_write;
+    let read_only = json!({ "operations": ["getDictionary"] });
+    assert!(serves(&read_only));
+    assert!(!serves_write(&read_only));
+    let both = json!({ "operations": ["getDictionary", "putDictionarySource"] });
+    assert!(serves(&both));
+    assert!(serves_write(&both));
     assert!(!serves(&json!({ "contractVersion": "6.2.0" })));
+    assert!(!serves_write(&json!({ "contractVersion": "6.2.0" })));
+}
+
+/// What keeps the offline queue, as the outbox keeps a change: anything a
+/// later try can mend (offline, 429, 5xx, a list that kept changing), an
+/// ended sign-in, and three conflicts in a row. A refusal (4xx) or a word
+/// list the blyg can't take drops it, saying why.
+#[test]
+fn the_queue_outlasts_whatever_a_later_try_can_mend() {
+    use blyg_core::CoreError;
+    use blyg_core::dictionary::keeps_queue;
+    let rejected = |status| CoreError::Rejected {
+        status,
+        message: "no".into(),
+        details: Vec::new(),
+    };
+    assert!(keeps_queue(&CoreError::Offline));
+    assert!(keeps_queue(&CoreError::RateLimited { retry_after: 60 }));
+    assert!(keeps_queue(&CoreError::CursorExpired));
+    assert!(keeps_queue(&rejected(503)));
+    assert!(keeps_queue(&CoreError::Unauthorized));
+    assert!(keeps_queue(&CoreError::RevisionConflict));
+    assert!(!keeps_queue(&rejected(400)));
+    assert!(!keeps_queue(&CoreError::Other("too many words".into())));
+}
+
+/// Two Learn Spellings at once, on their own threads, while offline: both
+/// words wait (the queue's read-change-write is one step).
+#[test]
+fn words_learned_at_once_are_all_kept() {
+    use blyg_core::dictionary::{PENDING_META, Pending};
+    use blyg_core::store::Store;
+    use blyg_core::{Backend, LiveBackend, SyncOptions};
+    use std::sync::{Arc, Barrier};
+    let dir = tempfile::tempdir().unwrap();
+    let b = Arc::new(
+        LiveBackend::open_with(
+            dir.path(),
+            "http://127.0.0.1:9",
+            "unused-test-credential",
+            SyncOptions {
+                start_worker: false,
+                ..SyncOptions::default()
+            },
+        )
+        .unwrap(),
+    );
+    let words: Vec<String> = (0..8).map(|i| format!("tideword{i}")).collect();
+    let gate = Arc::new(Barrier::new(words.len()));
+    let threads: Vec<_> = words
+        .iter()
+        .cloned()
+        .map(|w| {
+            let (b, gate) = (b.clone(), gate.clone());
+            std::thread::spawn(move || {
+                gate.wait();
+                let _ = b.edit_dictionary(&Edit::Add(w));
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+    let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let p = Pending::parse(store.meta(PENDING_META).as_deref());
+    let mut kept: Vec<String> = p.edits().iter().map(Edit::word).collect();
+    kept.sort();
+    assert_eq!(kept, words);
 }
 
 /// Learn Spelling offline: the edit waits in the store's meta

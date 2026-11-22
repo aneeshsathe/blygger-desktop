@@ -129,3 +129,22 @@ fn judging_other_blygs_changes_shows_only_what_applies() {
             .offered
     );
 }
+
+/// The AI sheet sends only what was changed in it: a setting changed
+/// elsewhere (Studio) since the sheet read them is left alone.
+#[test]
+fn only_what_changed_since_the_read_is_sent() {
+    let loaded = ServerAiSettings::from_json(&json!({
+        "aiModelTk": "model-a", "aiModelChangelog": "model-b", "aiStylePrompt": "Plain.",
+        "agenticTitle": "Morning paper", "bgModelImported": false
+    }));
+    let mut edited = loaded.clone();
+    *edited.model_mut(AiFunction::Tk) = Some("model-c".into());
+    edited.bg_model_imported = Some(true);
+    let out = edited.changes_from(&loaded);
+    assert_eq!(
+        out.to_json(),
+        json!({ "aiModelTk": "model-c", "bgModelImported": true })
+    );
+    assert_eq!(loaded.changes_from(&loaded), ServerAiSettings::default());
+}

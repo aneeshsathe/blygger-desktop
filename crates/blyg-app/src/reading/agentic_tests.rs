@@ -111,7 +111,44 @@ fn the_masthead_names_the_assistant_and_marks_its_words() {
     assert_eq!(ASSISTANT_BADGE, "✦ written by your assistant");
     let note = empty_note("Daily digest");
     assert!(note.starts_with("No edition yet."), "{note}");
-    assert!(note.contains("PUT /api/agentic/default"), "{note}");
+    assert!(note.contains("an assistant writes it on your blyg"), "{note}");
+    assert!(!note.contains("/api/"), "plain words, no API paths: {note}");
+}
+
+/// The cards are built when the edition or the rows change, never while
+/// drawing: each card once per change, and a draw only looks them up.
+#[test]
+fn cards_are_built_once_per_change_not_per_draw() {
+    let mut a = Agentic::default();
+    a.set_edition(Some(edition_of(vec![
+        placed(json!({ "remoteId": "r1", "headline": "A long look at harbours" })),
+        placed(json!({ "remoteId": "r2" })),
+    ])));
+    let rows = vec![row("sub-a", "r1", 2, "# Harbours\n\nWords about tide tables.")];
+    a.refresh_cards(&rows);
+    assert_eq!(a.cards_built(), 2);
+    let k1 = a.keys()[0].clone();
+    let k2 = a.keys()[1].clone();
+    let c1 = a.card_for(&k1).expect("built");
+    assert!(c1.held);
+    assert_eq!(c1.headline, "A long look at harbours");
+    assert!(!a.card_for(&k2).expect("built").held, "not held here yet");
+    // Drawing (looking up) builds nothing.
+    for _ in 0..5 {
+        let _ = a.card_for(&k1);
+    }
+    assert_eq!(a.cards_built(), 2);
+    // The rows changed: r2 arrived. Rebuilt once.
+    let rows = vec![
+        row("sub-a", "r1", 2, "# Harbours\n\nWords about tide tables."),
+        row("sub-a", "r2", 1, "# Gunwales\n\nA short note."),
+    ];
+    a.refresh_cards(&rows);
+    assert_eq!(a.cards_built(), 4);
+    assert!(a.card_for(&k2).unwrap().held);
+    // A new edition drops the old cards until they're built for it.
+    a.set_edition(Some(edition_of(vec![placed(json!({ "remoteId": "r2" }))])));
+    assert!(a.card_for(&k1).is_none());
 }
 
 /// The tab lists the edition's posts held here, in the edition's order,

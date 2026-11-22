@@ -21,6 +21,10 @@ use blyg_core::dictionary::{Accepted, Dictionary, Edit, OWNER, word_problem};
 
 use super::*;
 
+#[cfg(test)]
+#[path = "dictionary_tests.rs"]
+mod dictionary_tests;
+
 gpui_kit::actions!(
     blygger,
     [
