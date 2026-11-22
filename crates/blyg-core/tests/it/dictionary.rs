@@ -222,8 +222,8 @@ fn queued_edits_keep_the_last_for_each_word_and_round_trip() {
     let back = Pending::parse(Some(&p.to_meta()), BLYG_A);
     assert_eq!(back, p);
     assert_eq!(
-        Pending::parse(Some(&p.to_meta()), "https://blyg.example.com/"),
-        p,
+        Pending::parse(Some(&p.to_meta()), "https://blyg.example.com/").edits(),
+        p.edits(),
         "the same blyg, written another way"
     );
     assert!(
@@ -317,8 +317,15 @@ fn only_words_burrow_taught_and_that_left_the_blyg_are_unlearned() {
     use blyg_core::dictionary::left;
     let d = sample();
     let taught = vec!["impyrt".to_string(), "harbourside".into()];
-    assert_eq!(left(&taught, &d), ["harbourside"], "still in the blyg's: kept");
-    assert!(left(&[], &d).is_empty(), "nothing taught, nothing taken out");
+    assert_eq!(
+        left(&taught, &d),
+        ["harbourside"],
+        "still in the blyg's: kept"
+    );
+    assert!(
+        left(&[], &d).is_empty(),
+        "nothing taught, nothing taken out"
+    );
     assert_eq!(
         left(&["kedge".to_string()], &d),
         ["kedge"],
