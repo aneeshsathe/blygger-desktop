@@ -303,10 +303,11 @@ mod pane {
     }
 
     /// --- esc --- Windows: Esc pressed while the page had the keyboard
-    /// (WebView2 keeps keys from the app) reaches the app as it does on
-    /// macOS: the page hands the keyboard back and the pane closes.
+    /// (WebView2 keeps keys from the app) gives the keyboard back to the
+    /// app. The page sees the key too (a site's own pop-up closes), so the
+    /// pane stays: one press must not also fold away a half-written post.
     #[gpui_kit::test]
-    fn esc_in_the_page_closes_the_pane(cx: &mut TestAppContext) {
+    fn esc_in_the_page_takes_the_keyboard_back_and_keeps_the_pane(cx: &mut TestAppContext) {
         let (view, cx, log) = setup(cx);
         view.update_in(cx, |v, window, cx| {
             v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
@@ -320,8 +321,31 @@ mod pane {
         cx.run_until_parked();
         assert!(log.borrow().parented > before, "the keyboard comes back");
         view.read_with(cx, |v, _| {
-            assert!(!v.browser.open, "closed, as esc in the app does");
+            assert!(v.browser.open, "the pane stays open");
             assert_eq!(v.browser.page.url, "https://blyg.example.com/f/abc/");
+        });
+    }
+
+    /// --- esc --- Windows: with the command palette open over the pane,
+    /// Esc from the page closes the palette, as Esc in the app does, and
+    /// leaves the pane open.
+    #[gpui_kit::test]
+    fn esc_in_the_page_closes_an_open_palette_not_the_pane(cx: &mut TestAppContext) {
+        let (view, cx, _log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |v, window, cx| v.toggle_palette(window, cx));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.cmd_palette.open.is_some()));
+        view.update_in(cx, |v, window, cx| {
+            v.browser_event(super::surface::BrowserEvent::Escape, window, cx)
+        });
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(v.cmd_palette.open.is_none(), "the palette closes");
+            assert!(v.browser.open, "the pane stays open");
         });
     }
 
