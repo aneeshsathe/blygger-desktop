@@ -74,6 +74,27 @@ impl Contract {
             .filter_map(|(_, _, op)| op["operationId"].as_str().map(str::to_string))
             .collect()
     }
+
+    /// The OAuth scopes a token needs to call the operation `id`: its
+    /// `security` entry for `ownerOAuth` (empty: any token may). `None`: no
+    /// such operation, or one only the owner's session may call.
+    pub fn oauth_scopes(&self, id: &str) -> Option<Vec<String>> {
+        let (_, _, op) = self
+            .ops
+            .iter()
+            .find(|(_, _, op)| op["operationId"].as_str() == Some(id))?;
+        let scopes = op["security"]
+            .as_array()?
+            .iter()
+            .find_map(|way| way.get("ownerOAuth"))?;
+        Some(
+            scopes
+                .as_array()?
+                .iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect(),
+        )
+    }
 }
 
 fn is_param(seg: &str) -> bool {

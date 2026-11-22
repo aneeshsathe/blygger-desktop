@@ -16,8 +16,6 @@ description: Bring a Blygger client up to date with a new blygger-studio release
 
 ## Adapt
 
-- New server features: gate on capabilities (`capability-gating`), not on the
-  new contract number.
 - New settings fields: confirm your client writes settings partially, so it
   preserves fields it doesn't know.
 - Rendering changes: regenerate your parity/render fixtures from the new
