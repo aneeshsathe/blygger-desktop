@@ -2,7 +2,10 @@ use super::*;
 use std::time::Instant;
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 #[test]
@@ -225,6 +228,7 @@ fn a_search_against_a_snapshot_older_than_the_store_finds_what_a_fresh_store_doe
 fn a_search_after_deletes_withdrawals_syncs_and_edits_stays_on_the_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let wire = |i: usize, status: &str, md: String| WireItem {
         id: format!("S{i}"),
         kind: "fragment".into(),

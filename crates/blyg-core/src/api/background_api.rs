@@ -1,25 +1,38 @@
 //! --- background --- The owner-API calls for Background and Foreground
-//! (studio 0.61.0, contract 5.10.0; `crate::background`). Asked only of a
-//! studio whose capabilities list `setReadingPlacement`.
+//! (studio 0.61.0, contract 5.10.0; `crate::background`). The lens is
+//! read where the capabilities list `listReading` (owner:read; a studio
+//! before 0.61 refuses its filter); placements are sent only where they
+//! list `setReadingPlacement` (owner:manage).
 
 use serde_json::{Value, json};
 
 use super::{Api, CURSOR_RESTARTS, enc, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::background::{
-    BackgroundRules, Key, LENS_LIMIT, LENS_QUERY, Placement, placement_body, serves,
+    BackgroundRules, Key, LENS_LIMIT, LENS_QUERY, Placement, placement_body, places, serves,
 };
 
 /// Pages of the Background lens read at most (50 entries each).
 const MAX_PAGES: usize = 200;
 
 impl Api {
-    /// Whether this studio has Background: its capabilities' `operations`
-    /// list `setReadingPlacement`. A studio without capabilities (404, or
-    /// not readable) doesn't; a failed read is an error.
+    /// Whether this studio's Background lens may be read: its
+    /// capabilities' `operations` list `listReading` (the lens's answer
+    /// then decides: `background::is_lens`). A studio without capabilities
+    /// (404, or not readable) doesn't; a failed read is an error.
     pub fn serves_background(&self) -> Result<bool> {
+        self.capability(serves)
+    }
+
+    /// Whether this sign-in may place posts and blygs in Background: the
+    /// capabilities list `setReadingPlacement`.
+    pub fn places_background(&self) -> Result<bool> {
+        self.capability(places)
+    }
+
+    fn capability(&self, test: fn(&Value) -> bool) -> Result<bool> {
         match self.call("GET", "/api/capabilities", None) {
-            Ok(v) => Ok(serves(&v)),
+            Ok(v) => Ok(test(&v)),
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
             Err(_) => Ok(false),
         }

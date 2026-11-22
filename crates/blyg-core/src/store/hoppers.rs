@@ -288,7 +288,11 @@ impl Store {
     /// Take a fresh read of every hopper: the list, the memberships and the
     /// unheld items, with the ops still waiting laid on top. The reading
     /// rows' `hoppers` follow. True when anything shown changed.
+    ///
+    /// On a contract newer than Burrow knows (`lists_prune`) the read only
+    /// adds: hoppers and memberships it lacks stay, as do their ops.
     pub fn replace_hoppers(&self, fetched: &[FetchedHopper]) -> Result<bool> {
+        let prune = self.lists_prune() == crate::api::Prune::Allowed;
         let mut c = self.conn();
         let tx = c.transaction()?;
         let before: (Vec<String>, BTreeSet<(String, String, String)>) = {
@@ -308,11 +312,13 @@ impl Store {
             st.query_map([], |r| r.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?
                 .into_iter()
-                .filter(|id| !fetched.iter().any(|f| &f.hopper.id == id))
+                .filter(|id| prune && !fetched.iter().any(|f| &f.hopper.id == id))
                 .collect()
         };
-        tx.execute("DELETE FROM hoppers", [])?;
-        tx.execute("DELETE FROM hopper_items", [])?;
+        if prune {
+            tx.execute("DELETE FROM hoppers", [])?;
+            tx.execute("DELETE FROM hopper_items", [])?;
+        }
         for (i, f) in fetched.iter().enumerate() {
             tx.execute(
                 "INSERT OR REPLACE INTO hoppers (id, json, position) VALUES (?1, ?2, ?3)",
@@ -341,7 +347,7 @@ impl Store {
         // Drop the ops for hoppers that are gone; lay the rest on top.
         let ids: HashSet<&str> = fetched.iter().map(|f| f.hopper.id.as_str()).collect();
         for op in waiting_ops(&tx)? {
-            if ids.contains(op.hopper.as_str()) {
+            if !prune || ids.contains(op.hopper.as_str()) {
                 apply(&tx, &op)?;
             } else {
                 tx.execute(

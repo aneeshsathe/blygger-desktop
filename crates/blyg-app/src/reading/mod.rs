@@ -790,6 +790,7 @@ impl MainView {
         let fresh = self.reading_with_own();
         let r = &mut self.reading;
         r.background.served = self.backend.background_served(); // --- background ---
+        r.background.placing = self.backend.background_placing();
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
         // --- reader folders ---
@@ -870,6 +871,7 @@ impl MainView {
                 let r = &mut self.reading;
                 r.agentic.refresh_cards(&r.rows); // --- agentic feed ---
                 self.reading.background.served = self.backend.background_served(); // --- background ---
+                self.reading.background.placing = self.backend.background_placing();
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();

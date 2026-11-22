@@ -23,8 +23,15 @@
 # build failure: the code they call doesn't exist yet). New e2e tests
 # (`#[ignore]`d, in blyg-core) run through `scripts/e2e-local.sh` when
 # BLYG_WORKER_DIR is set, and are listed as not run otherwise. It never
-# touches your working tree and removes the worktree when done. Set
-# CARGO_TARGET_DIR (and CARGO_BUILD_JOBS) as for any build.
+# touches your working tree and removes the worktree when done.
+#
+# Those old sources never build into the target directory your working tree
+# uses (a test binary an older commit leaves there is one the next run can
+# take for its own): every cargo run in the worktree, the e2e script's too,
+# gets `${CARGO_TARGET_DIR:-<repo>/target}/test-first`, which is kept between
+# runs. So set CARGO_TARGET_DIR (and CARGO_BUILD_JOBS) as for any build: the
+# script builds under it, apart from your build, and leaves your environment
+# alone.
 #
 # Exit status: 0 when the order holds (and, with --run, a new test failed
 # before the feature), 1 when not, 2 on bad usage.
@@ -205,6 +212,14 @@ cleanup() {
 trap cleanup EXIT
 git worktree add --detach -q "$tmp/wt" "$first_test"
 
+# The worktree's own target directory (see the header): under the caller's,
+# never the caller's. Absolute, since cargo runs from inside the worktree.
+wt_target=${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/test-first
+case "$wt_target" in
+  /*) ;;
+  *) wt_target=$PWD/$wt_target ;;
+esac
+
 red=0
 ran=0
 # Reads cargo's output: counts what ran, prints failures, sets red.
@@ -230,7 +245,7 @@ for dir in $(printf '%s\n' "$new_tests" | awk '$3 == 0 { print $1 }' | sort -u);
   names=$(printf '%s\n' "$new_tests" | awk -v d="$dir" '$1 == d && $3 == 0 { print $2 }' | sort -u | tr '\n' ' ')
   echo "test-first: $pkg at $at: $names"
   # shellcheck disable=SC2086
-  (cd "$tmp/wt" && cargo test -p "$pkg" -- $names) >"$tmp/$dir.log" 2>&1 || true
+  (cd "$tmp/wt" && CARGO_TARGET_DIR="$wt_target" cargo test -p "$pkg" -- $names) >"$tmp/$dir.log" 2>&1 || true
   judge "$tmp/$dir.log"
 done
 
@@ -239,7 +254,7 @@ if [ -n "$e2e" ]; then
   if [ -n "${BLYG_WORKER_DIR:-}" ]; then
     echo "test-first: e2e at $at against $BLYG_WORKER_DIR: $e2e"
     # shellcheck disable=SC2086
-    (cd "$tmp/wt" && BLYG_E2E_SKIP_NOTES=1 BLYG_E2E_SKIP_SWITCHER=1 scripts/e2e-local.sh $e2e) >"$tmp/e2e.log" 2>&1 || true
+    (cd "$tmp/wt" && CARGO_TARGET_DIR="$wt_target" BLYG_E2E_SKIP_NOTES=1 BLYG_E2E_SKIP_SWITCHER=1 scripts/e2e-local.sh $e2e) >"$tmp/e2e.log" 2>&1 || true
     judge "$tmp/e2e.log"
   else
     echo "test-first: not run (set BLYG_WORKER_DIR to a studio build to run them): e2e $e2e"

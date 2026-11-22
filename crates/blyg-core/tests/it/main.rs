@@ -11,6 +11,7 @@ mod common;
 
 mod agentic;
 mod auth;
+mod capability_gates;
 mod changelog_stitch;
 mod config;
 mod config_docs;
@@ -22,6 +23,7 @@ mod doc_paths;
 mod e2e;
 mod helpers;
 mod lint_exceptions;
+mod newer_contract;
 mod no_git;
 mod personal_data;
 mod profiles;

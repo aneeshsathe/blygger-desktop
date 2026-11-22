@@ -2790,6 +2790,10 @@ impl Backend for FakeBackend {
         self.lock().read_ext
     }
 
+    fn background_placing(&self) -> bool {
+        self.background_served()
+    }
+
     fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
         use blyg_core::background::{BackgroundSet, EntryBackground};
         if !self.background_served() {

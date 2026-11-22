@@ -36,6 +36,10 @@ pub fn state_note(s: SyncState) -> &'static str {
         SyncState::Local => "On this computer only: your blyg doesn't keep Saved.",
         SyncState::Synced => "Synced with your blyg.",
         SyncState::Waiting => "Changed here · syncing with your blyg…",
+        SyncState::HeldNewer => "Changed here · kept on this computer until Burrow is updated.",
+        SyncState::HeldReadOnly => {
+            "Changed here · kept on this computer: this sign-in can't change Saved on your blyg."
+        }
     }
 }
 
@@ -78,5 +82,19 @@ mod tests {
         assert_eq!(toggled_toast(false), "Removed from Saved");
         assert!(state_note(SyncState::Local).contains("this computer"));
         assert!(state_note(SyncState::Synced).contains("Synced"));
+    }
+
+    /// A held change never claims to be syncing: it's kept here, and the
+    /// note says until when, or why.
+    #[test]
+    fn a_held_change_says_it_is_kept_here() {
+        let newer = state_note(SyncState::HeldNewer);
+        assert!(newer.contains("kept on this computer until Burrow is updated"));
+        let read_only = state_note(SyncState::HeldReadOnly);
+        assert!(read_only.contains("kept on this computer"));
+        assert!(read_only.contains("can't change Saved"));
+        for n in [newer, read_only] {
+            assert!(!n.contains("syncing"), "{n}");
+        }
     }
 }

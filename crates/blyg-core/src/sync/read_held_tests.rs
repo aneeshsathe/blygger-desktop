@@ -43,6 +43,7 @@ fn row(rid: &str) -> ReadingItem {
 /// network (the API points at a closed port).
 fn engine() -> Engine {
     let store = Store::open_in_memory().unwrap();
+    store.set_lists_prune(crate::api::Prune::Allowed);
     let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     store
         .merge_reading(&[row("A"), row("B")], true, &kinds)

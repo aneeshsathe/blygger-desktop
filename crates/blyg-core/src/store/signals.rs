@@ -15,10 +15,12 @@ use crate::model::ReadingItem;
 
 impl Store {
     /// Make every held reading row's thumb what `signals` says: the listed
-    /// rows get theirs, every other row none. `signals` must be the whole
+    /// rows get theirs, every other row none (on a newer contract, every
+    /// other row keeps its own: `lists_prune`). `signals` must be the whole
     /// list. Signals on posts not held here are ignored. True when a row
     /// changed.
     pub fn replace_thumbs(&self, signals: &[(String, String, i8)]) -> Result<bool> {
+        let clear = self.lists_prune() == crate::api::Prune::Allowed;
         let want: HashMap<(&str, &str), i8> = signals
             .iter()
             .map(|(s, r, t)| ((s.as_str(), r.as_str()), *t))
@@ -35,7 +37,11 @@ impl Store {
             let Ok(mut it) = serde_json::from_str::<ReadingItem>(&json) else {
                 continue;
             };
-            let thumb = want.get(&(sub.as_str(), rid.as_str())).copied();
+            let thumb = match want.get(&(sub.as_str(), rid.as_str())) {
+                Some(t) => Some(*t),
+                None if clear => None,
+                None => continue,
+            };
             if it.thumb == thumb {
                 continue;
             }

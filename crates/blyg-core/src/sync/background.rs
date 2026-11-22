@@ -9,7 +9,8 @@
 //! and shows here at once; the next read of the lens settles it.
 
 use super::Engine;
-use crate::backend::Result;
+use crate::api::is_transient;
+use crate::backend::{CoreError, Result};
 use crate::background::{BackgroundSet, Key, Placement};
 use crate::model::{CoreEvent, ReadingItem, SubId};
 
@@ -17,11 +18,15 @@ use crate::model::{CoreEvent, ReadingItem, SubId};
 pub const BACKGROUND_DEPS: &[&str] = &["reading", "subscriptions", "settings"];
 
 impl Engine {
-    /// Note whether the blyg serves Background (its capabilities list
-    /// `setReadingPlacement`). A failed read leaves what was noted.
+    /// Note whether the blyg's Background lens may be read (its
+    /// capabilities list `listReading`) and whether this sign-in may place
+    /// posts (`setReadingPlacement`). A failed read leaves what was noted.
     pub(super) fn note_background_served(&self) {
         if let Ok(on) = self.api.serves_background() {
             let _ = self.store.set_background_served(on);
+        }
+        if let Ok(on) = self.api.places_background() {
+            let _ = self.store.set_background_placing(on);
         }
     }
 
@@ -30,13 +35,28 @@ impl Engine {
         self.store.background_served()
     }
 
+    /// Whether this sign-in may place posts in Background.
+    pub fn background_placing(&self) -> bool {
+        self.store.background_placing()
+    }
+
     /// Read the lens again and keep it. True when it changed. Nothing is
     /// asked of a blyg that doesn't serve it.
     pub(super) fn fetch_background(&self) -> Result<bool> {
         if !self.store.background_served() {
             return Ok(false);
         }
-        let lens = self.api.background_lens()?;
+        // A studio before 0.61 refuses the filter, or ignores it and
+        // answers plain rows: it has no Background (until the next check).
+        let had = self.store.background_set().is_some();
+        let lens = match self.api.background_lens() {
+            Ok(lens) if crate::background::is_lens(&lens) => lens,
+            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
+            Ok(_) | Err(_) => {
+                self.store.set_background_served(false)?;
+                return Ok(had);
+            }
+        };
         let set = BackgroundSet::from_entries(&lens, self.store.background_set().as_ref());
         self.store.put_background_set(&set)
     }

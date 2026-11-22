@@ -89,6 +89,15 @@ Burrow no longer speaks, so nothing syncs until the blyg is updated. Your posts
 and changes stay on your Mac and are sent once it is. Burrow's status bar has
 an **Update your blyg** link. See [Server requirements](server.md).
 
+### Why does Burrow say "Your blyg runs a newer studio"?
+
+Your blyg was updated to a studio whose API is newer than this Burrow knows.
+Burrow keeps syncing what it can, and your posts and changes still go to the
+blyg, but it won't remove anything on your Mac because of what that studio
+lists (a post, a subscription or a hopper it doesn't list stays here) until
+Burrow is updated. Check for updates in the Burrow menu (Burrow › Check for
+Updates…).
+
 ### Why won't my quote go in?
 
 Quotes (`![[id]]`, or `![[id | note]]`) only go in threads; ⌘T makes a

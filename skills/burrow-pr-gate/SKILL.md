@@ -28,6 +28,14 @@ order (`--run` also runs those tests without the feature and wants a
 failure). CI's `test-first` job fails a PR that changes product code but no
 test, unless a commit has a `No-test: <reason>` trailer.
 
+A test drives the path the app runs. A `#[cfg(test)]` twin of a production
+function (the same job with different inputs, or on another thread) proves
+the twin only: a synchronous, test-only list rebuild always passed one flag
+as false while the app's background rebuild computed it, so every test
+passed on a value the app never used. Call the production function from the
+test and wait for its result; if that's hard, change the function's shape
+(`burrow-code-shape`), don't copy it.
+
 A user-visible change adds a changelog fragment,
 `changes/unreleased/<slug>.md` (`section: Added`, a blank line, `- ` entries;
 format in `changes/unreleased/README.md`). Don't edit `CHANGELOG.md`: the

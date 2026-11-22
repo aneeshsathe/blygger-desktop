@@ -757,6 +757,7 @@ impl MainView {
             CoreEvent::ReadMarked(rows) => self.read_marked(&rows, reading_follows, cx),
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
+            CoreEvent::ServerNewer(contract) => self.server_newer(&contract, cx),
             // The "older than 0.40" sheet is gone: below the 0.47 floor the
             // outdated notice already says it all (`server_notice`).
             CoreEvent::ServerLimited => {}

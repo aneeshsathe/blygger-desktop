@@ -572,6 +572,12 @@ impl LiveBackend {
         }
     }
 
+    /// --- contacts --- Keep `list` as the local copy of the book.
+    fn keep_contacts(&self, list: &[crate::contacts::Contact]) -> Result<()> {
+        let json = serde_json::to_string(list).map_err(|e| CoreError::Other(e.to_string()))?;
+        self.engine.store.set_meta(CONTACTS_META, &json)
+    }
+
     /// Resolve a URL the way subscribing does: what we already know (your
     /// own blyg, your subscriptions) first, then the subscribe preview (the
     /// owner Worker's §12.1 resolution). Only when that isn't available
@@ -882,9 +888,17 @@ impl Backend for LiveBackend {
         {
             self.keep_studio_version(&v);
         }
-        let json = serde_json::to_string(&got.unwrap_or_default())
-            .map_err(|e| CoreError::Other(e.to_string()))?;
-        store.set_meta(CONTACTS_META, &json)
+        let mut list = got.unwrap_or_default();
+        // --- newer contract --- what its book lacks stays here.
+        use crate::sync::newer::{keep_held, same_contact};
+        let held = self.contacts();
+        let drops = held
+            .iter()
+            .any(|h| !list.iter().any(|c| same_contact(c, h)));
+        if drops && self.e().recheck_contract() == crate::api::Prune::Withheld {
+            list = keep_held(&held, list, same_contact);
+        }
+        self.keep_contacts(&list)
     }
 
     fn rewrites_handles(&self) -> bool {
@@ -931,6 +945,9 @@ impl Backend for LiveBackend {
 
     fn delete_contact(&self, id: &str) -> Result<()> {
         self.e().track(self.e().api.delete_contact(id))?;
+        // Gone here too, whatever the re-read keeps (`refresh_contacts`).
+        let left: Vec<_> = self.contacts().into_iter().filter(|c| c.id != id).collect();
+        let _ = self.keep_contacts(&left);
         let _ = self.refresh_contacts();
         Ok(())
     }
@@ -972,8 +989,9 @@ impl Backend for LiveBackend {
     }
 
     fn refresh_subscriptions(&self) -> Result<()> {
+        self.e().check_contract()?;
         let subs = self.e().track(self.e().api.list_subscriptions())?;
-        if self.e().store.replace_subscriptions(&subs)? {
+        if self.e().hold_subscriptions(subs)?.changed {
             self.e().emit(CoreEvent::ReadingChanged);
         }
         Ok(())
@@ -1565,7 +1583,7 @@ impl Backend for LiveBackend {
         let sub = subs.iter().find(|s| s.id == id).cloned();
         let sub = match sub {
             Some(s) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
                 s
             }
             None => {
@@ -1594,6 +1612,9 @@ impl Backend for LiveBackend {
     fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.e().track(self.e().api.delete_subscription(sub_id))?;
         self.e().store.edit_subscription(sub_id, |_| false)?;
+        // Your removal: its rows go now, not on the next whole walk's word
+        // (which a newer contract's never is: `sync/newer.rs`).
+        self.e().store.drop_subscription_rows(sub_id)?;
         self.e().emit(CoreEvent::ReadingChanged);
         self.send(Msg::Pull);
         Ok(())
@@ -1638,7 +1659,7 @@ impl Backend for LiveBackend {
         // with `title: null`); a failed refresh keeps the local edit.
         match self.e().api.list_subscriptions() {
             Ok(subs) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
             }
             Err(_) => self.e().store.edit_subscription(sub_id, |s| {
                 if let Some(t) = title {
@@ -2136,6 +2157,10 @@ impl Backend for LiveBackend {
         self.e().background_served()
     }
 
+    fn background_placing(&self) -> bool {
+        self.e().background_placing()
+    }
+
     fn background_set(&self) -> Option<crate::background::BackgroundSet> {
         self.e().store.background_set()
     }
@@ -2146,15 +2171,19 @@ impl Backend for LiveBackend {
         withdrawn: bool,
         placement: Option<crate::background::Placement>,
     ) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().set_reading_placement(key, withdrawn, placement)
     }
 
     fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         let rows = self.e().store.reading_rows_of(sub);
         self.e().set_blyg_background(sub, on, &rows)
@@ -2169,8 +2198,10 @@ impl Backend for LiveBackend {
         rule: &str,
         on: bool,
     ) -> Result<crate::background::BackgroundRules> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().track(self.e().api.put_background_rule(rule, on))
     }

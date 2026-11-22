@@ -45,6 +45,9 @@ use crate::app::MainView;
 pub struct Background {
     /// The blyg serves Background (as of the last reading refresh).
     pub served: bool,
+    /// This sign-in may place posts in Background (a read-only one sees
+    /// the lens and no chips).
+    pub placing: bool,
     /// Its rules, read when Settings opens.
     pub rules: Load<BackgroundRules>,
     /// A rule is being saved.
@@ -225,7 +228,7 @@ impl MainView {
 
     /// The reading pane's Background chips for the open post.
     pub(crate) fn background_chips(&self, r: &ReadingItem) -> Vec<ActionChip> {
-        chips(r, self.reading.background.served)
+        chips(r, self.reading.background.placing)
     }
 
     /// A Background chip under the open post was clicked.
@@ -251,8 +254,9 @@ impl MainView {
 
     /// `b`: the post in front of you to Background, or back to Foreground.
     pub(crate) fn background_key(&mut self, cx: &mut Context<Self>) {
-        if !self.reading.background.served {
-            self.show_toast(blyg_core::background::NOT_SERVED, None, cx);
+        if !self.reading.background.placing {
+            let why = blyg_core::background::not_placing(self.reading.background.served);
+            self.show_toast(why, None, cx);
             return;
         }
         let key: Option<Key> = self
