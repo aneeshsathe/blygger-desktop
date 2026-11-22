@@ -862,7 +862,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         match ev {
-            BrowserEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
+            BrowserEvent::Escape => self.escape_from_pane(window, cx), // --- esc ---
             BrowserEvent::Changed => {
                 self.browser_refresh_state(cx);
                 if self.browser.page.loading {

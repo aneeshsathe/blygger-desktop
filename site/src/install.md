@@ -192,10 +192,13 @@ WebView2 download page.
   works on Windows too: the post's page takes the reading pane, in a
   WebView2 like the browser pane's ([Read it on the author's
   site](reading.md#read-it-on-the-authors-site)).
-- **Esc.** Esc closes the open sheet, palette, Menu or browser pane, as on
-  the Mac, even when you last clicked inside a web page (the browser pane or
-  the preview). A click anywhere else in the window takes the keyboard back
-  from the page. A video in full screen keeps Esc to leave full screen.
+- **Esc.** Esc closes the open sheet, palette or Menu, as on the Mac, even
+  when you last clicked inside a web page (the browser pane or the preview).
+  In the browser pane's page, the page sees Esc too (a site's own pop-up
+  closes), so the first Esc only gives the keyboard back to Burrow and the
+  pane stays open; a second Esc closes it. A click anywhere else in the
+  window takes the keyboard back from the page. A video in full screen keeps
+  Esc to leave full screen.
 - **Cross-posting.** cross-post works on Windows too. [On Windows, step by
   step](extensions.md#on-windows-step-by-step) walks through turning it on,
   signing in to Bluesky, Farcaster or Substack Notes, and posting.

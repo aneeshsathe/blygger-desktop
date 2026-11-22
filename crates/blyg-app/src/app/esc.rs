@@ -7,15 +7,41 @@ use super::*;
 
 impl MainView {
     /// --- esc --- Esc was pressed in a web view that had the keyboard (the
-    /// preview, the reader's post, the browser pane's page; Windows only,
-    /// where WebView2 keeps keys from the app). The keyboard comes back to
-    /// the app and Esc is handled there as if pressed in it: the open
-    /// sheet, palette, author's-site view or pane closes, as on macOS. After this update,
-    /// because Esc's handlers update this view.
+    /// preview, the reader's post or the author's site; Windows only, where
+    /// WebView2 keeps keys from the app). The keyboard comes back to the
+    /// app and Esc is handled there as if pressed in it: the open sheet,
+    /// palette or author's-site view closes, as on macOS. After this
+    /// update, because Esc's handlers update this view.
     pub(crate) fn escape_from_web_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.hand_back_keyboard_from_web_views();
+        Self::dispatch_escape(window, cx);
+    }
+
+    /// --- esc --- Esc was pressed in the browser pane's page. The page saw
+    /// it too (a site's own pop-up or menu closes), so it isn't also the
+    /// app's "close the pane", which could fold away a half-written post
+    /// or a cross-post's composer: the keyboard comes back to the app, and
+    /// only an open sheet or palette closes. A second Esc, now in the app,
+    /// closes the pane.
+    pub(crate) fn escape_from_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.hand_back_keyboard_from_web_views();
+        let over = self.sheet.is_open()
+            || self.cmd_palette.open.is_some()
+            || self.ext.has_overlay()
+            || self.reading.sheet.is_some()
+            || self.ai.has_overlay();
+        if over {
+            Self::dispatch_escape(window, cx);
+        }
+    }
+
+    fn hand_back_keyboard_from_web_views(&mut self) {
         self.studio.hand_back_keyboard();
         self.reading.site.hand_back_keyboard();
         self.browser.with(|s| s.focus_parent());
+    }
+
+    fn dispatch_escape(window: &mut Window, cx: &mut Context<Self>) {
         window.defer(cx, |window, cx| {
             if let Ok(esc) = Keystroke::parse("escape") {
                 window.dispatch_keystroke(esc, cx);
