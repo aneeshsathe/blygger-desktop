@@ -20,7 +20,7 @@ impl Store {
     /// list. Signals on posts not held here are ignored. True when a row
     /// changed.
     pub fn replace_thumbs(&self, signals: &[(String, String, i8)]) -> Result<bool> {
-        let clear = self.lists_prune() == crate::api::Prune::Allowed;
+        let removal = self.lists_prune_now();
         let want: HashMap<(&str, &str), i8> = signals
             .iter()
             .map(|(s, r, t)| ((s.as_str(), r.as_str()), *t))
@@ -39,7 +39,7 @@ impl Store {
             };
             let thumb = match want.get(&(sub.as_str(), rid.as_str())) {
                 Some(t) => Some(*t),
-                None if clear => None,
+                None if it.thumb.is_some() && removal.may(self) => None,
                 None => continue,
             };
             if it.thumb == thumb {

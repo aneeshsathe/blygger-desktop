@@ -206,6 +206,43 @@ fn a_newer_contracts_hoppers_remove_nothing() {
     assert!(s.hoppers().is_empty());
 }
 
+/// A check from an earlier pull is stale: a read that lacks a hopper holds
+/// its removal back until the contract is read again; one that drops
+/// nothing isn't held back.
+#[test]
+fn a_stale_checks_hopper_removal_is_held_back() {
+    let s = seeded();
+    let h1 = || fetched(hopper("H1", "Slow", 1), &[("s1", "A")]);
+    s.replace_hoppers(&[h1()]).unwrap();
+    s.contract_stale();
+    s.replace_hoppers(&[h1()]).unwrap();
+    assert!(!s.take_held_back(), "nothing dropped");
+    s.replace_hoppers(&[]).unwrap();
+    assert_eq!(s.hoppers().len(), 1, "H1 held back");
+    assert!(s.take_held_back());
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s.replace_hoppers(&[]).unwrap();
+    assert!(s.hoppers().is_empty());
+}
+
+/// A hopper the blyg answers 404 for by id (a GET after a 409) goes only
+/// on a contract that lets its answers remove: on a newer one, or before
+/// any check, it stays with its waiting ops.
+#[test]
+fn a_hopper_the_blyg_doesnt_find_goes_only_when_allowed() {
+    use crate::api::Prune;
+    let s = seeded();
+    s.replace_hoppers(&[fetched(hopper("H1", "Slow", 1), &[("s1", "A")])])
+        .unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
+    assert!(!s.hopper_not_found("H1", Prune::Withheld).unwrap());
+    assert_eq!(s.hoppers().len(), 1, "kept");
+    assert_eq!(hopper_ops(&s).len(), 1, "its op still waits");
+    assert!(s.hopper_not_found("H1", Prune::Allowed).unwrap());
+    assert!(s.hoppers().is_empty());
+}
+
 #[test]
 fn deleting_a_hopper_lets_go_of_the_posts_only() {
     let s = seeded();

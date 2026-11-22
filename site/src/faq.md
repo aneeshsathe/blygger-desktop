@@ -95,7 +95,9 @@ Your blyg was updated to a studio whose API is newer than this Burrow knows.
 Burrow keeps syncing what it can, and your posts and changes still go to the
 blyg, but it won't remove anything on your Mac because of what that studio
 lists (a post, a subscription or a hopper it doesn't list stays here) until
-Burrow is updated. Check for updates in the Burrow menu (Burrow › Check for
+Burrow is updated. One side effect: when an RSS feed gives a post a new id
+meanwhile, the post shows twice in Reading (under its old id and its new one)
+until Burrow is updated and the old one goes. Check for updates in the Burrow menu (Burrow › Check for
 Updates…).
 
 ### Why won't my quote go in?

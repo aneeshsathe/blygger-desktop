@@ -53,6 +53,14 @@ pub const WRITES_META: &str = "shelf_writes";
 pub const BASE_META: &str = "shelf_base";
 /// `meta`: the shelf's revision as last read or written.
 pub const REVISION_META: &str = "shelf_revision";
+/// `meta`: what this side took off since the blyg last agreed (JSON
+/// `[Entry]`, newest last, at most [`TAKEN_OFF_MAX`]). With no base yet (a
+/// fresh install on a newer contract, a sign-in read-only from the start)
+/// it's the only record of a removal made here; cleared once the blyg
+/// agrees a list.
+pub const TAKEN_OFF_META: &str = "shelf_taken_off";
+/// How many removals [`TAKEN_OFF_META`] keeps (the shelf holds 50).
+pub const TAKEN_OFF_MAX: usize = 200;
 
 /// One shelf entry, as the wire names it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -164,7 +164,6 @@ pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 
 /// --- contacts --- the address book as last fetched (JSON), and whether
 /// the blyg served it ("1"/"0").
-const CONTACTS_META: &str = "contacts.json";
 const CONTACTS_SERVED_META: &str = "contacts.served";
 /// --- contacts --- The studio version (`blyg.json`'s generator) last seen,
 /// so a launch knows whether handles read in natural grammar (studio 0.66)
@@ -423,7 +422,9 @@ impl LiveBackend {
     /// version history.
     fn refresh(&self, id: &LocalId, sid: &str) -> Option<WireItem> {
         let w = self.e().api.get_item_full(sid).ok()?;
-        self.e().store.apply_server(id, &w).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())
+            .ok()?;
         Some(w)
     }
 
@@ -568,12 +569,16 @@ impl LiveBackend {
                 continue;
             };
             let _ = match self.e().store.local_id_for_server(&part.id) {
-                Some(local) => self.e().store.apply_server(&local, &pw),
+                Some(local) => self
+                    .e()
+                    .lay_list(|| self.e().store.apply_server(&local, &pw), |_, _| ()),
                 None => self.e().store.insert_from_server(&pw).map(|_| ()),
             };
         }
         let w = w?;
-        self.e().store.replace_from_server(id, w).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, w), |_, _| ())
+            .ok()?;
         Some(w.content_md.clone())
     }
 
@@ -603,12 +608,6 @@ impl LiveBackend {
             // Best effort: the next sighting writes it again.
             let _ = store.set_meta(STUDIO_VERSION_META, v);
         }
-    }
-
-    /// --- contacts --- Keep `list` as the local copy of the book.
-    fn keep_contacts(&self, list: &[crate::contacts::Contact]) -> Result<()> {
-        let json = serde_json::to_string(list).map_err(|e| CoreError::Other(e.to_string()))?;
-        self.engine.store.set_meta(CONTACTS_META, &json)
     }
 
     /// Resolve a URL the way subscribing does: what we already know (your
@@ -904,11 +903,7 @@ impl Backend for LiveBackend {
     // --- end syndication ---
 
     fn contacts(&self) -> Vec<crate::contacts::Contact> {
-        self.engine
-            .store
-            .meta(CONTACTS_META)
-            .and_then(|j| serde_json::from_str(&j).ok())
-            .unwrap_or_default()
+        self.engine.store.contacts()
     }
 
     fn refresh_contacts(&self) -> Result<()> {
@@ -921,17 +916,15 @@ impl Backend for LiveBackend {
         {
             self.keep_studio_version(&v);
         }
-        let mut list = got.unwrap_or_default();
-        // --- newer contract --- what its book lacks stays here.
-        use crate::sync::newer::{keep_held, same_contact};
-        let held = self.contacts();
-        let drops = held
-            .iter()
-            .any(|h| !list.iter().any(|c| same_contact(c, h)));
-        if drops && self.e().recheck_contract() == crate::api::Prune::Withheld {
-            list = keep_held(&held, list, same_contact);
-        }
-        self.keep_contacts(&list)
+        let list = got.unwrap_or_default();
+        // --- newer contract --- a book that drops one checks the contract
+        // again first; on a newer one what it lacks stays here.
+        let prune = if store.contacts_dropped_by(&list) {
+            self.e().recheck_contract()
+        } else {
+            crate::api::Prune::Allowed
+        };
+        store.take_served_contacts(list, prune)
     }
 
     fn rewrites_handles(&self) -> bool {
@@ -979,8 +972,7 @@ impl Backend for LiveBackend {
     fn delete_contact(&self, id: &str) -> Result<()> {
         self.e().track(self.e().api.delete_contact(id))?;
         // Gone here too, whatever the re-read keeps (`refresh_contacts`).
-        let left: Vec<_> = self.contacts().into_iter().filter(|c| c.id != id).collect();
-        let _ = self.keep_contacts(&left);
+        let _ = self.e().store.drop_contact(id);
         let _ = self.refresh_contacts();
         Ok(())
     }
@@ -1433,7 +1425,8 @@ impl Backend for LiveBackend {
         match self.e().track(self.e().api.get_item_full(&sid.0)) {
             Ok(w) => {
                 let _net = self.e().net_lock();
-                self.e().store.apply_server(id, &w)?;
+                self.e()
+                    .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())?;
                 Ok(w.versions.unwrap_or_default())
             }
             Err(CoreError::Offline) => {
@@ -1461,7 +1454,8 @@ impl Backend for LiveBackend {
         let _net = self.e().net_lock();
         self.command(id, &sid, |rev| self.e().api.restore(&sid, rev, version))?;
         let w = self.e().track(self.e().api.get_item_full(&sid))?;
-        self.e().store.replace_from_server(id, &w)?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, &w), |_, _| ())?;
         self.e().emit(CoreEvent::ItemsChanged);
         self.e().emit_status();
         Ok(())
@@ -2641,7 +2635,16 @@ impl LiveBackend {
         let fresh = match self.e().track(self.e().api.hopper(id)) {
             Ok(h) => h,
             Err(CoreError::NotFound) => {
-                self.e().store.remove_hopper(id)?;
+                // --- newer contract --- gone only on a contract that lets
+                // the blyg's answers remove (not before the check either).
+                let prune = self.e().lists_prune_fresh();
+                if !self.e().store.hopper_not_found(id, prune)? {
+                    return Err(hopper_conflict_error(
+                        "Your blyg didn't find this hopper while Burrow was saving the change. \
+                         Burrow keeps it here for now."
+                            .into(),
+                    ));
+                }
                 self.e().emit(CoreEvent::ReadingChanged);
                 return Err(hopper_conflict_error(
                     "This hopper was deleted on your blyg while Burrow was saving the change."

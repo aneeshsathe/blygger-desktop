@@ -12,6 +12,7 @@
 
 mod background; // --- background ---
 mod browse; // --- browse ---
+mod contacts; // --- contacts ---
 mod folders; // --- reader folders ---
 mod fts; // text-index upkeep
 pub use fts::FtsUpkeep;
@@ -92,13 +93,52 @@ pub struct Store {
     /// The `reading` rowids written since the cache last looked, from the
     /// connection's update hook.
     reading_dirty: Arc<Mutex<reading::Dirty>>,
-    /// Whether the blyg's lists may remove what's held here: `Withheld` on
-    /// a contract newer than this Burrow knows, and until sync's contract
-    /// check (`Engine::check_server`) has allowed it. Every removal on a
-    /// list's word asks it: `merge_all`, `prune_reading`, `replace_thumbs`,
-    /// `replace_hoppers`, `reconcile_read_state`'s clears and
-    /// `merge_reading_page`'s re-keys.
-    lists_prune: Mutex<Prune>,
+    /// Whether the blyg's lists may remove what's held here ([`Lists`]).
+    /// Every removal on a list's word asks it: `merge_all`,
+    /// `prune_reading`, `replace_thumbs`, `replace_hoppers`,
+    /// `reconcile_read_state`'s clears and `merge_reading_page`'s re-keys.
+    lists: Mutex<Lists>,
+}
+
+/// --- newer contract --- What the blyg's contract lets its lists remove
+/// here, as sync last checked it (`Engine::check_server`,
+/// `Engine::recheck_contract`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Lists {
+    /// `None`: not checked yet this session (nothing is removed, and it
+    /// isn't a newer contract either). `Some(Withheld)`: a newer contract.
+    checked: Option<Prune>,
+    /// The check was made this pull. A removal on an older check is held
+    /// back (`held_back`) until sync reads the contract again: a studio
+    /// upgraded since would otherwise prune on its word.
+    fresh: bool,
+    /// A removal was held back for a stale check since sync last asked.
+    held_back: bool,
+}
+
+/// May a list's word remove something now ([`Store::lists_prune_now`])?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Removal {
+    Now,
+    /// Allowed as of an earlier pull: held back, and noted for sync to read
+    /// the contract again (`Store::take_held_back`).
+    Recheck,
+    Never,
+}
+
+impl Removal {
+    /// Whether to remove the one thing at hand. Asked only where something
+    /// would go, so a held-back note means a list really dropped something.
+    pub(crate) fn may(self, store: &Store) -> bool {
+        match self {
+            Removal::Now => true,
+            Removal::Recheck => {
+                store.lists().held_back = true;
+                false
+            }
+            Removal::Never => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -346,20 +386,72 @@ impl Store {
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
             // Nothing is removed on a list's word before the contract is known.
-            lists_prune: Mutex::new(Prune::Withheld),
+            lists: Mutex::new(Lists::default()),
             conn: Mutex::new(conn),
         })
     }
 
-    /// Whether the blyg's lists may remove what's held here.
+    fn lists(&self) -> MutexGuard<'_, Lists> {
+        self.lists.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Whether the blyg's lists may remove what's held here, as last
+    /// checked: `Withheld` on a newer contract and before any check.
     pub fn lists_prune(&self) -> Prune {
-        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner())
+        self.lists().checked.unwrap_or(Prune::Withheld)
     }
 
     /// What the blyg's contract lets its lists remove (sync's contract
-    /// check).
+    /// check, made just now).
     pub fn set_lists_prune(&self, prune: Prune) {
-        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner()) = prune;
+        let mut l = self.lists();
+        l.checked = Some(prune);
+        l.fresh = true;
+    }
+
+    /// The contract is no longer known (it proved too old): nothing is
+    /// removed, and it isn't called newer either.
+    pub fn forget_contract(&self) {
+        *self.lists() = Lists::default();
+    }
+
+    /// Whether sync checked the contract this session (and it wasn't too
+    /// old).
+    pub fn contract_known(&self) -> bool {
+        self.lists().checked.is_some()
+    }
+
+    /// Whether a check found a contract newer than this Burrow knows (not
+    /// merely none made yet).
+    pub fn newer_contract(&self) -> bool {
+        self.lists().checked == Some(Prune::Withheld)
+    }
+
+    /// A new pull: the last check is from before it. A removal it would
+    /// allow is held back until sync reads the contract again.
+    pub fn contract_stale(&self) {
+        self.lists().fresh = false;
+    }
+
+    /// Whether a removal was held back for a stale check since last asked.
+    pub fn take_held_back(&self) -> bool {
+        std::mem::take(&mut self.lists().held_back)
+    }
+
+    /// May a list's word remove something now?
+    pub(crate) fn lists_prune_now(&self) -> Removal {
+        match *self.lists() {
+            Lists {
+                checked: Some(Prune::Allowed),
+                fresh: true,
+                ..
+            } => Removal::Now,
+            Lists {
+                checked: Some(Prune::Allowed),
+                ..
+            } => Removal::Recheck,
+            _ => Removal::Never,
+        }
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
@@ -1054,7 +1146,7 @@ impl Store {
     /// carry unpushed edits, which will recreate them, or the contract is
     /// newer than Burrow's: `lists_prune`).
     pub fn merge_all(&self, wires: &[WireItem]) -> Result<MergeOutcome> {
-        let prune = self.lists_prune() == Prune::Allowed;
+        let removal = self.lists_prune_now();
         let mut out = MergeOutcome::default();
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -1096,7 +1188,11 @@ impl Store {
             }
         }
         for (sid, row) in &by_sid {
-            if prune && !seen.contains(sid) && !row.item.pending_sync && !row.item.conflict {
+            if !seen.contains(sid)
+                && !row.item.pending_sync
+                && !row.item.conflict
+                && removal.may(self)
+            {
                 tx.execute(
                     "DELETE FROM versions WHERE local_id = ?1",
                     [&row.item.local_id.0],
@@ -1127,12 +1223,13 @@ impl Store {
     /// Refresh one item from the server without conflict detection (after
     /// publish, withdraw, …). Local unpushed content is kept.
     pub fn apply_server(&self, id: &LocalId, w: &WireItem) -> Result<()> {
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
         if let Some(row) = get_row(&tx, id)? {
             merge_one(&tx, &row, w, false)?;
             if let Some(v) = &w.versions {
-                put_versions(&tx, id, v)?;
+                put_versions(&tx, id, v, || removal.may(self))?;
             }
         }
         tx.commit()?;
@@ -1141,6 +1238,7 @@ impl Store {
 
     /// Server copy wins outright: drop local edits and conflict (restore).
     pub fn replace_from_server(&self, id: &LocalId, w: &WireItem) -> Result<()> {
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
@@ -1156,7 +1254,7 @@ impl Store {
         if let Some(row) = get_row(&tx, id)? {
             merge_one(&tx, &row, w, false)?;
             if let Some(v) = &w.versions {
-                put_versions(&tx, id, v)?;
+                put_versions(&tx, id, v, || removal.may(self))?;
             }
         }
         tx.commit()?;
@@ -1274,10 +1372,14 @@ impl Store {
 
     // --------------------------------------------------------------- versions
 
+    /// Lay an item's version list (`GET /api/items/:id/versions`) over the
+    /// rows held for it; one it lacks goes only when the blyg's lists may
+    /// remove (`lists_prune`).
     pub fn put_versions(&self, id: &LocalId, v: &[Version]) -> Result<()> {
+        let removal = self.lists_prune_now();
         let mut c = self.conn();
         let tx = c.transaction()?;
-        put_versions(&tx, id, v)?;
+        put_versions(&tx, id, v, || removal.may(self))?;
         tx.commit()?;
         Ok(())
     }
@@ -1514,15 +1616,37 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
         ],
     )?;
     if let Some(v) = &w.versions {
-        put_versions(tx, &id, v)?;
+        // A new row: nothing held to remove.
+        add_versions(tx, &id, v)?;
     }
     Ok(id)
 }
 
-fn put_versions(tx: &Connection, id: &LocalId, v: &[Version]) -> rusqlite::Result<()> {
-    tx.execute("DELETE FROM versions WHERE local_id = ?1", [&id.0])?;
+/// An item's version rows from its version list: replaced whole, or, when
+/// the list lacks a version held here and `may_drop` says no, only added to
+/// and updated (a newer contract's list, or one read before any check or on
+/// a stale one, may read short or empty). `may_drop` is asked only then.
+fn put_versions(
+    tx: &Connection,
+    id: &LocalId,
+    v: &[Version],
+    may_drop: impl FnOnce() -> bool,
+) -> rusqlite::Result<()> {
+    let held: Vec<u32> = tx
+        .prepare_cached("SELECT version FROM versions WHERE local_id = ?1")?
+        .query_map([&id.0], |r| Ok(r.get::<_, i64>(0)? as u32))?
+        .collect::<rusqlite::Result<_>>()?;
+    let drops = held.iter().any(|h| !v.iter().any(|x| x.version == *h));
+    if !drops || may_drop() {
+        tx.execute("DELETE FROM versions WHERE local_id = ?1", [&id.0])?;
+    }
+    add_versions(tx, id, v)
+}
+
+/// Add or update an item's version rows; none is removed.
+fn add_versions(tx: &Connection, id: &LocalId, v: &[Version]) -> rusqlite::Result<()> {
     let mut st = tx.prepare_cached(
-        "INSERT INTO versions (local_id, version, published_at, note, pinned, endcap) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR REPLACE INTO versions (local_id, version, published_at, note, pinned, endcap) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
     for x in v {
         st.execute(params![

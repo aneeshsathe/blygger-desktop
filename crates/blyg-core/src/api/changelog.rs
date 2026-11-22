@@ -18,9 +18,21 @@ use crate::changelog::{
 
 impl Api {
     /// Whether this studio has changelog display: its settings, as a read
-    /// shows them, carry the keys.
+    /// shows them, carry the keys. Read once a pull (`Api::new_pull`).
     pub fn serves_changelog(&self) -> Result<bool> {
-        Ok(self.changelog_settings()?.is_some())
+        let held = *self
+            .changelog_served
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(on) = held {
+            return Ok(on);
+        }
+        let on = self.changelog_settings()?.is_some();
+        *self
+            .changelog_served
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(on);
+        Ok(on)
     }
 
     /// Whether this studio writes changelog summaries for this token (its
@@ -46,6 +58,8 @@ impl Api {
             return Err(CoreError::Other(NEEDS_0_58.into()));
         }
         let v = self.call("PATCH", "/api/settings", Some(s.to_json()))?;
+        // The settings changed: what the pull cached of them is read again.
+        self.new_pull();
         Ok(ChangelogSettings::from_json(&v))
     }
 

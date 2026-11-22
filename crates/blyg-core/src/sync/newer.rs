@@ -14,13 +14,15 @@
 //! - Nothing held here is removed on the word of that studio's lists, until
 //!   a Burrow that knows the contract: a page in a shape Burrow doesn't know
 //!   would read as an empty or ended list. The store holds the one switch
-//!   (`Store::lists_prune`). It starts withheld, `Engine::check_server`
-//!   allows it, and it's checked again on each safety-net pull and before
-//!   a removal that may come long after the session's first check (a walk
-//!   that spans pulls, a subscription list that drops one:
-//!   [`Engine::recheck_contract`]), so a studio upgraded mid-session is
-//!   seen first. A store function that deletes list rows names the
-//!   decision, is private, or is on a reviewed list
+//!   (`Store::lists_prune`). It starts not checked (nothing removed, and
+//!   nothing called newer either: `Store::newer_contract`),
+//!   `Engine::check_server` sets it, and it's checked again on each
+//!   safety-net pull and before a removal that may come long after the
+//!   session's first check (a walk that spans pulls, a subscription list
+//!   that drops one: [`Engine::recheck_contract`]; a list laid on a check
+//!   from an earlier pull: [`Engine::lay_list`]), so a studio upgraded
+//!   mid-session is seen first. A store function that deletes list rows
+//!   names the decision, is private, or is on a reviewed list
 //!   (`tests/it/list_prune_scan.rs`). What a newer contract's lists leave:
 //!   - your items (`Store::merge_all`);
 //!   - reading rows after a whole walk (`walk::Read`'s `Step::Done`, and
@@ -109,12 +111,44 @@ impl Engine {
         })
     }
 
+    /// Run a read that lays a list over what's held here (`merge_all`,
+    /// `replace_thumbs`, `replace_hoppers`, `reconcile_read_state`). On a
+    /// check from an earlier pull, a removal it would make is held back
+    /// (`Store::take_held_back`): the contract is read again first, and on
+    /// a contract that still allows it the read is laid again, removing
+    /// this time. Pulls between safety nets on a studio without change
+    /// counters run each list every pull, so an upgrade is seen before
+    /// those lists remove anything.
+    pub(crate) fn lay_list<T>(
+        &self,
+        lay: impl Fn() -> Result<T>,
+        both: impl FnOnce(T, T) -> T,
+    ) -> Result<T> {
+        self.store.take_held_back();
+        let first = lay()?;
+        if self.store.take_held_back() && self.recheck_contract() == Prune::Allowed {
+            let again = lay()?;
+            return Ok(both(first, again));
+        }
+        Ok(first)
+    }
+
+    /// Whether the blyg's lists may remove what's held here now: on a
+    /// check from an earlier pull, the contract is read again first.
+    pub(crate) fn lists_prune_fresh(&self) -> Prune {
+        match self.store.lists_prune_now() {
+            crate::store::Removal::Now => Prune::Allowed,
+            crate::store::Removal::Recheck => self.recheck_contract(),
+            crate::store::Removal::Never => Prune::Withheld,
+        }
+    }
+
     /// Read the contract again now (one conditional `GET
     /// /api/capabilities`), before something is removed on a list's word:
     /// a studio upgraded since the last check is seen first. What the
     /// blyg's lists may remove, as of now; a failed read removes nothing
     /// this time, and a contract now too old is left to the next pull's
-    /// check to report.
+    /// check to report (known no more: not called newer meanwhile).
     pub(crate) fn recheck_contract(&self) -> Prune {
         let Ok(version) = self.api.contract_version() else {
             return Prune::Withheld;
@@ -122,7 +156,7 @@ impl Engine {
         let contract = crate::api::contract(version.as_deref());
         let Some(prune) = contract.prune() else {
             self.state().compatible = false;
-            self.store.set_lists_prune(Prune::Withheld);
+            self.store.forget_contract();
             return Prune::Withheld;
         };
         self.store.set_lists_prune(prune);

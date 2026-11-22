@@ -7,12 +7,10 @@
 #   <path under crates/> <function> | <reason>
 #
 blyg-core/src/store/mod.rs delete_item | your removal: a draft deleted here, or a post whose delete the blyg just confirmed
-blyg-core/src/store/mod.rs put_versions | not a list's word: rewrites one item's version rows from that item's own copy as the blyg returned it (a push's answer, a fetch of that item)
 blyg-core/src/store/mod.rs edit_subscription | your edit: one held subscription renamed, changed or unsubscribed here; it never takes a list
 blyg-core/src/store/mod.rs add_subscription | adds one subscription made here; the rows already held are written back
 blyg-core/src/store/reading.rs drop_subscription_rows | your removal: the rows of a subscription unsubscribed here
 blyg-core/src/store/hoppers.rs set_hopper_member | your removal: a post taken out of a hopper here
-blyg-core/src/store/hoppers.rs remove_hopper | not a list's word: a hopper deleted here, or one the blyg answered 404 for by id (`LiveBackend::delete_hopper`, `update_hopper_again`)
+blyg-core/src/store/hoppers.rs remove_hopper | your removal: a hopper deleted here (`LiveBackend::delete_hopper`); one the blyg answers 404 for by id goes through `hopper_not_found`, which takes the decision
 blyg-core/src/store/shelf.rs set_on_shelf | your removal: a post of yours taken off Saved here
 blyg-core/src/store/shelf.rs set_entry_on_shelf | your removal: a post taken off Saved here
-blyg-core/src/store/shelf.rs apply_shelf | guarded by its caller, not here: `Engine::sync_shelf` (`sync/shelf.rs`) lays a newer contract's shelf through `show_shelf_union`, which passes the union so nothing comes off

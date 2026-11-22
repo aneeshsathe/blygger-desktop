@@ -6,9 +6,73 @@
 
 use crate::api::auth::Credential;
 use crate::api::{Api, Prune};
-use crate::shelf::{BASE_META, Entry, Remote, SERVED_META, SyncState, WRITES_META};
+use crate::shelf::{BASE_META, Entry, Remote, SERVED_META, SyncState, TAKEN_OFF_META, WRITES_META};
 use crate::store::{OpKind, Store};
 use crate::sync::{Engine, SyncOptions};
+
+/// Removals made while the blyg doesn't serve Saved aren't recorded, and a
+/// record left from before is dropped when Saved is first found served with
+/// no base: an entry another device still has survives the first sync.
+#[test]
+fn removals_before_saved_was_served_dont_remove_it_elsewhere() {
+    let e = engine();
+    e.store.set_lists_prune(Prune::Allowed);
+    let (a, b, c) = (
+        Entry::new("s1", "A"),
+        Entry::new("s1", "B"),
+        Entry::new("s1", "C"),
+    );
+    e.set_shelf_served(false);
+    e.store.set_entry_on_shelf(&b, true).unwrap();
+    e.store.set_entry_on_shelf(&a, false).unwrap();
+    assert_eq!(e.store.meta(TAKEN_OFF_META), None, "not served: no record");
+    // A record from an earlier spell of Saved sync, with no base since.
+    e.store
+        .set_meta(
+            TAKEN_OFF_META,
+            &serde_json::to_string(std::slice::from_ref(&c)).unwrap(),
+        )
+        .unwrap();
+    e.set_shelf_served(true);
+    assert_eq!(e.store.meta(TAKEN_OFF_META), None, "first served: cleared");
+    let server = Remote {
+        entries: vec![a.clone(), c.clone()],
+        revision: 1,
+    };
+    e.show_shelf_union(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(shelf.contains(&a) && shelf.contains(&c), "{shelf:?}");
+    assert!(shelf.contains(&b));
+}
+
+/// A sync on a check from an earlier pull that would take an entry off
+/// here reads the contract again first; when that read fails (the API here
+/// is a closed port) nothing comes off, and nothing is sent.
+#[test]
+fn a_stale_check_reads_the_contract_before_saved_drops_an_entry() {
+    let (a, b) = (Entry::new("s1", "A"), Entry::new("s1", "B"));
+    let base = serde_json::to_string(&[a.clone(), b.clone()]).unwrap();
+    let server = Remote {
+        entries: vec![a.clone()],
+        revision: 6,
+    };
+    for writes in ["1", "0"] {
+        let e = engine();
+        e.store.set_lists_prune(Prune::Allowed);
+        e.store.set_meta(WRITES_META, writes).unwrap();
+        e.store.set_entry_on_shelf(&b, true).unwrap();
+        e.store.set_meta(BASE_META, &base).unwrap();
+        e.store.contract_stale();
+        let _ = e.sync_shelf_with(server.clone());
+        let shelf = e.store.shelf_wire();
+        assert!(shelf.contains(&b), "writes={writes}: B kept: {shelf:?}");
+        assert_eq!(
+            e.store.meta(BASE_META),
+            Some(base.clone()),
+            "nothing agreed"
+        );
+    }
+}
 
 /// A blyg that offers the shelf, with A shelved here and the change queued.
 fn engine() -> Engine {
@@ -55,6 +119,84 @@ fn a_read_only_sign_in_holds_a_shelf_change_and_says_so() {
     e.store.set_meta(WRITES_META, "1").unwrap();
     e.store.set_lists_prune(Prune::Withheld);
     assert_eq!(e.shelf_state(), SyncState::HeldNewer);
+}
+
+/// Launched offline with a Saved change waiting: the contract isn't known
+/// yet, so the change waits, and Saved says it's syncing, not "until
+/// Burrow is updated".
+#[test]
+fn an_unchecked_contract_holds_a_shelf_change_without_calling_it_newer() {
+    let e = engine();
+    assert!(!e.store.newer_contract());
+    assert!(
+        e.next_op(None, true).unwrap().is_none(),
+        "held until checked"
+    );
+    assert_eq!(e.shelf_state(), SyncState::Waiting);
+}
+
+/// Read-only on a known contract: the blyg's list is the truth. Another
+/// device's removal comes off here (a three-way merge), this side's
+/// changes stay here, and nothing is sent.
+#[test]
+fn a_read_only_saved_takes_another_devices_removal() {
+    let e = engine();
+    e.store.set_lists_prune(Prune::Allowed);
+    e.store.set_meta(WRITES_META, "0").unwrap();
+    let (a, b, c) = (
+        Entry::new("s1", "A"),
+        Entry::new("s1", "B"),
+        Entry::new("s1", "C"),
+    );
+    e.store.set_entry_on_shelf(&b, true).unwrap();
+    let base = serde_json::to_string(&[a.clone(), b.clone()]).unwrap();
+    e.store.set_meta(BASE_META, &base).unwrap();
+    // Another device took B off and added C.
+    let server = Remote {
+        entries: vec![a.clone(), c.clone()],
+        revision: 5,
+    };
+    e.follow_shelf_read_only(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(!shelf.contains(&b), "B came off: {shelf:?}");
+    assert!(shelf.contains(&a) && shelf.contains(&c), "{shelf:?}");
+    // This side takes A off: it stays off, on this computer.
+    e.store.set_entry_on_shelf(&a, false).unwrap();
+    e.follow_shelf_read_only(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(!shelf.contains(&a), "A stays off here: {shelf:?}");
+    assert!(shelf.contains(&c));
+}
+
+/// A removal made here sticks with no base yet (a fresh install on a newer
+/// studio, or a sign-in read-only from the start): what this side took
+/// off is kept, not worked out from an agreement that never happened.
+#[test]
+fn a_saved_removal_with_no_base_stays_off() {
+    let a = Entry::new("s1", "A");
+    let b = Entry::new("s1", "B");
+    let server = Remote {
+        entries: vec![a.clone(), b.clone()],
+        revision: 2,
+    };
+    // A newer contract.
+    let e = engine();
+    e.store.set_lists_prune(Prune::Withheld);
+    e.store.set_entry_on_shelf(&a, false).unwrap();
+    assert_eq!(e.store.meta(BASE_META), None);
+    e.show_shelf_union(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(!shelf.contains(&a), "newer: A stays off: {shelf:?}");
+    assert!(shelf.contains(&b));
+    // Read-only from the start.
+    let e = engine();
+    e.store.set_lists_prune(Prune::Allowed);
+    e.store.set_meta(WRITES_META, "0").unwrap();
+    e.store.set_entry_on_shelf(&a, false).unwrap();
+    e.follow_shelf_read_only(&server).unwrap();
+    let shelf = e.store.shelf_wire();
+    assert!(!shelf.contains(&a), "read-only: A stays off: {shelf:?}");
+    assert!(shelf.contains(&b));
 }
 
 #[test]

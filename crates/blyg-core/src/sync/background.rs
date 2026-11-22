@@ -23,11 +23,30 @@ impl Engine {
     /// posts (`setReadingPlacement`). A failed read leaves what was noted.
     pub(super) fn note_background_served(&self) {
         if let Ok(on) = self.api.serves_background() {
-            let _ = self.store.set_background_served(on);
+            let _ = self
+                .store
+                .set_background_served(on && !self.known_without_lens());
         }
         if let Ok(on) = self.api.places_background() {
             let _ = self.store.set_background_placing(on);
         }
+    }
+
+    /// Whether this studio's lens read was found plain rows at its current
+    /// contract (`NO_LENS_META`): asked again once the contract changes.
+    fn known_without_lens(&self) -> bool {
+        let Some(seen) = self.store.meta(crate::background::NO_LENS_META) else {
+            return false;
+        };
+        self.lens_memory_key().is_some_and(|v| v == seen)
+    }
+
+    /// What a "no lens" finding is remembered under: the blyg's
+    /// `contractVersion` as served, compared whole, never parsed. It only
+    /// says when to ask again (the API changed); the answer of the lens
+    /// itself decides whether Background is there.
+    fn lens_memory_key(&self) -> Option<String> {
+        self.api.contract_version().ok().flatten()
     }
 
     /// Whether the blyg serves Background, as of the last check.
@@ -46,13 +65,26 @@ impl Engine {
         if !self.store.background_served() {
             return Ok(false);
         }
-        // A studio before 0.61 refuses the filter, or ignores it and
-        // answers plain rows: it has no Background (until the next check).
+        // A studio before 0.61 refuses the filter (no Background until the
+        // next check), or ignores it and answers plain rows, judged on the
+        // first page (no Background until its contract changes).
         let had = self.store.background_set().is_some();
         let lens = match self.api.background_lens() {
-            Ok(lens) if crate::background::is_lens(&lens) => lens,
+            Ok(Some(lens)) => lens,
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
-            Ok(_) | Err(_) => {
+            Ok(None) => {
+                // Remembered for this contract, across sessions; not on a
+                // contract Burrow doesn't know, where plain rows may be a
+                // renamed field (asked again next session).
+                if !self.store.newer_contract()
+                    && let Some(v) = self.lens_memory_key()
+                {
+                    self.store.set_meta(crate::background::NO_LENS_META, &v)?;
+                }
+                self.store.set_background_served(false)?;
+                return Ok(had);
+            }
+            Err(_) => {
                 self.store.set_background_served(false)?;
                 return Ok(had);
             }

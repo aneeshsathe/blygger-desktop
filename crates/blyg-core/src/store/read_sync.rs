@@ -264,7 +264,7 @@ impl Store {
         server: &HashMap<(SubId, RemoteId), Option<u32>>,
         clear: bool,
     ) -> Result<ReadPlan> {
-        let take_clears = self.lists_prune() == crate::api::Prune::Allowed;
+        let removal = self.lists_prune_now();
         let pending = self.pending_read_rows()?;
         let mut plan = ReadPlan::default();
         let mut c = self.conn();
@@ -302,7 +302,7 @@ impl Store {
                     }
                 }
                 (Some(l), s) if Some(l) > s => {
-                    if clear && at.is_none() && !take_clears {
+                    if clear && at.is_none() && !removal.may(self) {
                         continue;
                     }
                     if clear && at.is_none() {

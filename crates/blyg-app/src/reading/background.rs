@@ -343,6 +343,9 @@ impl MainView {
         if matches!(self.reading.background.rules, Load::Loading) {
             return;
         }
+        // Whether the rules may be turned, as of now (Settings may open
+        // before Reading has been shown).
+        self.reading.background.placing = self.backend.background_placing();
         if !matches!(self.reading.background.rules, Load::Ready(_)) {
             self.reading.background.rules = Load::Loading;
         }
@@ -380,7 +383,7 @@ impl MainView {
 
     /// Space or ⏎ on a rule in Settings: turn it off, or back on.
     pub(crate) fn toggle_background_rule(&mut self, rule: &'static str, cx: &mut Context<Self>) {
-        if self.reading.background.saving {
+        if self.reading.background.saving || !self.reading.background.placing {
             return;
         }
         if let Load::Ready(r) = &self.reading.background.rules {
@@ -399,6 +402,11 @@ impl MainView {
         on: bool,
         cx: &mut Context<Self>,
     ) {
+        // A sign-in that can't place can't change the rules either: the
+        // studio would refuse the write.
+        if !self.reading.background.placing {
+            return;
+        }
         let Load::Ready(cur) = &mut self.reading.background.rules else {
             return;
         };
@@ -519,6 +527,19 @@ impl MainView {
                     "always in Background; this one can't be turned off",
                 )),
         );
+        // A sign-in that can't place: the rules show, greyed, and say why.
+        let locked = !self.reading.background.placing;
+        if locked {
+            col = col.child(
+                div()
+                    .id("bg-rules-locked")
+                    .debug_selector(|| "bg-rules-locked".into())
+                    .child(crate::app::settings_page::side_note(
+                        &p,
+                        blyg_core::background::NOT_PLACING,
+                    )),
+            );
+        }
         // Only the rules this blyg offers: a 0.61 studio refuses the others.
         for rule in RULES.into_iter().filter(|r| rules.offers(r)) {
             let on = rules.on(rule);
@@ -530,8 +551,8 @@ impl MainView {
             let c = chip(format!("bg-rule-{rule}").into(), label, on, ring)
                 .flex_none()
                 .when(BackgroundRules::needs(rule).is_some(), |d| d.ml(px(18.)))
-                .when(waits.is_some(), |d| d.opacity(0.5))
-                .when(waits.is_none(), |d| {
+                .when(waits.is_some() || locked, |d| d.opacity(0.5))
+                .when(waits.is_none() && !locked, |d| {
                     d.on_click(
                         cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
                     )
