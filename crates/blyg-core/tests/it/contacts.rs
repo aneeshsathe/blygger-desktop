@@ -92,8 +92,9 @@ fn unresolved_handles_come_back_as_a_publish_warning() {
 }
 
 /// Studio 0.66 (#158) reads `@handle`s in natural grammar (`@lin-driven`
-/// names Lin). Burrow follows it on 0.66 and later, and when the studio's
-/// version is unknown; on 0.56-0.65 it keeps the old reading.
+/// names Lin). Burrow follows it on 0.66 and later; on 0.56-0.65, and while
+/// the version was never known, it keeps the whole-token reading: a preview
+/// that links less than publish is safe, one that links more isn't.
 #[test]
 fn natural_grammar_starts_at_studio_0_66() {
     use blyg_core::contacts::natural_grammar;
@@ -102,6 +103,29 @@ fn natural_grammar_starts_at_studio_0_66() {
     assert!(natural_grammar(Some("1.0.0")));
     assert!(!natural_grammar(Some("0.65.9")));
     assert!(!natural_grammar(Some("0.56.0")));
-    assert!(natural_grammar(None), "unknown: the new reading");
-    assert!(natural_grammar(Some("not a version")), "unreadable: unknown");
+    assert!(!natural_grammar(None), "never known: the old reading");
+    assert!(!natural_grammar(Some("not a version")), "unreadable: never known");
+}
+
+/// The studio's version (`blyg.json`'s generator) is read with the contacts
+/// and kept on this Mac, so a launch, offline or before any update check,
+/// already knows it.
+#[test]
+fn the_studio_version_is_kept_from_the_contacts_refresh() {
+    use blyg_core::contacts::natural_grammar_at;
+    let env = env_at("5.7.0");
+    env.mock.state().public.insert(
+        "/blyg.json".into(),
+        json!({ "version": "0.3", "generator": "blygger-studio/0.68.0" }),
+    );
+    let b = env.manual();
+    assert_eq!(b.studio_version(), None, "never known yet");
+    assert!(!natural_grammar_at(&b));
+    b.refresh_contacts().unwrap();
+    assert_eq!(b.studio_version().as_deref(), Some("0.68.0"));
+    assert!(natural_grammar_at(&b));
+    drop(b);
+    let b = env.manual();
+    assert_eq!(b.studio_version().as_deref(), Some("0.68.0"), "kept");
+    assert!(natural_grammar_at(&b));
 }

@@ -290,11 +290,15 @@ fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) 
     let t = text(&view, cx);
     assert!(!t.ends_with(" or @lin )"), "never a state nobody typed: {t:?}");
     assert!(t.ends_with(" or @lin "), "back to the pick: {t:?}");
+    // Redo brings the closed-up text back, not the key's own `@lin )`.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-z"));
+    cx.run_until_parked();
+    let t = text(&view, cx);
+    assert!(t.ends_with(" or @lin)"), "redo closes up again: {t:?}");
 }
 
 /// Studio 0.56-0.65 links only a whole-token handle at publish, so there the
 /// pick writes `@handle` with no space, as before, and nothing closes up.
-/// An unknown version reads as new (above).
 #[gpui_kit::test]
 fn on_an_older_studio_a_pick_writes_the_bare_handle(cx: &mut TestAppContext) {
     let (view, cx) = setup_handles(Some("0.65.0"), cx);
@@ -306,12 +310,14 @@ fn on_an_older_studio_a_pick_writes_the_bare_handle(cx: &mut TestAppContext) {
     assert_eq!(text(&view, cx), format!("{before}In @lin says"));
 }
 
+/// A studio whose version was never known reads as an older one: the bare
+/// handle, since `@lin-driven` might publish as text there.
 #[gpui_kit::test]
-fn an_unknown_studio_version_reads_natural_grammar(cx: &mut TestAppContext) {
+fn a_never_known_studio_version_keeps_the_bare_handle(cx: &mut TestAppContext) {
     let (view, cx) = setup_handles(None, cx);
     let before = open_at_end(&view, DRAFT_THREAD, cx);
     pick_lin(&view, "In @li", cx);
-    assert_eq!(text(&view, cx), format!("{before}In @lin "));
+    assert_eq!(text(&view, cx), format!("{before}In @lin"));
 }
 
 /// Studio 0.66 (#157) dropped Shift+Enter's backslash line break: Enter, with
