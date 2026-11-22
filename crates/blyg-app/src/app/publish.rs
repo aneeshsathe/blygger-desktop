@@ -67,6 +67,7 @@ impl MainView {
                 });
                 self._subs.push(sub);
                 note.update(cx, |s, cx| s.focus(window, cx));
+                self.auto_crosspost_load(cx); // --- auto cross-post ---
                 self.sheet.open(PublishSheet {
                     id: item.local_id,
                     title,

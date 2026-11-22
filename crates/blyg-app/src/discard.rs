@@ -153,6 +153,7 @@ impl MainView {
                     Ok(()) => {
                         // The list moves on to the next post, previewed.
                         v.list.remove(&id);
+                        v.auto_crosspost_forget(&id, cx); // --- auto cross-post ---
                         if v.current.as_ref().is_some_and(|c| c.local_id == id) {
                             v.current = None;
                             v.mode = Mode::Search;

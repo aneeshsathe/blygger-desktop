@@ -122,9 +122,11 @@ the top left of the window.
 A few things to know on Windows:
 
 - **Esc** closes either sheet, and nothing is posted. Between the sheets,
-  while the page loads, Esc folds the pane instead, even if you've clicked
-  into the page. The run keeps going while the pane is folded, and
-  **Ctrl+Shift+B** or the status bar's **show pane** brings it back.
+  while the page loads, Esc folds the pane instead. If you've clicked into
+  the page, the first Esc only gives the keyboard back to Burrow (the site
+  sees it too, so its own pop-up closes), and a second Esc folds the pane.
+  The run keeps going while the pane is folded, and **Ctrl+Shift+B** or the
+  status bar's **show pane** brings it back.
 - If a site has signed you out, the run stops with "Sign in to … in this
   pane" (on Farcaster, it stops because the composer never opens). Nothing is
   posted. Do step 3 again and start over.
@@ -227,15 +229,27 @@ A post can start its cross-posts by itself when you publish it. In the
 alone and is remembered: other posts are unaffected, and it lasts across
 publishes until you untick it.
 
-When the post is published, Burrow starts a cross-post for each ticked site,
-one after another, and the toast says "cross-posting to Bluesky, Farcaster".
-"Automatically" only starts the run. Each one still shows both sheets, and
-nothing is posted until you press Post. Cancelling one (esc) skips that
-site, and the next one starts. A run that leaves the page to you stops the
-rest, and its toast says which sites weren't started, so you can run them
-from ⇧⌘P. That happens when a step fails, the box doesn't take the text, or
-you stop after Post was clicked. The choices are kept in Burrow's
-`state.json`, by blyg and post. They never reach your blyg.
+When the post is published, Burrow queues a cross-post for each ticked site
+and starts them one after another. The publish toast ("cross-posting to
+Bluesky, Farcaster") shows as the first one is being prepared, before its
+first sheet. "Automatically" only starts the run. Each one still shows both
+sheets, and nothing is posted until you press Post. Cancelling one (esc)
+skips that site, and the next one starts. A run that can't start (the site
+is no longer allowed, you're offline, the post has no link) shows its own
+toast saying why, and the next one starts. A run that leaves the page to
+you stops the rest, and its toast says which sites weren't started
+("Not started: …"), so you can run them from ⇧⌘P. That happens when a step
+fails, the box doesn't take the text, or you stop after Post was clicked,
+and also when a cross-post you started by hand leaves the page to you while
+others wait.
+
+**Each site once per post.** Publishing the post again (v2, v3…) doesn't
+post it to a site again when its **Copies elsewhere** already lists a copy
+there (the run records it when it can read the new post's link). When a run
+posts but its copy couldn't be recorded, that site is turned off for the
+post, so the next publish doesn't post it twice; tick it again to post a new
+version. Deleting a draft forgets its choices. The choices are kept in
+Burrow's `state.json`, by blyg and post. They never reach your blyg.
 
 ### Before you rely on it
 

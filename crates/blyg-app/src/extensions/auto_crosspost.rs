@@ -10,9 +10,15 @@
 //! taking the text, a stop after Post was clicked) stops the rest, and the
 //! toast names the sites still to do.
 //!
+//! A site runs once per post: a post whose copies elsewhere already list
+//! one on that site is skipped, and a run that posted without its copy
+//! being recorded turns that site off for the post, so publishing v2
+//! doesn't post it again. A (post, site) is queued or running once.
+//!
 //! The choices live in `state.json` (`auto_cross_post`), by blyg host and
 //! post, as `<extension>/<macro>` keys, or for the session only on the
-//! sample data and in tests.
+//! sample data and in tests. They're read once (when the Publish sheet or a
+//! palette opens, or a publish needs them), never while drawing.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -32,6 +38,9 @@ pub(crate) struct Auto {
     chosen: Option<BTreeMap<String, BTreeSet<String>>>,
     /// The runs still to start: (post, extension, macro id, site title).
     queue: VecDeque<(LocalId, String, String, String)>,
+    /// The run started from the queue, until it ends (or never starts):
+    /// (post, extension, macro id).
+    running: Option<(LocalId, String, String)>,
 }
 
 /// A macro's key in the choices.
@@ -106,12 +115,24 @@ impl MainView {
         macro_id: &str,
         cx: &mut Context<Self>,
     ) {
+        let on = !self
+            .auto_crosspost_chosen(id, cx)
+            .contains(&macro_key(ext, macro_id));
+        self.auto_set_choice(id, ext, macro_id, on, cx);
+        cx.notify();
+    }
+
+    /// Turn cross-posting to one site on (`on`) or off for post `id`, and
+    /// write it to `state.json`.
+    fn auto_set_choice(&mut self, id: &LocalId, ext: &str, macro_id: &str, on: bool, cx: &App) {
         let key = post_key(&self.auto_host(cx), id);
         let m = macro_key(ext, macro_id);
         let chosen = self.auto_load(cx);
         let set = chosen.entry(key.clone()).or_default();
-        if !set.remove(&m) {
+        if on {
             set.insert(m);
+        } else {
+            set.remove(&m);
         }
         let now: Vec<String> = set.iter().cloned().collect();
         if now.is_empty() {
@@ -126,7 +147,6 @@ impl MainView {
                 }
             });
         }
-        cx.notify();
     }
 
     /// Hook (after a publish succeeded): queue the chosen sites for `id`
@@ -143,7 +163,19 @@ impl MainView {
         }
         let mut titles = vec![];
         for m in self.auto_crosspost_sites() {
-            if chosen.contains(&macro_key(&m.ext, &m.spec.id)) {
+            let auto = &self.ext.auto;
+            let queued = auto
+                .queue
+                .iter()
+                .any(|q| q.0 == *id && q.1 == m.ext && q.2 == m.spec.id)
+                || auto
+                    .running
+                    .as_ref()
+                    .is_some_and(|r| r.0 == *id && r.1 == m.ext && r.2 == m.spec.id);
+            if chosen.contains(&macro_key(&m.ext, &m.spec.id))
+                && !queued
+                && !self.auto_has_copy(id, &m.site.origin)
+            {
                 titles.push(m.site.title.clone());
                 self.ext
                     .auto
@@ -159,28 +191,50 @@ impl MainView {
         titles
     }
 
-    /// Start the next queued run, unless one is going.
+    /// Start the next queued run, unless one is going (or being prepared).
     pub(crate) fn auto_crosspost_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.browser.automation.running() {
+        if self.browser.automation.running() || self.ext.auto.running.is_some() {
             return;
         }
         while let Some((id, ext, macro_id, _)) = self.ext.auto.queue.pop_front() {
+            self.ext.auto.running = Some((id.clone(), ext.clone(), macro_id.clone()));
             if self.ext_run_macro_for(ext, macro_id, Some(id), window, cx) {
                 return;
             }
+            self.ext.auto.running = None;
             // Refused before it started (the grant went, offline): the next.
         }
     }
 
-    /// Hook (a macro run ended with `out`): start the next queued run, or,
-    /// when the page still needs the user, stop the rest. What to add to
-    /// the run's toast in that case.
+    /// Hook (a queued run's text couldn't be prepared, so it never
+    /// started): the next one.
+    pub(crate) fn auto_crosspost_not_started(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ext.auto.running = None;
+        self.auto_crosspost_next(window, cx);
+    }
+
+    /// Hook (a macro run ended with `out`; `listed`: its copy was recorded
+    /// on the post): a queued run that posted without a record turns its
+    /// site off for the post, which couldn't tell next time. Then start the
+    /// next queued run, or, when the page still needs the user, stop the
+    /// rest. What to add to the run's toast in that case.
     pub(crate) fn auto_crosspost_after_run(
         &mut self,
         out: &Outcome,
+        listed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
+        if let Some((id, ext, macro_id)) = self.ext.auto.running.take()
+            && out.counts_as_post()
+            && !listed
+        {
+            self.auto_set_choice(&id, &ext, &macro_id, false, cx);
+        }
         if self.ext.auto.queue.is_empty() {
             return None;
         }
@@ -197,18 +251,45 @@ impl MainView {
         )))
     }
 
-    /// `auto_crosspost_chosen` without remembering what was read (for
-    /// render and the palette, which can't change the view).
+    /// Read the choices from `state.json` if they haven't been yet: when
+    /// the Publish sheet or a palette opens, so drawing never reads a file.
+    pub(crate) fn auto_crosspost_load(&mut self, cx: &App) {
+        self.auto_load(cx);
+    }
+
+    /// `auto_crosspost_chosen` as last read (for render and the palette,
+    /// which can't change the view; `auto_crosspost_load` reads it first).
     fn auto_chosen_now(&self, id: &LocalId, cx: &App) -> BTreeSet<String> {
         let key = post_key(&self.auto_host(cx), id);
-        match &self.ext.auto.chosen {
-            Some(c) => c.get(&key).cloned().unwrap_or_default(),
-            None => Self::tray_data_dir(cx)
-                .map(|d| blyg_core::state::AppState::load(&d).auto_cross_post)
-                .and_then(|mut m| m.remove(&key))
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
+        self.ext
+            .auto
+            .chosen
+            .as_ref()
+            .and_then(|c| c.get(&key).cloned())
+            .unwrap_or_default()
+    }
+
+    /// Post `id` has a copy listed on `origin`'s site (its copies
+    /// elsewhere, as the macro run records them).
+    fn auto_has_copy(&self, id: &LocalId, origin: &str) -> bool {
+        let Some(site) = crate::vm::url_host(origin) else {
+            return false;
+        };
+        self.backend
+            .syndication(id)
+            .iter()
+            .any(|e| crate::vm::url_host(&e.url).as_deref() == Some(site.as_str()))
+    }
+
+    /// Forget post `id`'s choices (it was deleted).
+    pub(crate) fn auto_crosspost_forget(&mut self, id: &LocalId, cx: &App) {
+        let key = post_key(&self.auto_host(cx), id);
+        self.auto_load(cx).remove(&key);
+        self.ext.auto.queue.retain(|q| q.0 != *id);
+        if let Some(d) = Self::tray_data_dir(cx) {
+            let _ = blyg_core::state::AppState::update(&d, |s| {
+                s.auto_cross_post.remove(&key);
+            });
         }
     }
 

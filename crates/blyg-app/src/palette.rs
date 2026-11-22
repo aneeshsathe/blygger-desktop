@@ -529,6 +529,7 @@ impl MainView {
             self.cmd_palette.recent = load_recent(data_dir(cx).as_deref());
             self.cmd_palette.recent_loaded = true;
         }
+        self.auto_crosspost_load(cx); // --- auto cross-post ---
         let entries = self.palette_entries(window, cx);
         let shown = filter(&entries, "", &self.cmd_palette.recent);
         let before = window.focused(cx);

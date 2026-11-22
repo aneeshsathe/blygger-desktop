@@ -519,6 +519,7 @@ impl MainView {
         let captured = self.browser.automation.captured.take();
         let offer_copy = copy.is_some();
         let listed = self.syndication_after_macro(copy, captured);
+        let was_listed = listed.is_some(); // --- auto cross-post ---
         if let Some(dir) = self.browser_data_dir() {
             let time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             append_log(&dir, &run.ext, &runner::log_line(&time, run, &out));
@@ -572,7 +573,7 @@ impl MainView {
             s => s,
         };
         // --- auto cross-post --- the next chosen site, or why the rest stopped.
-        let sub = match (self.auto_crosspost_after_run(&out, window, cx), sub) {
+        let sub = match (self.auto_crosspost_after_run(&out, was_listed, window, cx), sub) {
             (Some(rest), Some(s)) => Some(format!("{s} · {rest}")),
             (Some(rest), None) => Some(rest),
             (None, s) => s,

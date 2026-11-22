@@ -126,6 +126,7 @@ impl MainView {
         if self.sheet.is_open() || self.reading.sheet.is_some() || self.ai.has_overlay() {
             return;
         }
+        self.auto_crosspost_load(cx); // --- auto cross-post ---
         let rows = self.ext_palette_rows(window, cx);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);

@@ -250,7 +250,7 @@ impl MainView {
                         Some(format!("Nothing was posted to {}", entry.site.title).into()),
                         cx,
                     );
-                    v.auto_crosspost_next(window, cx); // --- auto cross-post ---
+                    v.auto_crosspost_not_started(window, cx); // --- auto cross-post ---
                 }
                 Ok(p) => {
                     let (text, note) = match p {
