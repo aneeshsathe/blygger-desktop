@@ -450,7 +450,10 @@ fn the_refresh_interval_is_exported_for_the_live_check() {
     assert_eq!(Burrow::refresh_every(true), 15_000.0);
     assert_eq!(Burrow::refresh_every(false), 60_000.0);
     let check = include_str!("../../../scripts/browser-web-live-check.mjs");
-    assert!(check.contains("Burrow.refresh_every("), "the check asks the page");
+    assert!(
+        check.contains("Burrow.refresh_every("),
+        "the check asks the page"
+    );
 }
 
 /// The shelf is asked conditionally too: an unchanged one is a 304 (the
