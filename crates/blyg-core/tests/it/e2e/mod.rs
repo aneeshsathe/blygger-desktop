@@ -2085,21 +2085,37 @@ impl Proxy {
     }
 }
 
-/// `GET /api/changes` is there (studio 0.32+); else the test says so.
+/// The studio under test serves `GET /api/changes`, the change counters:
+/// studio 0.32 to 0.66 (so every studio from MIN_STUDIO, 0.49.12, to 0.66).
+/// Studio 0.67 removed it (contract 6.0.0); sync then goes by conditional
+/// reads (`If-None-Match`, 304). The sync tests below assert what each
+/// studio does, with counters or without, rather than skip.
 fn has_changes() -> bool {
     let e = e2e();
-    if owner("GET", &e.url, "/api/changes", None).0 == 200 {
-        return true;
+    let (st, v) = owner("GET", &e.url, "/api/changes", None);
+    assert!(
+        st == 200 || st == 404,
+        "GET /api/changes is served (200) or gone (404, studio 0.67+): {st} {v}"
+    );
+    if st == 404 {
+        eprintln!("no GET /api/changes here (studio 0.67+): asserting conditional reads");
     }
-    eprintln!("skipped: this server has no GET /api/changes (older than studio 0.32)");
-    false
+    st == 200
 }
 
+/// Requests in `seen` that start with `pre`.
+fn count_of(seen: &[String], pre: &str) -> usize {
+    seen.iter().filter(|r| r.starts_with(pre)).count()
+}
+
+/// With counters, an unchanged pull reads only `GET /api/changes`, and an
+/// edit elsewhere re-reads only what it moved. Without them (studio 0.67+),
+/// see [`without_changes_an_unchanged_pull_is_all_304s`].
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn an_unchanged_pull_reads_only_the_change_counters() {
     if !has_changes() {
-        return;
+        return without_changes_an_unchanged_pull_is_all_304s();
     }
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
@@ -2163,12 +2179,98 @@ fn an_unchanged_pull_reads_only_the_change_counters() {
     assert_eq!(proxy.take(), vec!["GET /api/changes"], "settled again");
 }
 
+/// Studio 0.67+ (no `/changes`, contract 6): the first sync asks for the
+/// counters once and is told 404; no later pull asks again (for
+/// `CHANGES_RECHECK`). Every list is asked conditionally instead, so an
+/// unchanged pull is (nearly) all bodyless 304s. An edit elsewhere comes
+/// back as a 200 with it in, and a settings change is read too.
+fn without_changes_an_unchanged_pull_is_all_304s() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    // App → shim (counts 304s) → proxy (logs requests) → Worker.
+    let proxy = Proxy::start(&e.url);
+    let shim = conditional::Shim::start(&proxy.url, false);
+    let b = backend_at(dir.path(), &shim.url, e.cred.clone(), false);
+    let t = tag("no-changes-pull");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.sync_now().unwrap();
+    let first = proxy.take();
+    assert!(
+        count_of(&first, "GET /api/changes") <= 1,
+        "asked once, and told it's gone: {first:?}"
+    );
+    assert!(first.contains(&"GET /api/items".to_string()), "{first:?}");
+    // Every list's ETag is kept now; one more pull to settle.
+    b.pull_now().unwrap();
+    proxy.take();
+    shim.take();
+
+    // Nothing changed since: every list asked, each a 304; no counters.
+    b.pull_now().unwrap();
+    let idle = proxy.take();
+    let wire = shim.take();
+    assert_eq!(
+        count_of(&idle, "GET /api/changes"),
+        0,
+        "not asked again: {idle:?}"
+    );
+    assert!(idle.contains(&"GET /api/items".to_string()), "{idle:?}");
+    assert!(
+        idle.iter().any(|r| r.starts_with("GET /api/reading/imported")),
+        "the reading list's head: {idle:?}"
+    );
+    assert!(
+        wire.not_modified * 10 >= wire.requests * 8,
+        "an unchanged pull is mostly 304s: {wire:?} {idle:?}"
+    );
+
+    // An edit made elsewhere: the items read is a 200 with it in.
+    let sid = sid_of(&b, &id);
+    let theirs = format!("{t} edited in the studio");
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{sid}"),
+        Some(json!({ "contentMd": theirs, "expectedRevision": server_rev(&sid) })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    let moved = shim.take();
+    assert_eq!(count_of(&seen, "GET /api/changes"), 0, "{seen:?}");
+    assert!(seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    assert!(moved.not_modified < moved.requests, "{moved:?}");
+    assert_eq!(b.item(&id).unwrap().content_md, theirs, "picked up");
+
+    // A settings change is read (the items resolve against it), then the
+    // pulls settle to 304s again.
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "showResponsesDefault": false })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(seen.contains(&"GET /api/settings".to_string()), "{seen:?}");
+    shim.take();
+    b.pull_now().unwrap();
+    let again = shim.take();
+    assert!(
+        again.not_modified * 10 >= again.requests * 8,
+        "settled again: {again:?}"
+    );
+}
+
+/// A subscription made or removed elsewhere reaches this Mac's list: with
+/// counters, because `subscriptions` moved (and the items aren't read);
+/// without (studio 0.67+), because the list is asked each pull and isn't a
+/// 304 any more.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn a_subscription_change_is_picked_up_by_revision() {
-    if !has_changes() {
-        return;
-    }
+    let counters = has_changes();
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let proxy = Proxy::start(&e.url);
@@ -2178,6 +2280,7 @@ fn a_subscription_change_is_picked_up_by_revision() {
     proxy.take();
     // Subscribed elsewhere: `subscriptions` moves, so the list (and the
     // reading list, which depends on it) is read again; the items aren't.
+    // Without counters every list is asked; none asks `/changes` again.
     let api = Api::new(&e.url, e.cred.clone());
     let sub = api.subscribe(&url_b(), Some("Revision test")).unwrap();
     b.pull_now().unwrap();
@@ -2186,7 +2289,11 @@ fn a_subscription_change_is_picked_up_by_revision() {
         seen.contains(&"GET /api/subscriptions".to_string()),
         "{seen:?}"
     );
-    assert!(!seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    if counters {
+        assert!(!seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    } else {
+        assert_eq!(count_of(&seen, "GET /api/changes"), 0, "{seen:?}");
+    }
     assert!(b.subscriptions().iter().any(|s| s.id == sub));
     api.delete_subscription(&sub).unwrap();
     b.pull_now().unwrap();
@@ -2198,13 +2305,13 @@ fn a_subscription_change_is_picked_up_by_revision() {
 /// membership made elsewhere, then idle pulls across several safety-net
 /// (full pull) intervals. Signals and hoppers have their own reads, so
 /// neither walks the reading list, and an idle blyg's safety net backs
-/// off (1 s, 2 s, 4 s, capped at 4 s here).
+/// off (1 s, 2 s, 4 s, capped at 4 s here). Without counters (studio
+/// 0.67+) each pull asks the reading list's first page, conditionally, and
+/// goes no deeper when it's as it was; the safety net backs off the same.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn reading_is_walked_only_when_reading_moves() {
-    if !has_changes() {
-        return;
-    }
+    let counters = has_changes();
     let e = e2e();
     let src_url = url_b();
     let (d1, d2, d3) = (
@@ -2281,12 +2388,30 @@ fn reading_is_walked_only_when_reading_moves() {
         count(&idle, "GET /api/changes"),
         idle.len()
     );
-    assert_eq!(pages(&signal), 0, "a thumb walks nothing: {signal:?}");
     assert_eq!(count(&signal, "GET /api/signals"), 1, "{signal:?}");
-    assert_eq!(pages(&hopper), 0, "a hopper walks nothing: {hopper:?}");
-    // 1 s, then 2 s, then 4 s (the cap): at most 4 safety-net passes in
-    // 10 s where a fixed 1 s net made about 10.
-    assert!(walks(&idle) <= 4, "{idle:?}");
+    if counters {
+        assert_eq!(pages(&signal), 0, "a thumb walks nothing: {signal:?}");
+        assert_eq!(pages(&hopper), 0, "a hopper walks nothing: {hopper:?}");
+        // 1 s, then 2 s, then 4 s (the cap): at most 4 safety-net passes in
+        // 10 s where a fixed 1 s net made about 10.
+        assert!(walks(&idle) <= 4, "{idle:?}");
+    } else {
+        assert_eq!(count(&idle, "GET /api/changes"), 0, "{idle:?}");
+        // The head's first page, and nothing deeper.
+        assert!(pages(&signal) <= 1, "a thumb walks nothing: {signal:?}");
+        assert!(pages(&hopper) <= 1, "a hopper walks nothing: {hopper:?}");
+        // One first page a pull; past it, at most 4 safety-net walks (1 s,
+        // 2 s, 4 s, the cap) of the whole list.
+        let per_walk = served_reading(&Api::new(&e.url, e.cred.clone()))
+            .len()
+            .div_ceil(100)
+            .max(1);
+        assert!(walks(&idle) <= pulls, "{idle:?}");
+        assert!(
+            pages(&idle) - walks(&idle) <= 4 * (per_walk - 1),
+            "{per_walk} pages a walk: {idle:?}"
+        );
+    }
     me.signal(&sub.id, &RemoteId::from(&rid), None).unwrap();
 }
 
@@ -2376,6 +2501,22 @@ fn accepted_reading(dir: &Path) -> Option<u64> {
     serde_json::from_str::<Value>(&seen).ok()?["reading"].as_u64()
 }
 
+/// What the held reading list was last accepted at. With counters: the
+/// `reading` revision. Without them (studio 0.67+): the head mark, the
+/// newest `observedAt` (ms) the last accepted read saw (`walk::HEAD_MARK`).
+fn accepted_at(dir: &Path, counters: bool) -> Option<u64> {
+    if counters {
+        return accepted_reading(dir);
+    }
+    stored(
+        dir,
+        "SELECT value FROM meta WHERE key = ?1",
+        "reading_head_mark",
+    )?
+    .parse()
+    .ok()
+}
+
 fn counter(api: &Api, domain: &str) -> u64 {
     api.changes().unwrap().expect("GET /api/changes").domains[domain]
 }
@@ -2415,9 +2556,10 @@ fn poll_all_feeds(api: &Api) {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
-    if !has_changes() {
-        return;
-    }
+    // Without counters (studio 0.67+) the same walks happen; an idle or
+    // unchanged pull asks only the head's first page (a 304), and what's
+    // accepted is the head mark instead of the `reading` revision.
+    let counters = has_changes();
     const BIG: usize = 2_150;
     let e = e2e();
     let t = tag("longlist");
@@ -2513,7 +2655,7 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     );
     assert_eq!(held_rows(d3.path(), &small.id), 0, "past the first pull");
     assert_eq!(
-        accepted_reading(d3.path()),
+        accepted_at(d3.path(), counters),
         None,
         "accepted only at the end"
     );
@@ -2525,29 +2667,57 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     assert_eq!(pages(&rest), total.div_ceil(100) - 20, "{rest:?}");
     assert_eq!(held_rows(d3.path(), &big.id), BIG);
     assert_eq!(held_rows(d3.path(), &small.id), 3);
-    assert_eq!(
-        accepted_reading(d3.path()),
-        Some(counter(&api, "reading")),
-        "the reading revision is accepted"
-    );
+    if counters {
+        assert_eq!(
+            accepted_reading(d3.path()),
+            Some(counter(&api, "reading")),
+            "the reading revision is accepted"
+        );
+    } else {
+        assert!(
+            accepted_at(d3.path(), counters).is_some(),
+            "the head mark is set"
+        );
+    }
     eprintln!(
         "long list: first sync {} pages over 2 pulls ({:.1} s for the first 20)",
         pages(&first) + pages(&rest),
         first_pull.as_secs_f64()
     );
 
-    // Idle: nothing moved, nothing read (0.25.1 walked 20 pages a pull).
+    // Idle: nothing moved, nothing read (0.25.1 walked 20 pages a pull);
+    // without counters, the head's first page each pull and no deeper.
     for _ in 0..3 {
         other.pull_now().unwrap();
     }
     let idle = proxy.take_full();
-    assert_eq!(pages(&idle), 0, "{idle:?}");
+    if counters {
+        assert_eq!(pages(&idle), 0, "{idle:?}");
+    } else {
+        assert_eq!(pages(&idle), 3, "{idle:?}");
+        assert_eq!(firsts(&idle), 3, "no deeper: {idle:?}");
+        assert!(
+            !idle.iter().any(|r| r.starts_with("GET /api/changes")),
+            "{idle:?}"
+        );
+    }
 
     // One new post: a head read of a page or two shows it.
     feeds.lock().unwrap()[1].1 = many_rss("Walk big", big_link, BIG, 1);
-    poll_all_feeds(&api);
+    if counters {
+        poll_all_feeds(&api);
+    } else {
+        let (st, v) = owner("POST", &e.url, "/api/subscriptions/poll", None);
+        assert_eq!(st, 200, "{v}");
+        wait_every(
+            "the new post's import",
+            Duration::from_secs(120),
+            Duration::from_millis(500),
+            || count(&big.id) > BIG,
+        );
+    }
     assert_eq!(count(&big.id), BIG + 1, "the new post was imported");
-    let before = accepted_reading(d3.path()).unwrap();
+    let before = accepted_at(d3.path(), counters).unwrap();
     let started = Instant::now();
     other.pull_now().unwrap();
     let head = proxy.take_full();
@@ -2555,9 +2725,14 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "the new post shows");
     assert_eq!(firsts(&head), 1, "{head:?}");
     assert!(pages(&head) <= 2, "a head read: {head:?}");
-    let now = counter(&api, "reading");
-    assert!(now > before);
-    assert_eq!(accepted_reading(d3.path()), Some(now), "and accepted");
+    if counters {
+        let now = counter(&api, "reading");
+        assert!(now > before);
+        assert_eq!(accepted_reading(d3.path()), Some(now), "and accepted");
+    } else {
+        let now = accepted_at(d3.path(), counters).unwrap();
+        assert!(now > before, "the head mark moved on: {before} to {now}");
+    }
     assert_eq!(
         held_rows(d3.path(), &small.id),
         3,
@@ -2574,12 +2749,18 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     );
     other.pull_now().unwrap();
     let after = proxy.take_full();
-    assert_eq!(pages(&after), 0, "nothing new: nothing read: {after:?}");
+    if counters {
+        assert_eq!(pages(&after), 0, "nothing new: nothing read: {after:?}");
+    } else {
+        assert_eq!(pages(&after), 1, "nothing new: the head only: {after:?}");
+    }
 
     // Feed polls move `subscriptions` (when each feed was polled), not
     // `reading`: no reading walk, one read of the subscription list.
-    let mut noise_seen = false;
-    for _ in 0..3 {
+    // Without counters there's no such noise to tell apart (the idle
+    // pulls above are that case).
+    let mut noise_seen = !counters;
+    for _ in 0..(if counters { 3 } else { 0 }) {
         let reading0 = counter(&api, "reading");
         poll_all_feeds(&api);
         if counter(&api, "reading") != reading0 {
@@ -2625,6 +2806,100 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
     assert_eq!(firsts(&end), 0, "{end:?}");
     assert_eq!(held_rows(d3.path(), &small.id), 0, "pruned at the end");
     assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "and nothing else");
+}
+
+// ------------------------------------- settings writes keep what's unknown
+
+/// Studio 0.68's settings fields this Burrow doesn't write: the Feed's
+/// order and the four Background rules phase 2 added.
+fn unknown_settings(v: &Value) -> Value {
+    json!({
+        "readerOrder": v["readerOrder"],
+        "backgroundRules": {
+            "quotes-refreshed": v["backgroundRules"]["quotes-refreshed"],
+            "quotes-material": v["backgroundRules"]["quotes-material"],
+            "near-same": v["backgroundRules"]["near-same"],
+            "superseded": v["backgroundRules"]["superseded"],
+        },
+    })
+}
+
+/// Every settings write Burrow makes is a partial `PATCH /api/settings`
+/// (skills/capability-gating, rule 5), so fields a newer studio added
+/// survive it: `readerOrder` and the new `backgroundRules` keys (studio
+/// 0.68, contract 6.1.0), set elsewhere, are as they were after each one.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn settings_writes_keep_fields_this_burrow_doesnt_know() {
+    let e = e2e();
+    let (st, v) = owner("GET", &e.url, "/api/settings", None);
+    assert_eq!(st, 200, "{v}");
+    if v.get("readerOrder").is_none() {
+        eprintln!("skipped: no readerOrder here (older than studio 0.68)");
+        return;
+    }
+    // Studio (another client) sets them away from their defaults:
+    // readerOrder "newest" (the default is "pace-layered").
+    let theirs = json!({
+        "readerOrder": "newest",
+        "backgroundRules": {
+            "quotes-refreshed": false,
+            "quotes-material": false,
+            "near-same": false,
+            "superseded": false,
+        },
+    });
+    let (st, set) = owner("PATCH", &e.url, "/api/settings", Some(theirs.clone()));
+    assert_eq!(st, 200, "{set}");
+    assert_eq!(unknown_settings(&set), theirs);
+    let still = |what: &str| {
+        let (st, now) = owner("GET", &e.url, "/api/settings", None);
+        assert_eq!(st, 200, "{now}");
+        assert_eq!(unknown_settings(&now), theirs, "after {what}");
+    };
+
+    let api = Api::new(&e.url, e.cred.clone());
+    // The site settings sheet: every field it knows, as read.
+    let s = api.settings().unwrap().expect("settings");
+    api.put_settings(&s).unwrap();
+    still("put_settings");
+    let cfg = api.site_config().unwrap().expect("site config");
+    api.put_site_config(cfg.patch(&Default::default())).unwrap();
+    still("put_site_config");
+    // One Background rule Burrow knows, off and back.
+    let rule = blyg_core::background::RULES[1];
+    let was = api.background_rules().unwrap().expect("rules");
+    api.put_background_rule(rule, false).unwrap();
+    still("put_background_rule");
+    api.put_background_rule(rule, was.on(rule)).unwrap();
+    if let Some(c) = api.changelog_settings().unwrap() {
+        api.put_changelog_settings(&c).unwrap();
+        still("put_changelog_settings");
+    }
+    if let Some(ai) = api.server_ai_settings().unwrap() {
+        api.put_server_ai_settings(&ai).unwrap();
+        still("put_server_ai_settings");
+    }
+    if let Some(at) = api.discover_seen_at().unwrap() {
+        api.put_discover_seen_at(&at).unwrap();
+        still("put_discover_seen_at");
+    }
+    // Back to the studio's defaults.
+    let (st, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({
+            "readerOrder": "pace-layered",
+            "backgroundRules": {
+                "quotes-refreshed": true,
+                "quotes-material": true,
+                "near-same": true,
+                "superseded": true,
+            },
+        })),
+    );
+    assert_eq!(st, 200, "{v}");
 }
 
 // ------------------------------------------------------ TK generate (0.27)
@@ -6902,9 +7177,10 @@ fn published_text_is_clean_nfc_and_round_trips() {
 // ---------------------------------------------------------------- syndication
 // --- syndication --- decision #98's gate: one client lists a copy of its
 // post without spending a version, and a second client shows it from the
-// imported item, with no fetch of the copy. Needs a studio whose
-// capabilities list `putSyndication` (studio feat/syndication, contract
-// 5.9.0); against an older one it says so and passes.
+// imported item, with no fetch of the copy. Released in studio 0.67.0
+// (contract 6.0.0: `getSyndication`, `putSyndication`); 0.67.1 carries the
+// member on every imported reading row. Against a studio whose
+// capabilities don't list `putSyndication` it says so and passes.
 
 #[test]
 #[ignore = "needs a local Worker (scripts/e2e-local.sh) with studio syndication (putSyndication); skips on an older studio"]
@@ -7004,6 +7280,32 @@ fn syndication_is_written_in_place_and_read_by_a_second_client() {
         },
     );
     assert_eq!(reading_item(&me, &sid).unwrap().version, 1);
+    // As served: the row's `syndication` on `GET /api/reading/imported`
+    // (`ImportedReadingEntry`, studio 0.67.1) and on the `GET /api/reading`
+    // entry's `imported` (`ReadingEntry`).
+    let served = |v: &Value| syndication::parse_member(v.get("syndication"));
+    let (st, page) = owner("GET", &e2e().url, "/api/reading/imported?limit=100", None);
+    assert_eq!(st, 200, "{page}");
+    let row = page["items"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|r| r["remoteId"] == sid.as_str()))
+        .unwrap_or_else(|| panic!("the row on the first page: {page}"));
+    assert_eq!(served(row).as_deref(), Some(std::slice::from_ref(&copy)));
+    let (st, lens) = owner(
+        "GET",
+        &e2e().url,
+        &format!("/api/reading?sub={}&limit=50", sub.id),
+        None,
+    );
+    assert_eq!(st, 200, "{lens}");
+    let entry = lens["items"]
+        .as_array()
+        .and_then(|es| es.iter().find(|x| x["imported"]["remoteId"] == sid.as_str()))
+        .unwrap_or_else(|| panic!("the entry in the lens: {lens}"));
+    assert_eq!(
+        served(&entry["imported"]).as_deref(),
+        Some(std::slice::from_ref(&copy))
+    );
 
     // Removing it is in place too.
     source.set_syndication(&id, &[]).unwrap();
@@ -7043,8 +7345,14 @@ fn put_server_shelf(base: &str, entries: &[shelf::Entry]) -> shelf::Remote {
     shelf::parse(&v).unwrap()
 }
 
+/// What tells a client the shelf moved: its `/changes` counter, or, on
+/// studio 0.67+ (no `/changes`), the shelf's own revision (its `ETag`
+/// moves with it, so the next conditional read is a 200).
 fn shelf_counter(base: &str) -> u64 {
     let (st, v) = owner("GET", base, "/api/changes", None);
+    if st == 404 {
+        return server_shelf(base).revision;
+    }
     assert_eq!(st, 200, "GET /api/changes: {v}");
     v["domains"]["shelf"]
         .as_u64()
@@ -7136,7 +7444,8 @@ fn the_shelf_round_trips_and_merges_with_the_blyg() {
             shelf::Entry::own(&sz),
         ],
     );
-    // The counter moved: that's what makes a client read the shelf again.
+    // The counter (or, without `/changes`, the revision) moved: that's
+    // what makes a client read the shelf again.
     assert!(shelf_counter(&e.url) > before);
     b.move_on_shelf(&bd, 0).unwrap();
     b.sync_now().unwrap();
