@@ -44,10 +44,6 @@ fn render() -> String {
             Scope::MacroSheet,
             "On a browser macro's Preview and Post sheets",
         ),
-        (
-            Scope::PublishSheet,
-            "On the Publish sheet (also while you type the version note)",
-        ),
         (Scope::Reading, "In the Reader's list"),
         (Scope::About, "In the About window"),
     ];

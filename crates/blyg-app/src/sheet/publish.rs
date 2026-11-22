@@ -9,10 +9,6 @@ use gpui_kit::*;
 use super::{Kit, SheetView, Shown, Submit};
 use crate::app::{MainView, first_publish_note, note_ai, server_notice};
 
-/// The Publish sheet's key context (keymap `Scope::PublishSheet`): its
-/// bindings out-rank the main window's while it has the keyboard.
-pub const CONTEXT: &str = "PublishSheet";
-
 pub(crate) struct PublishSheet {
     pub(crate) id: LocalId,
     pub(crate) title: String,
@@ -39,18 +35,14 @@ impl SheetView for PublishSheet {
             note,
             ..
         } = self;
-        let d = div().key_context(CONTEXT).capture_action(cx.listener(
-            |this, _: &Escape, window, cx| {
-                cx.stop_propagation();
-                this.close_sheet(window, cx);
-            },
-        ));
-        // --- auto cross-post --- ⌥1–⌥9 tick the chips below (the keymap's
-        // `PublishSheet` rows).
-        let d = crate::app::extensions::auto_crosspost::chip_actions(d, id, cx);
         Shown::from((
             460.,
-            d.child(kit.heading(format!("Publish “{title}” as v{next_version}")))
+            div()
+                .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                    cx.stop_propagation();
+                    this.close_sheet(window, cx);
+                }))
+                .child(kit.heading(format!("Publish “{title}” as v{next_version}")))
                 // A first publish: say it goes public, and for good.
                 .when(*next_version == 1, |d| {
                     let host =

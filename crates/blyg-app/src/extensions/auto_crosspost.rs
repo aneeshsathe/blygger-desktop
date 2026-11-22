@@ -65,82 +65,20 @@ pub fn goes_on_after(out: &Outcome) -> bool {
     )
 }
 
-gpui_kit::actions!(
-    blygger,
-    [
-        CrossPostChip1,
-        CrossPostChip2,
-        CrossPostChip3,
-        CrossPostChip4,
-        CrossPostChip5,
-        CrossPostChip6,
-        CrossPostChip7,
-        CrossPostChip8,
-        CrossPostChip9
-    ]
-);
-
-/// The Publish sheet's chip keys, the first nine sites': ⌥1 to ⌥9, and on
-/// Windows Alt+1 to Alt+9. The keymap binds them (`CrossPostChip1`…) in the
-/// sheet's key context (`keymap::PUBLISH_SHEET`), deeper than the main
-/// window's, so while the sheet is open they win over Windows' reading
-/// layout keys (Alt+1, Alt+2) and the note field types everything else.
-/// Alt alone is no AltGr chord (that's Ctrl+Alt) on Windows.
-pub const CHIP_KEYS: [&str; 9] = [
-    "alt-1", "alt-2", "alt-3", "alt-4", "alt-5", "alt-6", "alt-7", "alt-8", "alt-9",
-];
-
-/// Chip `n`'s key as this platform spells it (`⌥1`, `Alt+1`).
-fn chip_key(n: usize) -> String {
-    crate::keymap::hint_owned(crate::keymap::mac_glyphs(CHIP_KEYS[n]))
-}
-
-/// A chip's text: its key, its tick and its site (`⌥1 ☑ Bluesky`; the
-/// tenth on has no key).
-pub fn chip_label(n: usize, site: &str, on: bool) -> String {
+/// A chip's text: its tick and its site (`☑ Bluesky`). The chips are
+/// clicked; the keyboard's way to a site is the palette (`keys_hint`).
+pub fn chip_label(site: &str, on: bool) -> String {
     let tick = if on { "☑" } else { "☐" };
-    if n < CHIP_KEYS.len() {
-        format!("{} {tick} {site}", chip_key(n))
-    } else {
-        format!("{tick} {site}")
-    }
+    format!("{tick} {site}")
 }
 
-/// The line under the chips: their keys, and what ticking one means.
-pub(crate) fn keys_hint(sites: usize) -> String {
-    let last = sites.min(CHIP_KEYS.len());
-    let keys = if last == 1 {
-        format!("{} ticks it", chip_key(0))
-    } else {
-        format!("{}–{} tick one", chip_key(0), chip_key(last - 1))
-    };
-    format!(
-        "{keys}. Remembered for this post. Each one still shows you the text, and posts only \
-         when you click Post."
+/// The line under the chips: the keyboard's way to them (the palette's
+/// "Cross-post automatically to <site>" rows), and what ticking one means.
+pub(crate) fn keys_hint() -> &'static str {
+    crate::keymap::hint(
+        "Or ⇧⌘P and type “automatically” to pick one by keyboard. Remembered for this post. \
+         Each one still shows you the text, and posts only when you click Post.",
     )
-}
-
-/// The chip actions on the Publish sheet for post `id`: each ticks or
-/// unticks its site. A key past the last site does nothing, and is still
-/// taken, so it never reaches a main-window binding behind the sheet.
-pub(crate) fn chip_actions(d: Div, id: &LocalId, cx: &mut Context<MainView>) -> Div {
-    macro_rules! chip {
-        ($d:expr, $action:ident, $n:expr) => {{
-            let id = id.clone();
-            $d.on_action(
-                cx.listener(move |this, _: &$action, _, cx| this.auto_crosspost_chip(&id, $n, cx)),
-            )
-        }};
-    }
-    let d = chip!(d, CrossPostChip1, 0);
-    let d = chip!(d, CrossPostChip2, 1);
-    let d = chip!(d, CrossPostChip3, 2);
-    let d = chip!(d, CrossPostChip4, 3);
-    let d = chip!(d, CrossPostChip5, 4);
-    let d = chip!(d, CrossPostChip6, 5);
-    let d = chip!(d, CrossPostChip7, 6);
-    let d = chip!(d, CrossPostChip8, 7);
-    chip!(d, CrossPostChip9, 8)
 }
 
 impl MainView {
@@ -183,14 +121,6 @@ impl MainView {
             .into_iter()
             .filter(|m| m.spec.when == blyg_ext::protocol::When::Published)
             .collect()
-    }
-
-    /// Chip `n`'s key in the Publish sheet for post `id`: tick or untick
-    /// that site's chip (nothing when there are fewer sites).
-    pub(crate) fn auto_crosspost_chip(&mut self, id: &LocalId, n: usize, cx: &mut Context<Self>) {
-        if let Some(site) = self.auto_crosspost_sites().into_iter().nth(n) {
-            self.toggle_auto_crosspost(id, &site.ext, &site.spec.id, cx);
-        }
     }
 
     /// Turn cross-posting to one site on or off for post `id`.
@@ -456,7 +386,6 @@ impl MainView {
             .gap(px(6.))
             .text_size(px(12.))
             .child(div().text_color(p.muted).child("Then cross-post to"));
-        let count = sites.len();
         for (n, m) in sites.into_iter().enumerate() {
             let on = chosen.contains(&macro_key(&m.ext, &m.spec.id));
             let (pid, ext, macro_id) = (id.clone(), m.ext.clone(), m.spec.id.clone());
@@ -472,7 +401,7 @@ impl MainView {
                     .when(on, |d| d.text_color(p.accent))
                     .cursor_pointer()
                     .hover(|s| s.border_color(p.accent))
-                    .child(chip_label(n, &m.site.title, on))
+                    .child(chip_label(&m.site.title, on))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_auto_crosspost(&pid, &ext, &macro_id, cx)
                     })),
@@ -488,7 +417,7 @@ impl MainView {
                         .mt(px(4.))
                         .text_size(px(11.5))
                         .text_color(p.muted)
-                        .child(keys_hint(count)),
+                        .child(keys_hint()),
                 )
                 .into_any_element(),
         )

@@ -1141,13 +1141,13 @@ mod macros {
             super::super::auto_crosspost::macro_key(&m.ext, &m.spec.id)
         });
         // A click ticks the chip, and again unticks it.
-        let chip = cx.debug_bounds("auto-crosspost-0").expect("its chip");
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
         cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
         cx.run_until_parked();
         view.update_in(cx, |v, _, cx| {
             assert!(v.auto_crosspost_chosen(&post, cx).contains(&first), "on")
         });
-        let chip = cx.debug_bounds("auto-crosspost-0").expect("its chip");
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
         cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
         cx.run_until_parked();
         view.update_in(cx, |v, _, cx| {
