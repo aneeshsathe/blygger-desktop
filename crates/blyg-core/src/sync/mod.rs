@@ -9,6 +9,7 @@
 
 mod background; // --- background --- the studio's Background lens and choices
 pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
+mod churn; // a list that changes under every walk sits pulls out
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
@@ -292,6 +293,9 @@ struct NetState {
     /// The blyg refused the stored credential (401): nothing is sent or
     /// pulled on its own until a new sign-in, or a manual sync.
     signed_out: bool,
+    /// Each list's run of reads that changed under every walk
+    /// (`churn::Churn`), by the name its revisions are kept under.
+    churn: HashMap<&'static str, churn::Churn>,
 }
 
 /// What to say when the blyg refused a sign-in made for its old API
@@ -426,6 +430,7 @@ impl Engine {
                 hopper_denied: false,
                 read_flags: None,
                 signed_out: false,
+                churn: HashMap::new(),
             }),
             opts,
             scratch_dir: None,
@@ -491,6 +496,45 @@ impl Engine {
 
     fn state(&self) -> MutexGuard<'_, NetState> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Whether this pull may read `list`: not while it sits out pulls after
+    /// changing under walk after walk (`churn`). Ask only when the list
+    /// would otherwise be read.
+    fn churn_due(&self, list: &'static str) -> bool {
+        self.state().churn.entry(list).or_default().due()
+    }
+
+    /// `list` was read to its end.
+    fn churn_read(&self, list: &'static str) {
+        if let Some(c) = self.state().churn.get_mut(list) {
+            c.read();
+        }
+    }
+
+    /// A read of `list` that failed, as a pull takes it. The list is left
+    /// as held, and not accepted, so a later pull asks it again:
+    /// - when it changed under every walk (`CursorExpired`; a studio
+    ///   expires a reading cursor on every post a subscription's backfill
+    ///   imports). After a few in a row it sits out pulls (`churn`), said
+    ///   once a session;
+    /// - in the catch-all arm, as before: a refusal (a 4xx other than 401)
+    ///   and an answer Burrow couldn't read (`Other`, a parse error).
+    ///
+    /// What stops the whole pull comes back: offline, rate-limited, a 5xx
+    /// (`is_transient`) and signed out.
+    fn left_as_held(&self, list: &'static str, e: CoreError) -> Result<()> {
+        match e {
+            CoreError::CursorExpired => {
+                let first = self.state().churn.entry(list).or_default().expired();
+                if first {
+                    self.emit(CoreEvent::Error(churn::message(list)));
+                }
+                Ok(())
+            }
+            e if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+            _ => Ok(()),
+        }
     }
 
     // ------------------------------------------------------------ events
@@ -1459,34 +1503,28 @@ impl Engine {
         // the whole reading list again (issue #71).
         if let Some(walked) = &read.walked_whole {
             self.accept(walked, "signals", SIGNALS_DEPS)?;
-        } else if stale("signals", SIGNALS_DEPS) {
+        } else if stale("signals", SIGNALS_DEPS) && self.churn_due("signals") {
             match self.fetch_signals() {
                 Ok(changed) => {
                     surprise |= changed && forced("signals", SIGNALS_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("signals");
                     self.accept(&rev, "signals", SIGNALS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("signals", e)?,
             }
         }
         // --- hoppers --- the hoppers and every membership (yours too), for
         // the sources pane; the rows' `hoppers` follow what's held here.
-        if stale("hoppers", HOPPERS_DEPS) {
+        if stale("hoppers", HOPPERS_DEPS) && self.churn_due("hoppers") {
             match self.fetch_hoppers() {
                 Ok(changed) => {
                     surprise |= changed && forced("hoppers", HOPPERS_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("hoppers");
                     self.accept(&rev, "hoppers", HOPPERS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("hoppers", e)?,
             }
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
@@ -1497,23 +1535,23 @@ impl Engine {
         if self.background_due(
             stale("background", background::BACKGROUND_DEPS),
             full || gap_open,
-        ) {
+        ) && self.churn_due("background")
+        {
             match self.fetch_background() {
                 Ok(changed) => {
                     surprise |= changed && forced("background", background::BACKGROUND_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("background");
                     self.accept(&rev, "background", background::BACKGROUND_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("background", e)?,
             }
         }
         // --- shelf sync --- read when its counter moved, sent when it
         // changed here (sync/shelf.rs). A blyg without it: nothing.
-        if self.shelf_served() && (stale("shelf", SHELF_DEPS) || self.shelf_unsent()) {
+        if self.shelf_served()
+            && ((stale("shelf", SHELF_DEPS) && self.churn_due("shelf")) || self.shelf_unsent())
+        {
             match self.sync_shelf() {
                 Ok(changed) => {
                     surprise |= changed && forced("shelf", SHELF_DEPS);
@@ -1521,20 +1559,19 @@ impl Engine {
                         self.emit(CoreEvent::ItemsChanged);
                         reading_changed = true;
                     }
+                    self.churn_read("shelf");
                     self.accept(&rev, "shelf", SHELF_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => self.left_as_held("shelf", e)?,
             }
         }
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
         // the blyg's database only), asked again when your items or your
         // reading moved. A refused or failed read leaves what's held.
-        if stale("freshness", upkeep::FRESHNESS_DEPS) {
+        if stale("freshness", upkeep::FRESHNESS_DEPS) && self.churn_due("freshness") {
             match self.fetch_freshness() {
                 Ok(Some((_, changed))) => {
+                    self.churn_read("freshness");
                     if changed {
                         surprise |= forced("freshness", upkeep::FRESHNESS_DEPS);
                         self.emit(CoreEvent::ItemsChanged);
@@ -1542,10 +1579,7 @@ impl Engine {
                     self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?;
                 }
                 Ok(None) => self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?,
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => self.left_as_held("freshness", e)?,
             }
         }
         // --- end upkeep ---
@@ -2048,8 +2082,12 @@ impl Engine {
         if start == Start::Nothing {
             return Ok(out);
         }
-        // A failure here leaves a walk under way where it is.
-        let flags = self.read_flags()?;
+        // A failure here leaves a walk under way where it is; a flags read
+        // that kept changing leaves the list as held for this pull.
+        let flags = match self.read_flags() {
+            Err(CoreError::CursorExpired) => return Ok(out),
+            r => r?,
+        };
         self.set_read_sync(flags.read_sync())?;
         self.set_read_clear(flags.read_clear())?;
         // Read marks sent from here since the last head read explain a
