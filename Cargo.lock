@@ -952,6 +952,7 @@ name = "blyg-web"
 version = "0.27.3"
 dependencies = [
  "ammonia",
+ "base64 0.22.1",
  "blyg-core",
  "blyg-render",
  "chrono",
@@ -962,6 +963,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "ureq",
  "url",

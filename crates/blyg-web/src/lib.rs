@@ -1061,3 +1061,6 @@ mod order_tests; // the one list order, and your posts in Reading
 
 #[cfg(test)]
 mod studio69_tests;
+
+#[cfg(test)]
+mod hardening_tests; // the mount, API paths, CSP and escaping

@@ -31,6 +31,10 @@ wasm-bindgen = "=0.2.128"
 # native Burrow's (`LiveBackend`) on the same blyg.
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 tempfile = "3"
+# src/hardening_tests.rs: the hash of index.html's inline import map, as the
+# Content-Security-Policy names it.
+sha2 = "0.10"
+base64 = "0.22"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 # blyg-core's ids use getrandom 0.2, which needs the `js` backend in a browser.

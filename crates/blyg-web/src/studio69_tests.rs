@@ -29,37 +29,37 @@ fn v(s: String) -> Value {
 #[test]
 fn the_mount_is_whatever_comes_before_burrow_in_the_pages_path() {
     // A blyg at the host root.
-    assert_eq!(api::mount_of("/burrow/"), "");
-    assert_eq!(api::mount_of("/burrow/index.html"), "");
+    assert_eq!(api::mount_of("/burrow/"), Some(""));
+    assert_eq!(api::mount_of("/burrow/index.html"), Some(""));
     // A path-mounted blyg.
-    assert_eq!(api::mount_of("/notes/burrow/"), "/notes");
+    assert_eq!(api::mount_of("/notes/burrow/"), Some("/notes"));
     assert_eq!(
         api::mount_of("/notes/deep/burrow/index.html"),
-        "/notes/deep"
+        Some("/notes/deep")
     );
     // Not served as Burrow: nothing to go on, so no mount.
-    assert_eq!(api::mount_of("/"), "");
-    assert_eq!(api::mount_of("/notes/"), "");
+    assert_eq!(api::mount_of("/"), Some(""));
+    assert_eq!(api::mount_of("/notes/"), Some(""));
     // The page asks the same question.
-    assert_eq!(Burrow::mount_of("/notes/burrow/"), "/notes");
+    assert_eq!(Burrow::mount_of("/notes/burrow/").as_deref(), Some("/notes"));
 }
 
 #[test]
 fn the_api_is_under_the_mount_never_the_host_root() {
-    assert_eq!(api::api_url("/burrow/", "/api/items"), "/api/items");
+    assert_eq!(api::api_url("/burrow/", "/api/items").as_deref(), Some("/api/items"));
     assert_eq!(
-        api::api_url("/notes/burrow/", "/api/items?limit=100"),
-        "/notes/api/items?limit=100"
+        api::api_url("/notes/burrow/", "/api/items?limit=100").as_deref(),
+        Some("/notes/api/items?limit=100")
     );
     // The blyg's own address: origin and mount.
-    assert_eq!(api::site_base(BASE, "/burrow/"), BASE);
+    assert_eq!(api::site_base(BASE, "/burrow/").as_deref(), Some(BASE));
     assert_eq!(
-        api::site_base(BASE, "/notes/burrow/"),
-        "https://blyg.example.com/notes"
+        api::site_base(BASE, "/notes/burrow/").as_deref(),
+        Some("https://blyg.example.com/notes")
     );
     // A blyg whose settings name no siteUrl is at that address, mount and
     // all, not at the bare origin.
-    let site = api::site_base(BASE, "/notes/burrow/");
+    let site = api::site_base(BASE, "/notes/burrow/").unwrap();
     assert_eq!(
         Burrow::public_base("{}", &site),
         "https://blyg.example.com/notes"
@@ -72,9 +72,8 @@ fn the_page_derives_its_mount_as_the_rust_does() {
     // net.js runs before the WebAssembly (its early reads), so it has its
     // own copy of `api::mount_of`; live.js checks the two agree.
     assert!(net.contains("const i = p.lastIndexOf('/burrow/');"));
-    assert!(net.contains("return i >= 0 ? p.slice(0, i) : '';"));
+    assert!(net.contains("const m = i >= 0 ? p.slice(0, i) : '';"));
     assert!(net.contains("export const MOUNT = mountOf(location.pathname);"));
-    assert!(net.contains("export const SITE = location.origin + MOUNT;"));
     assert!(net.contains("fetch(MOUNT + path"));
     let live = include_str!("../www/live.js");
     assert!(live.contains("Burrow.mount_of(location.pathname) !== MOUNT"));

@@ -375,4 +375,97 @@ mod tests {
         let out = clean("<p id=\"__blyg\" name=\"x\" style=\"position:fixed;inset:0\">a</p>");
         assert_eq!(out, "<p>a</p>");
     }
+
+    #[test]
+    fn the_apps_own_hooks_never_survive() {
+        // The pages this HTML is shown on listen for their own `data-*`
+        // names and classes (the web app's `data-goto`, a link's
+        // `data-wr-id`/`data-wr-origin` opening Peek, native's
+        // `.blyg-qorigin` and `[data-line]`) and style their own classes as
+        // buttons. Someone else's post carries none of them.
+        let out = clean(
+            "<p data-goto=\"posts\" data-act=\"delete\" data-line=\"3\" data-x=\"1\" \
+             class=\"wr-btn danger item-content card\">a</p>\
+             <a href=\"https://far.example.org/\" data-wr-id=\"X1\" \
+             data-wr-origin=\"https://evil.example/\" class=\"blyg-qorigin\">b</a>\
+             <span class=\"blyg-tk-gen wr-btn\" data-blyg-id=\"01k\">c</span>",
+        );
+        for bad in [
+            "data-goto",
+            "data-act",
+            "data-line",
+            "data-x",
+            "data-wr-",
+            "wr-btn",
+            "danger",
+            "item-content",
+            "card",
+            "blyg-qorigin",
+            "class=\"\"",
+        ] {
+            assert!(!out.contains(bad), "{bad}: {out}");
+        }
+        assert!(out.contains("<p>a</p>"), "{out}");
+        assert!(
+            out.contains("<span class=\"blyg-tk-gen\" data-blyg-id=\"01k\">c</span>"),
+            "{out}"
+        );
+    }
+
+    /// Every class and `data-*` name the renderer puts in a post (the
+    /// studio's, which blyg-render's parity fixtures hold) is kept, but
+    /// for an author's own raw-HTML classes.
+    #[test]
+    fn what_the_renderer_emits_survives() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../blyg-render/tests/fixtures/parity");
+        let mut seen = 0;
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let path = f.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if name.starts_with('_') || name == "tr_sanitize_target.json" {
+                continue;
+            }
+            let fixture: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let Some(html) = fixture["html"].as_str() else {
+                continue;
+            };
+            let out = clean(html);
+            for (tag, attr, value) in attrs(html) {
+                if tag == "math" || value.starts_with("tml-") {
+                    continue; // redrawn from its TeX annotation
+                }
+                if attr == "class" {
+                    for c in value.split_whitespace() {
+                        assert!(out.contains(c), "{name}: class {c} went: {out}");
+                    }
+                    seen += 1;
+                } else if attr.starts_with("data-") {
+                    assert!(out.contains(&attr), "{name}: {attr} went: {out}");
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen > 100, "the fixtures hold classes: {seen}");
+    }
+
+    /// `(tag, attribute, value)` for each double-quoted attribute.
+    fn attrs(html: &str) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for open in html.split('<').skip(1) {
+            let Some(end) = open.find('>') else { continue };
+            let mut parts = open[..end].splitn(2, char::is_whitespace);
+            let tag = parts.next().unwrap_or("").to_string();
+            let mut rest = parts.next().unwrap_or("");
+            while let Some(eq) = rest.find("=\"") {
+                let name = rest[..eq].trim().to_string();
+                let after = &rest[eq + 2..];
+                let Some(close) = after.find('"') else { break };
+                out.push((tag.clone(), name, after[..close].to_string()));
+                rest = &after[close + 1..];
+            }
+        }
+        out
+    }
 }

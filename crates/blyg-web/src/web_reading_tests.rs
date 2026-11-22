@@ -565,3 +565,91 @@ fn the_demo_changes_its_sample_data_and_sends_nothing() {
             .any(|x| x["name"] == "Demo")
     );
 }
+
+// ---------------------------------------------------------------- link schemes
+
+/// The addresses the screens put in an `href` (a mention's source, a sent
+/// Webmention's target, a peeked post's own page) are http(s) with a host,
+/// or nothing: `esc` stops a breakout, not a `javascript:` link, so the
+/// view-model never hands the template one.
+const BAD_LINKS: [&str; 5] = [
+    "javascript:alert(1)",
+    " JavaScript:alert(1)",
+    "data:text/html,<script>x()</script>",
+    "vbscript:x",
+    "https://",
+];
+
+#[test]
+fn a_mentions_open_link_is_http_or_nothing() {
+    for bad in BAD_LINKS {
+        let mut b = live();
+        b.wr_loaded(
+            "mentions",
+            &json!([
+                { "id": "m1", "targetItemId": "zz", "status": "verified", "relation": "reply",
+                  "source": bad, "sourceOrigin": "https://rue.example.com/",
+                  "firstSeen": "2026-11-06T10:00:00Z", "hidden": false },
+                { "id": "m2", "targetItemId": "zz", "status": "verified", "relation": "reply",
+                  "source": "https://rue.example.com/t/1", "sourceOrigin": "https://rue.example.com/",
+                  "firstSeen": "2026-11-06T10:00:00Z", "hidden": false }
+            ])
+            .to_string(),
+        );
+        b.wr_loaded(
+            "outbound",
+            &json!([
+                { "id": "o1", "itemId": "bbbb", "version": 1, "target": bad,
+                  "status": "sent", "attempts": 1, "lastError": null, "created": "2026-11-05T10:00:00Z" },
+                { "id": "o2", "itemId": "bbbb", "version": 1, "target": "https://ada.example.com/t/9",
+                  "status": "sent", "attempts": 1, "lastError": null, "created": "2026-11-05T10:00:00Z" }
+            ])
+            .to_string(),
+        );
+        let m = v(b.wr_mentions_view(NOW));
+        let rows: Vec<Value> = m["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|g| g["rows"].as_array().unwrap().clone())
+            .collect();
+        let src = |id: &str| rows.iter().find(|r| r["id"] == id).unwrap()["source"].clone();
+        assert_eq!(src("m1"), Value::Null, "{bad}");
+        assert_eq!(src("m2"), "https://rue.example.com/t/1");
+        assert_eq!(m["outbound"][0]["target"], Value::Null, "{bad}");
+        assert_eq!(m["outbound"][1]["target"], "https://ada.example.com/t/9");
+    }
+    // And the template draws no Open link without one.
+    let js = include_str!("../www/web-reading.js");
+    assert!(js.contains("${m.source ? `<a class=\"wr-btn\" href=\"${esc(m.source)}\""));
+    assert!(js.contains("${o.target ? `<a class=\"wr-btn\" href=\"${esc(o.target)}\""));
+}
+
+#[test]
+fn a_peeked_posts_own_page_is_http_or_nothing() {
+    let good = "https://far.example.org/t/X1/";
+    for (url, want) in BAD_LINKS
+        .iter()
+        .map(|b| (*b, ""))
+        .chain([(good, good)])
+    {
+        let mut b = live();
+        b.wr_do("peek_url", &json!({ "url": good }).to_string(), NOW);
+        let next = v(b.wr_done(
+            "peek_url",
+            "{}",
+            200,
+            r#"{"links":[{"url":"https://far.example.org/t/X1/","target":{"origin":"https://far.example.org/","id":"X1"}}]}"#,
+            NOW,
+        ));
+        let args = next["next"]["args"].to_string();
+        b.wr_do("peek", &args, NOW);
+        let body = json!({
+            "origin": "https://far.example.org/", "id": "X1", "kind": "thread", "version": 2,
+            "contentHtml": "<p>Hi.</p>", "page": null, "url": url, "stubOf": null,
+            "forkedFrom": null, "subscriptionId": null
+        });
+        let p = v(b.wr_done("peek", &args, 200, &body.to_string(), NOW));
+        assert_eq!(p["peek"]["url"], want, "{url}");
+    }
+}
