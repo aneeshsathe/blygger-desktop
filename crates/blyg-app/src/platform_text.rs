@@ -665,4 +665,38 @@ mod tests {
         assert!(!macos_caret_key("cmd-enter"));
         assert!(!macos_caret_key("alt-cmd-left"));
     }
+
+    /// Stub until the scan lands: sees nothing.
+    fn windows_edit_key(_line: &str) -> Option<&str> {
+        None
+    }
+
+    #[test]
+    fn the_edit_key_rule_flags_keys_windows_reads_differently() {
+        // The line that failed Windows CI at cb1def7, copied exactly.
+        let real = "    cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-shift-z\"));";
+        assert_eq!(windows_edit_key(real), Some("cmd-shift-z"));
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(\"cmd-shift-z\");"),
+            Some("cmd-shift-z")
+        );
+        assert_eq!(
+            windows_edit_key("keys(cx, \"ctrl-shift-z\");"),
+            Some("ctrl-shift-z")
+        );
+        // The helper, an app key, and undo (Windows binds plain Ctrl+Z) pass.
+        assert_eq!(windows_edit_key("cx.simulate_keystrokes(redo);"), None);
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(crate::platform_text::redo_keys());"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-b\"));"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-z\"));"),
+            None
+        );
+    }
 }
