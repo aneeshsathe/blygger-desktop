@@ -482,10 +482,18 @@ fn no_feature_is_gated_on_a_parsed_version() {
     }
     assert!(
         found.is_empty(),
-        "A feature gated on a version number is lost on a contract Burrow can't read (\"next\")\n\
-         and on a newer one it hasn't heard of. Gate it on an operation the blyg's capabilities\n\
-         list (blyg_core::api::offers, Api::offers_all; skill capability-gating). If this isn't\n\
-         a feature gate, add the function to ALLOWED in version_gates.rs with why.\n\n{}",
+        "The functions below read a version number, and none is in the reviewed list. A\n\
+         feature decided by a version is lost on a contract Burrow can't read (\"next\") or\n\
+         hasn't heard of, and contract numbers have been reused for releases without the\n\
+         feature. Instead:\n\
+         - to decide whether a blyg has a feature, name its operationId in a\n\
+           `pub const …_OPERATION: &str` beside the feature and ask\n\
+           blyg_core::api::offers(capabilities, IT) or Api::offers_all(&[IT]), then add the\n\
+           constant to GATES in capability_gates.rs;\n\
+         - for a route the capabilities don't list, call it and take 404 as \"not offered\";\n\
+         - if the function decides no feature (it shows or stores the version, or is the\n\
+           whole-contract check), add it to ALLOWED in\n\
+           crates/blyg-core/tests/it/version_gates.rs with why.\n\n{}",
         found.join("\n")
     );
     let stale: Vec<String> = ALLOWED
@@ -496,7 +504,9 @@ fn no_feature_is_gated_on_a_parsed_version() {
         .collect();
     assert!(
         stale.is_empty(),
-        "ALLOWED in version_gates.rs lists functions that no longer read a version; remove them:\n{}",
+        "ALLOWED (crates/blyg-core/tests/it/version_gates.rs) lists functions that no longer\n\
+         read a version, or that moved or were renamed. Remove each entry, or correct its file\n\
+         and function name, so the list stays what a reviewer agreed to:\n{}",
         stale.join("\n")
     );
 }

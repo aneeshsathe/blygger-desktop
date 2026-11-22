@@ -203,11 +203,18 @@ fn whole_blyg_is_tried_and_a_refusal_remembered() {
 fn the_gated_operations_are_the_contracts() {
     let known = crate::common::contract::current().operation_ids();
     for (constant, ops) in operation_constants(&product_sources()) {
-        assert!(!ops.is_empty(), "{constant} names no operation");
+        assert!(
+            !ops.is_empty(),
+            "crates/{constant} names no operation: a gate constant is the operationId (a string \
+             literal, or a slice of them) the capabilities are asked for. Give it one, or \
+             rename it without OPERATION if it isn't a gate."
+        );
         for op in ops {
             assert!(
                 known.iter().any(|k| *k == op),
-                "{op} ({constant}) isn't in the contract"
+                "crates/{constant} asks for \"{op}\", which is no operationId in \
+                 crates/blyg-core/tests/fixtures/openapi-current.json: no studio lists it, so \
+                 the feature is hidden everywhere. Use the contract's spelling."
             );
         }
     }
@@ -241,9 +248,13 @@ const GATES: &[Gate] = &[
     },
     Gate {
         constant: "blyg-core/src/background.rs::OPERATION",
+        guards: Guards::Write,
+        what: "placing a post or a blyg in Background (`background::places`)",
+    },
+    Gate {
+        constant: "blyg-core/src/background.rs::LENS_OPERATION",
         guards: Guards::Read,
-        what: "Background: `background_served` decides whether the lens is read and shown, \
-               as well as whether a row can be placed",
+        what: "reading and showing the Background lens (`background::serves`)",
     },
     Gate {
         constant: "blyg-core/src/changelog.rs::CHANGELOG_OPERATION",
@@ -268,33 +279,18 @@ const GATES: &[Gate] = &[
     Gate {
         constant: "blyg-core/src/shelf.rs::GET_OPERATION",
         guards: Guards::Read,
-        what: "reading the blyg's shelf",
+        what: "reading and showing the blyg's shelf (`shelf::serves`)",
     },
     Gate {
         constant: "blyg-core/src/shelf.rs::PUT_OPERATION",
-        guards: Guards::Read,
-        what: "the synced shelf: `shelf::serves` wants it together with `getShelf`, so it \
-               also decides whether the blyg's shelf is read and shown",
+        guards: Guards::Write,
+        what: "sending a change to the shelf (`shelf::takes`)",
     },
     Gate {
         constant: "blyg-core/src/syndication.rs::PUT_OPERATION",
         guards: Guards::Write,
         what: "sending a post's copies-elsewhere list",
     },
-];
-
-/// Read gates that name an operation a read-scope token isn't listed, as
-/// `(constant, operation)`: known, reported, and not yet changed in product
-/// code. Nothing is added here to make the check pass: a new one is fixed
-/// (gate the read on a read-scope operation, as changelog display now is on
-/// `getSettings`). An entry goes when its gate is fixed, and the check says
-/// so.
-const UNFIXED: &[(&str, &str)] = &[
-    (
-        "blyg-core/src/background.rs::OPERATION",
-        "setReadingPlacement",
-    ),
-    ("blyg-core/src/shelf.rs::PUT_OPERATION", "putShelf"),
 ];
 
 /// The scope every token that can read the blyg has.
@@ -440,7 +436,11 @@ fn against(
 fn every_operation_constant_is_classified() {
     let constants = operation_constants(&product_sources());
     let listed: BTreeSet<&str> = GATES.iter().map(|g| g.constant).collect();
-    assert_eq!(listed.len(), GATES.len(), "a constant is in GATES twice");
+    assert_eq!(
+        listed.len(),
+        GATES.len(),
+        "GATES (capability_gates.rs) lists a constant twice: keep one row for it"
+    );
     let unclassified: Vec<String> = constants
         .iter()
         .filter(|(constant, _)| !listed.contains(constant.as_str()))
@@ -448,10 +448,16 @@ fn every_operation_constant_is_classified() {
         .collect();
     assert!(
         unclassified.is_empty(),
-        "An operation constant with no row in GATES (capability_gates.rs). Add one saying\n\
-         whether its gate guards a read or display (Guards::Read: the operation must then be\n\
-         one a read-scope token is listed) or a write (Guards::Write):\n{}",
-        unclassified.join("\n")
+        "An operation constant in product code has no row in GATES (capability_gates.rs), so\n\
+         nothing checks that a read-only sign-in still gets what it guards. Add a row for it:\n\
+         Guards::Read if anything Burrow reads or shows depends on the gate (its operation\n\
+         must then need only the read scope), Guards::Write if only a write does. A feature\n\
+         with both gets two constants, one each:\n{}",
+        unclassified
+            .iter()
+            .map(|c| format!("crates/{c}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
     let gone: Vec<&str> = listed
         .iter()
@@ -460,7 +466,8 @@ fn every_operation_constant_is_classified() {
         .collect();
     assert!(
         gone.is_empty(),
-        "GATES rows whose constant is gone from product code; remove them: {gone:?}"
+        "GATES (capability_gates.rs) has rows for constants product code no longer has. \
+         Remove the rows (or fix the path if the constant moved): {gone:?}"
     );
 }
 
@@ -488,20 +495,32 @@ fn every_gate_asks_for_an_operation_constant() {
     let (loose, stale) = against(&asks, PASSES_ON);
     assert!(
         loose.is_empty(),
-        "A gate that asks the capabilities for something other than an operation constant.\n\
-         Name the operation in a `const …OPERATION…` beside the feature, so that\n\
-         every_operation_constant_is_classified sees it:\n{}",
+        "A call of api::offers or Api::offers_all asks for something other than an operation\n\
+         constant (a string literal, a variable, or a const without OPERATION in its name),\n\
+         so the gate is in no list and nothing checks its scope. Put the operationId in a\n\
+         `pub const …_OPERATION: &str` beside the feature, pass that, and add its row to\n\
+         GATES (capability_gates.rs):\n{}",
         loose.join("\n")
     );
-    assert!(stale.is_empty(), "remove from PASSES_ON: {stale:?}");
+    assert!(
+        stale.is_empty(),
+        "PASSES_ON (capability_gates.rs) names functions that no longer call offers with \
+         operations they were handed. Remove the entries: {stale:?}"
+    );
     let (loose, stale) = against(&reads, READS_THE_LIST);
     assert!(
         loose.is_empty(),
-        "The capabilities' \"operations\" list read outside `api::offers`. Call\n\
-         blyg_core::api::offers (or Api::offers_all) with an operation constant:\n{}",
+        "A function reads the capabilities' \"operations\" list itself. A second reading of\n\
+         the list is a gate the scans above can't see. Replace it with\n\
+         blyg_core::api::offers(capabilities, YOUR_OPERATION), or Api::offers_all(&[…]) when\n\
+         the capabilities are still to be fetched:\n{}",
         loose.join("\n")
     );
-    assert!(stale.is_empty(), "remove from READS_THE_LIST: {stale:?}");
+    assert!(
+        stale.is_empty(),
+        "READS_THE_LIST (capability_gates.rs) names functions that no longer read the \
+         \"operations\" list. Remove the entries: {stale:?}"
+    );
 }
 
 /// A read or display gate names only operations the contract grants on the
@@ -522,28 +541,22 @@ fn read_gates_ask_for_operations_a_read_token_is_listed() {
             beyond.push((g.constant, op, needs, g.what));
         }
     }
-    let new: Vec<String> = beyond
+    let beyond: Vec<String> = beyond
         .iter()
-        .filter(|(constant, op, _, _)| !UNFIXED.contains(&(*constant, op.as_str())))
         .map(|(constant, op, needs, what)| {
-            format!("{constant}: {op} needs {needs}\n    guards: {what}")
+            format!("crates/{constant}: {op} needs {needs}\n    it guards: {what}")
         })
         .collect();
     assert!(
-        new.is_empty(),
-        "A gate on something Burrow reads or shows asks for an operation the studio doesn't\n\
-         list to a token with only {READ_SCOPE}, so the feature vanishes for that token. Gate\n\
-         the read on a read-scope operation (as changelog display is on getSettings), and\n\
-         keep the write's own operation for the write:\n{}",
-        new.join("\n")
-    );
-    let fixed: Vec<&(&str, &str)> = UNFIXED
-        .iter()
-        .filter(|(constant, op)| !beyond.iter().any(|b| b.0 == *constant && b.1 == *op))
-        .collect();
-    assert!(
-        fixed.is_empty(),
-        "fixed (or reclassified): remove from UNFIXED: {fixed:?}"
+        beyond.is_empty(),
+        "A constant that GATES (capability_gates.rs) lists as guarding a read names an\n\
+         operation the studio doesn't list to a token with only {READ_SCOPE}, so what it\n\
+         guards vanishes for that token. In the product file named below, gate the read on\n\
+         the operation that serves it (its own constant: `background::LENS_OPERATION` beside\n\
+         `OPERATION`, `shelf::GET_OPERATION` beside `PUT_OPERATION`), and ask for this one\n\
+         only before the write. Change a GATES row to Guards::Write only when nothing read\n\
+         or shown depends on that gate:\n{}",
+        beyond.join("\n")
     );
 }
 
