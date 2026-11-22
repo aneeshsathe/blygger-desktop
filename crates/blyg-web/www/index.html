@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Scripts come from this blyg only (and the WebAssembly they compile);
-     the inline import map is named by its hash (src/hardening_tests.rs
-     checks it). Someone else's post shown here runs nothing. -->
-<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'sha256-RLf9hYB1nZNxi7MrbujzilMn0+3MIQyiLsXk+w8pSI0='; object-src 'none'; base-uri 'none'">
+<!-- Scripts come from this blyg only (and the WebAssembly they compile).
+     Two inline scripts are named by their hashes (src/hardening_tests.rs
+     checks both): the import map, and the preview's script
+     (blyg_render::preview_script), because a srcdoc frame (the preview, a
+     version as published) inherits this policy on top of its own nonce
+     policy. Someone else's post shown here runs nothing. -->
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'sha256-RLf9hYB1nZNxi7MrbujzilMn0+3MIQyiLsXk+w8pSI0=' 'sha256-vTN7sU99AI83RYbqkGSe0KAQdq/0Vj2StXEW+IXWzuA='; object-src 'none'; base-uri 'none'; form-action 'self'; connect-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Burrow</title>
 <meta name="description" content="Burrow, a blygger client, running its own Rust code compiled to WebAssembly: on your own blyg, or on invented sample data.">
