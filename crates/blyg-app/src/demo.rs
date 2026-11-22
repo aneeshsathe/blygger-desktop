@@ -185,6 +185,21 @@ impl MainView {
                 self.settings_preview_key("right", false, window, cx);
             }
             (Scene::SettingsBackgroundKeys, n) => self.settings_demo(n, window, cx),
+            // --- ux 0.28 --- a sign-in that can read Background but not
+            // place (what `background_placing` says for an owner:read
+            // token), then the keys onto the second rule and space.
+            (Scene::SettingsBackgroundLocked, 2) => {
+                self.reading.background.placing = false;
+                for _ in 0..5 {
+                    self.settings_preview_key("tab", false, window, cx);
+                }
+                self.settings_preview_key("right", false, window, cx);
+                self.settings_preview_key("space", false, window, cx);
+            }
+            (Scene::SettingsBackgroundLocked, n) => self.settings_demo(n, window, cx),
+            // --- ux 0.28 --- sync met a blyg on a newer contract.
+            (Scene::Newer, 0) => self.demo_open("01J9QK3", window, cx),
+            (Scene::Newer, 2) => self.server_newer("7.0.0", cx),
             (Scene::SettingsPreview, n) => self.settings_preview_demo(n, window, cx), // --- preview ---
             // --- themes --- chrome surfaces, for the theme audit's captures.
             // A toast with a second line (shown late, so it's up at capture).

@@ -311,6 +311,29 @@ scenes! {
     Reading {
         RdResponsesKeys = "rd-responses-keys",
     }
+    /// reading/demo.rs (--- ux 0.28 ---): the user-testing pass's steps:
+    /// the Agentic feed's edition, Saved, Kit's tides (a copy
+    /// elsewhere) opened from the stream
+    Reading {
+        RdAgentic = "rd-agentic",
+        RdSaved = "rd-saved",
+        RdStreamCopies = "rd-stream-copies",
+        RdStreamCatchupSummary = "rd-stream-catchup-summary",
+    }
+    /// demo.rs (--- ux 0.28 ---): the toast sync shows for a blyg on a
+    /// newer studio; Settings for a sign-in that can't change Background
+    /// rules (the fake's `background_placing` is off for the scene)
+    Main {
+        Newer = "newer",
+        SettingsBackgroundLocked = "settings-background-locked",
+    }
+    /// extensions/mod.rs (--- ux 0.28 ---): cross-post on and allowed, a
+    /// published post edited, ⌘⏎: the Publish sheet's "Then cross-post to";
+    /// `-palette`: ⇧⌘P on that post instead (its on/off rows)
+    Extensions {
+        ExtAutoCrosspost = "ext-auto-crosspost",
+        ExtAutoCrosspostPalette = "ext-auto-crosspost-palette",
+    }
 }
 
 impl Scene {

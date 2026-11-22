@@ -29,6 +29,15 @@ formula that doesn't parse in red. Replying to a post with formulas, a
 passage selected through a formula gets "A passage can’t include a
 formula…" instead of "quote only this".
 
+**Cross-post automatically (0.28.0).** With cross-post on and allowed, the
+Publish sheet (⌘⏎) lists "Then cross-post to" with a chip per site; ⇧⌘P
+with the post open has "Cross-post automatically to <site>: on/off". Each
+publish then starts that site's run, which still shows the text and waits
+for Post.
+
+**Dictionary (studio 0.69).** Blyg › Dictionary… lists your blyg's words and
+installed sets; Learn Spelling in the editor's spelling menu adds there too.
+
 ## Driving it with burrow-verify
 
 | Scene | Shows |
@@ -45,6 +54,10 @@ formula…" instead of "quote only this".
 | `rd-tangle-preview` | a thread with a passage and a placeholder, its preview beside it |
 | `rd-tangle` | the same, published up to the confirm step |
 | `rd-maths-preview` | a draft with formulas in the preview, a broken one in red |
+| `ext-auto-crosspost` | cross-post allowed, a published post edited, ⌘⏎: the Publish sheet's "Then cross-post to" (needs `BURROW_VERIFY_CONFIG` with `extension = cross-post`) |
+| `ext-auto-crosspost-palette` | the same post's ⇧⌘P: "Cross-post automatically to <site>" rows (same config) |
+| `aa-dictionary`, `aa-ai` | Blyg › Dictionary… and Blyg › AI on Your Blyg… |
+| `tut-auto-crosspost` | the tour's step on automatic cross-posting |
 | `rd-maths-quote` | a reply to Ada's maths post, a passage selected through a formula |
 
 The keyed journeys (confirm, esc, publish all, revise; the format keys) are
@@ -65,5 +78,13 @@ scripts/verify/burrow-verify.sh run published
   not a tangle in a fragment, more than 10 new items, or a formula that
   doesn't parse: it publishes those. Check the studio's refusals with
   `real-server-testing` (`e2e/tangle.rs`, `e2e/maths.rs`).
+- `ext-auto-crosspost` can't grant the `browser.automate` lines from the
+  config: `burrow-verify.sh` refuses a config naming a non-example host, so
+  the scene allows the first-start question instead. No run goes past the
+  Preview sheet: a macro would load a real website.
+- The tour can't show "Then cross-post to": cross-post isn't run in the
+  tour (`extensions/tour.rs`).
+- The dictionary's offline queue and another client's merge need a real
+  studio 0.69 (`real-server-testing`).
 - The toast fades after a few seconds: capture soon after `launch` (the
   default hold is 1.5 s).

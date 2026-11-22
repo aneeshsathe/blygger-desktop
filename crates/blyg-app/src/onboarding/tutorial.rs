@@ -1480,7 +1480,8 @@ impl MainView {
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
-            "extensions" => self.ext_toggle_palette(window, cx),
+            // --- ux 0.28 --- the Post menu, as the step's key opens it.
+            "auto-crosspost" | "extensions" => self.ext_toggle_palette(window, cx),
             // --- flow ---
             "palette" => self.toggle_palette(window, cx),
             "focus" => self.enter_focus(window, cx),

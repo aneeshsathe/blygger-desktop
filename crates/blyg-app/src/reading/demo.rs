@@ -595,6 +595,34 @@ impl MainView {
                 self.select_source(Source::Smart(Smart::Raw), cx);
                 self.move_reading(1, window, cx);
             }
+            // --- ux 0.28 --- the Agentic feed (the fake's edition) and Saved.
+            (Scene::RdAgentic | Scene::RdSaved, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdAgentic, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Agentic), cx);
+            }
+            (Scene::RdSaved, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Shelf), cx);
+                self.move_reading(1, window, cx);
+            }
+            // --- ux 0.28 --- Catch up on Rue's thread, then s: the blyg's
+            // summary first.
+            (Scene::RdStreamCatchupSummary, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamCatchupSummary, 1) => {
+                if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
+                    let (o, i) = (r.origin.clone(), r.remote_id.to_string());
+                    self.open_catch_up(o, i, window, cx);
+                }
+            }
+            (Scene::RdStreamCatchupSummary, 2) => self.catch_up_summarize(window, cx),
+            // --- ux 0.28 --- Kit's tides opened from the stream (no
+            // followed sample post lists a copy; Kit's, fetched, does).
+            (Scene::RdStreamCopies, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamCopies, 1) => {
+                use crate::fake::reading_seed::{KIT, KIT_TIDES};
+                self.open_original(KIT.into(), KIT_TIDES.into(), None, window, cx)
+            }
             (Scene::RdBackground, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdBackground, 1) => {
                 use super::sources_vm::{Smart, Source};

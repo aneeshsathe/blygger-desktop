@@ -1053,6 +1053,60 @@ mod macros {
         assert!(second.is_empty(), "queued again: {second:?}");
     }
 
+    /// --- ux 0.28 --- Keyboard only: ⇧⌘P and a few letters turn
+    /// automatic cross-posting on for the open post, ⌘⏎ brings the Publish
+    /// sheet with the note field taking keys, and ⏎ publishes and starts
+    /// the run (its Preview sheet). No mouse anywhere.
+    #[gpui_kit::test]
+    fn automatic_cross_post_by_keys_alone(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        // Only Substack is granted: cross-post asks for the other sites
+        // first. Esc (the sheet has the keyboard) is "Not now".
+        if view.read_with(cx, |v, _| v.ext.has_overlay()) {
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
+        }
+        assert!(
+            view.read_with(cx, |v, _| !v.ext.has_overlay()),
+            "esc answered it"
+        );
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"));
+        cx.run_until_parked();
+        cx.simulate_input("automatically substack");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            let chosen = v.auto_crosspost_chosen(&post, cx);
+            assert!(
+                chosen.contains(&format!("{XP}/{NOTE_MACRO}")),
+                "the palette row turned it on: {chosen:?}"
+            )
+        });
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(
+                v.sheet.is::<crate::app::sheet::publish::PublishSheet>(),
+                "⌘⏎: the Publish sheet"
+            )
+        });
+        cx.simulate_keystrokes("enter");
+        wait(&view, cx, "the Preview sheet after ⏎", |cx| {
+            view.read_with(cx, |v, _| {
+                v.sheet
+                    .is::<crate::app::browser::automation::PreviewSheet>()
+            })
+        });
+        assert_eq!(fake.item(&post).unwrap().status, Status::Public);
+    }
+
     /// --- auto cross-post --- A run that posted without its copy recorded
     /// turns the choice off, so the next publish doesn't post it again.
     #[gpui_kit::test]
