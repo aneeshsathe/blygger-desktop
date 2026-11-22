@@ -228,7 +228,7 @@ fn the_gated_operations_are_the_contracts() {
         );
         for op in ops {
             assert!(
-                known.iter().any(|k| *k == op),
+                known.contains(&op),
                 "crates/{constant} asks for \"{op}\", which is no operationId in \
                  crates/blyg-core/tests/fixtures/openapi-current.json: no studio lists it, so \
                  the feature is hidden everywhere. Use the contract's spelling."

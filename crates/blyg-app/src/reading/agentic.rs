@@ -104,7 +104,8 @@ impl Agentic {
         self.cards.get(si)?.get(ei)
     }
 
-    /// Cards built so far.
+    /// Cards built so far (tests count work by it).
+    #[cfg(test)]
     pub fn cards_built(&self) -> usize {
         self.built
     }
@@ -387,7 +388,8 @@ impl MainView {
             }
             for g in grouped(&s.entries) {
                 let lead = (g.lead, &s.entries[g.lead]);
-                let also: Vec<(usize, &Placed)> = g.also.iter().map(|&i| (i, &s.entries[i])).collect();
+                let also: Vec<(usize, &Placed)> =
+                    g.also.iter().map(|&i| (i, &s.entries[i])).collect();
                 col = col.child(self.render_agentic_card(
                     (si, n),
                     lead,

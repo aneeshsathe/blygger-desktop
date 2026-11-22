@@ -208,8 +208,11 @@ fn an_edition_is_bounded_however_much_it_says() {
         "sub": "sub-a", "remoteId": "r-long",
         "headline": long, "summary": long, "reason": long
     })];
-    entries.extend((0..ENTRIES_MAX + 20).map(|i| json!({ "sub": "sub-a", "remoteId": format!("r{i}") })));
-    let mut sections = vec![json!({ "title": long, "kind": "section", "note": long, "entries": entries })];
+    entries.extend(
+        (0..ENTRIES_MAX + 20).map(|i| json!({ "sub": "sub-a", "remoteId": format!("r{i}") })),
+    );
+    let mut sections =
+        vec![json!({ "title": long, "kind": "section", "note": long, "entries": entries })];
     sections.extend((0..SECTIONS_MAX + 5).map(|_| json!({ "title": "More", "entries": [] })));
     let v = json!({
         "revision": 1,
@@ -234,5 +237,5 @@ fn an_edition_is_bounded_however_much_it_says() {
     assert!(n(p.headline.as_deref().unwrap()) <= SHORT_MAX);
     assert!(n(p.summary.as_deref().unwrap()) <= TEXT_MAX);
     assert!(n(p.reason.as_deref().unwrap()) <= TEXT_MAX);
-    assert!(SHORT_MAX < TEXT_MAX && TEXT_MAX < 20_000);
+    const { assert!(SHORT_MAX < TEXT_MAX && TEXT_MAX < 20_000) };
 }

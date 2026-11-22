@@ -57,9 +57,7 @@ impl Api {
         let path = format!("/api/dictionary/{}", enc(source));
         match self.call("PUT", &path, Some(put_body(words, expected_revision))) {
             Ok(v) => parse(&v).map(PutDictionary::Stored).ok_or_else(unexpected),
-            Err(CoreError::RevisionConflict) => {
-                Ok(PutDictionary::Conflict(self.dictionary()?))
-            }
+            Err(CoreError::RevisionConflict) => Ok(PutDictionary::Conflict(self.dictionary()?)),
             Err(e) => Err(e),
         }
     }

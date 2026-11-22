@@ -12,9 +12,9 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::{DictLoad, DictionarySheet};
 use crate::app::MainView;
-use crate::composer::{self, SpellService};
 use crate::composer::spell::SpellEngine;
 use crate::composer::spell::fake::FakeSpell;
+use crate::composer::{self, SpellService};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -30,7 +30,10 @@ fn setup(
     &mut VisualTestContext,
 ) {
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
-    let spell = Arc::new(FakeSpell::new(&[("tidepool", &[]), ("tabels", &["tables"])]));
+    let spell = Arc::new(FakeSpell::new(&[
+        ("tidepool", &[]),
+        ("tabels", &["tables"]),
+    ]));
     let engine = spell.clone();
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -123,7 +126,10 @@ fn taking_a_word_out_unlearns_it_here_too(cx: &mut TestAppContext) {
         else {
             panic!("ready")
         };
-        d.owner_words().iter().position(|w| w == "tidepool").unwrap()
+        d.owner_words()
+            .iter()
+            .position(|w| w == "tidepool")
+            .unwrap()
     });
     view.update_in(cx, |v, window, cx| v.dictionary_remove(ix, window, cx));
     crate::test_wait::until(cx, "the word taken out", |cx| {

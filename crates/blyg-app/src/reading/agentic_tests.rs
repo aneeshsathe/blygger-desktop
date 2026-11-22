@@ -111,7 +111,10 @@ fn the_masthead_names_the_assistant_and_marks_its_words() {
     assert_eq!(ASSISTANT_BADGE, "✦ written by your assistant");
     let note = empty_note("Daily digest");
     assert!(note.starts_with("No edition yet."), "{note}");
-    assert!(note.contains("an assistant writes it on your blyg"), "{note}");
+    assert!(
+        note.contains("an assistant writes it on your blyg"),
+        "{note}"
+    );
     assert!(!note.contains("/api/"), "plain words, no API paths: {note}");
 }
 
@@ -124,7 +127,12 @@ fn cards_are_built_once_per_change_not_per_draw() {
         placed(json!({ "remoteId": "r1", "headline": "A long look at harbours" })),
         placed(json!({ "remoteId": "r2" })),
     ])));
-    let rows = vec![row("sub-a", "r1", 2, "# Harbours\n\nWords about tide tables.")];
+    let rows = vec![row(
+        "sub-a",
+        "r1",
+        2,
+        "# Harbours\n\nWords about tide tables.",
+    )];
     a.refresh_cards(&rows);
     assert_eq!(a.cards_built(), 2);
     let k1 = a.keys()[0].clone();

@@ -243,7 +243,11 @@ fn server_ai_keeps_a_change_made_elsewhere_since_it_opened(cx: &mut TestAppConte
     settle(cx, |cx| view.read_with(cx, |v, _| !v.sheet.is_open()));
     let s = fake.server_ai_settings().unwrap();
     assert_eq!(s.model(AiFunction::Tk), Some("claude-haiku-4-5"));
-    assert_eq!(s.style_prompt.as_deref(), Some("Short. Warm."), "Studio's style kept");
+    assert_eq!(
+        s.style_prompt.as_deref(),
+        Some("Short. Warm."),
+        "Studio's style kept"
+    );
     assert_eq!(
         s.model(AiFunction::Changelog),
         Some("claude-sonnet-5-5"),

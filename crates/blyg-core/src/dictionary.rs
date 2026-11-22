@@ -53,7 +53,8 @@ pub fn serves_write(capabilities: &Value) -> bool {
 /// error says why.
 pub fn keeps_queue(e: &crate::backend::CoreError) -> bool {
     use crate::backend::CoreError;
-    crate::api::is_transient(e) || matches!(e, CoreError::Unauthorized | CoreError::RevisionConflict)
+    crate::api::is_transient(e)
+        || matches!(e, CoreError::Unauthorized | CoreError::RevisionConflict)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

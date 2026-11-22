@@ -432,7 +432,10 @@ impl ServerAiSettings {
             ..ServerAiSettings::default()
         };
         for f in AiFunction::ALL {
-            *out.model_mut(f) = text(&self.model(f).map(str::to_string), &loaded.model(f).map(str::to_string));
+            *out.model_mut(f) = text(
+                &self.model(f).map(str::to_string),
+                &loaded.model(f).map(str::to_string),
+            );
         }
         out
     }
