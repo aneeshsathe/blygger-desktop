@@ -9,7 +9,14 @@
 //! - `operation:{operationId}`: named by its operationId, or a test string
 //!   holds its path (`/api/reading/placement`, `{param}` = any segment);
 //! - `property:{where}.{name}`: a test holds `"name"`, or the snake_case
-//!   field (`tangled_from` for `tangledFrom`) when that differs;
+//!   field (`tangled_from` for `tangledFrom`) when that differs. A name that
+//!   is one plain lowercase word (`why`, `raw`, `id`) is too common for that:
+//!   the `"why"` of an unrelated JSON row once counted as
+//!   `SpellcheckIssue.why`, so its honest exemption failed as stale and was
+//!   deleted. Such a name needs its quoted form within 6 lines of the schema
+//!   or operation it lives in (its name, snake_case, or an operation's path)
+//!   or of a sibling property that is itself distinctive (not a plain word
+//!   of under 5 letters);
 //! - `enum:{where}={value}`: a test holds `"value"` within 3 lines of the
 //!   property or parameter it belongs to (a bare `"link"` is too common);
 //! - `param:{operationId}/{in}:{name}`: a test holds `"name"` in the
@@ -40,6 +47,12 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::Value;
+
+/// Lines either side of a plain-word property's name that may hold its anchor.
+const WINDOW: usize = 6;
+/// A sibling property anchors a plain-word property unless it is itself a
+/// plain lowercase word shorter than this.
+const MIN_SIBLING: usize = 5;
 
 const HINT: &str = "write a test that names it (e2e against a real studio, see skills/real-server-testing), or add it to crates/blyg-core/tests/fixtures/contract-coverage.toml with a reason";
 
@@ -124,7 +137,7 @@ fn glob(pat: &str, s: &str) -> bool {
 enum Rule {
     /// operationId, and path template segments (with the server's `/api`).
     Operation(String, Vec<String>),
-    Property(String),
+    Property(Prop),
     /// value, and the property or parameter it belongs to.
     Enum(String, Option<String>),
     /// A header name (a response header, or a parameter sent in a header),
@@ -135,6 +148,98 @@ enum Rule {
     Param(String, bool),
 }
 
+/// A schema property, with the places that vouch for a plain-word name.
+#[derive(Debug, Clone)]
+struct Prop {
+    name: String,
+    /// The schema's or operation's name: the first segment of `{where}`.
+    owner: String,
+    /// The owner's path, when it is an operation.
+    path: Option<Vec<String>>,
+    /// The other properties of the same parent object.
+    siblings: Vec<String>,
+}
+
+/// One plain lowercase word: a bare quoted string of it is too common to
+/// prove anything.
+fn plain_word(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase())
+}
+
+impl Rule {
+    fn property(name: &str, owner: &str, path: Option<Vec<String>>, siblings: &[&str]) -> Rule {
+        Rule::Property(Prop {
+            name: name.to_string(),
+            owner: owner.to_string(),
+            path,
+            siblings: siblings.iter().map(|s| s.to_string()).collect(),
+        })
+    }
+}
+
+impl Prop {
+    fn plain(&self) -> bool {
+        plain_word(&self.name)
+    }
+
+    /// Siblings whose names say something about where this property is.
+    fn distinctive_siblings(&self) -> impl Iterator<Item = &str> {
+        self.siblings
+            .iter()
+            .map(String::as_str)
+            .filter(|s| !(plain_word(s) && s.len() < MIN_SIBLING))
+    }
+
+    /// What a test must hold for an uncovered plain-word name, for the
+    /// failure message.
+    fn hint(&self) -> Option<String> {
+        if !self.plain() {
+            return None;
+        }
+        let mut near = format!("{} or {}", self.owner, snake(&self.owner));
+        if self.path.is_some() {
+            near.push_str(", or its path");
+        }
+        let siblings: Vec<String> = self
+            .distinctive_siblings()
+            .map(|s| format!("\"{s}\""))
+            .collect();
+        if !siblings.is_empty() {
+            near.push_str(&format!(", or the sibling {}", siblings.join(" or ")));
+        }
+        Some(format!(
+            "\"{}\" is a plain word, so a test must hold it quoted within {WINDOW} lines of {near}",
+            self.name
+        ))
+    }
+
+    /// `window` (a few lines of one test file) names a place this property
+    /// lives in.
+    fn anchored_in(&self, window: &str) -> bool {
+        let lower = window.to_ascii_lowercase();
+        lower.contains(&self.owner.to_ascii_lowercase())
+            || lower.contains(&snake(&self.owner))
+            || self.path.as_ref().is_some_and(|p| has_path(window, p))
+            || self.distinctive_siblings().any(|s| {
+                window.contains(&format!("\"{s}\""))
+                    || (snake(s) != s && has_word(window, &snake(s)))
+            })
+    }
+
+    fn covered_by(&self, text: &str) -> bool {
+        let quoted = format!("\"{}\"", self.name);
+        if !self.plain() {
+            let snake = snake(&self.name);
+            return text.contains(&quoted) || (snake != self.name && has_word(text, &snake));
+        }
+        let lines: Vec<&str> = text.lines().collect();
+        lines.iter().enumerate().any(|(i, l)| {
+            let near = &lines[i.saturating_sub(WINDOW)..(i + WINDOW + 1).min(lines.len())];
+            l.contains(&quoted) && self.anchored_in(&near.join("\n"))
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Item {
     rule: Rule,
@@ -142,8 +247,10 @@ struct Item {
     at: String,
 }
 
+/// The items by key, and the path of the operation being walked (the owner
+/// of its schemas' properties; `None` in `components`).
 #[derive(Default)]
-struct Items(BTreeMap<String, Item>);
+struct Items(BTreeMap<String, Item>, Option<Vec<String>>);
 
 impl Items {
     fn add(&mut self, key: String, rule: Rule, at: String) {
@@ -155,11 +262,17 @@ impl Items {
             Value::Array(list) => list.iter().for_each(|x| self.schema(x, at, parent)),
             Value::Object(o) => {
                 if let Some(Value::Object(props)) = o.get("properties") {
+                    let owner = at.split(['.', '/', '[']).next().unwrap_or(at);
                     for (name, sub) in props {
                         let here = format!("{at}.{name}");
+                        let siblings: Vec<&str> = props
+                            .keys()
+                            .map(String::as_str)
+                            .filter(|k| k != name)
+                            .collect();
                         self.add(
                             format!("property:{here}"),
-                            Rule::Property(name.clone()),
+                            Rule::property(name, owner, self.1.clone(), &siblings),
                             String::new(),
                         );
                         self.schema(sub, &here, Some(name));
@@ -233,11 +346,12 @@ fn items(doc: &Value) -> Items {
                 .as_str()
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("{method} {path}"));
-            let segs = path
+            let segs: Vec<String> = path
                 .trim_start_matches('/')
                 .split('/')
                 .map(str::to_string)
                 .collect();
+            out.1 = Some(segs.clone());
             let route = format!("{} {path}", method.to_ascii_uppercase());
             out.add(
                 format!("operation:{id}"),
@@ -280,6 +394,7 @@ fn items(doc: &Value) -> Items {
             }
         }
     }
+    out.1 = None;
     out
 }
 
@@ -492,13 +607,7 @@ impl Tests {
                 .files
                 .iter()
                 .any(|t| has_word(t, id) || has_path(t, segs)),
-            Rule::Property(name) => {
-                let quoted = format!("\"{name}\"");
-                let snake = snake(name);
-                self.files
-                    .iter()
-                    .any(|t| t.contains(&quoted) || (snake != *name && has_word(t, &snake)))
-            }
+            Rule::Property(p) => self.files.iter().any(|t| p.covered_by(t)),
             Rule::Name(name) => {
                 let quoted = format!("\"{}\"", name.to_ascii_lowercase());
                 self.lower.iter().any(|t| t.contains(&quoted))
@@ -592,8 +701,18 @@ fn every_contract_item_is_tested_or_exempted() {
                     .or_default() += 1
             }
             (false, None, Some(_)) => {}
-            (false, None, None) if item.at.is_empty() => uncovered.push(format!("  {key}")),
-            (false, None, None) => uncovered.push(format!("  {key}   ({})", item.at)),
+            (false, None, None) => {
+                let mut line = format!("  {key}");
+                if !item.at.is_empty() {
+                    line.push_str(&format!("   ({})", item.at));
+                }
+                if let Rule::Property(p) = &item.rule
+                    && let Some(hint) = p.hint()
+                {
+                    line.push_str(&format!("\n      {hint}"));
+                }
+                uncovered.push(line)
+            }
         }
     }
     for p in cov
@@ -770,4 +889,48 @@ fn the_matchers_read_tests_as_meant() {
     assert!(!etag.covers(&Rule::Param("ETag".into(), true)));
     let inline = "fn a() {}\n#[cfg(test)]\nfn helper() {}\n#[cfg(test)]\nmod tests {\n}\n";
     assert_eq!(inline_test_mod(inline), inline.find("#[cfg(test)]\nmod"));
+}
+
+/// `SpellcheckIssue.why`, whose siblings in the contract are `find` and
+/// `replace`.
+fn issue_why() -> Rule {
+    Rule::property("why", "SpellcheckIssue", None, &["find", "replace"])
+}
+
+#[test]
+fn a_plain_word_property_needs_an_anchor_near_its_name() {
+    // The past false cover: tests on another branch (web-restore-split) read
+    // an unrelated JSON key "why", so the exempted `SpellcheckIssue.why`
+    // counted as covered, failed as stale, and its exemption was deleted.
+    let other_keys = Tests::of(vec![
+        "    let rows = view[\"rows\"].as_array().unwrap();\n    // Stalest first: z (not held here), c (changed here), p.\n    assert_eq!(rows[0][\"sid\"], \"z000000000000000000000000z\");\n    assert_eq!(rows[0][\"why\"], \"This thread isn't in this browser yet\");\n    assert_eq!(\n        rows[1][\"why\"],\n        \"It has unpublished edits: publish or discard them first\"\n    );\n    assert_eq!(rows[2][\"why\"], Value::Null);\n    assert_eq!(rows[2][\"line\"], \"2 versions behind\");\n".into(),
+        "    assert_eq!(x[\"on\"], true);\n    assert_eq!(x[\"placement\"], \"background\");\n    assert_eq!(x[\"why\"], \"you moved this\");\n    assert_eq!(v(b.wr_bg(\"b|b1\"))[\"why\"], \"blyg in Background\");\n".into(),
+        "\"kind\": \"pending\", \"why\": why, \"heading\": \"Changelog\", \"rows\": rows(&lines),\n".into(),
+    ]);
+    assert!(!other_keys.covers(&issue_why()));
+    // The name within 6 lines of the schema's name (any case, or snake_case).
+    let near = Tests::of(vec![
+        "let i = SpellcheckIssue::default();\n\n\nassert_eq!(j[\"why\"], \"x\");".into(),
+    ]);
+    assert!(near.covers(&issue_why()));
+    let snake_near = Tests::of(vec!["fn spellcheck_issue() {\n    j[\"why\"]\n}".into()]);
+    assert!(snake_near.covers(&issue_why()));
+    // Or next to a distinctive sibling.
+    let sibling = Tests::of(vec!["json!({ \"replace\": r, \"why\": w })".into()]);
+    assert!(sibling.covers(&issue_why()));
+    // A short plain sibling proves nothing.
+    let short = Tests::of(vec!["json!({ \"id\": 1, \"find\": f, \"why\": w })".into()]);
+    assert!(!short.covers(&issue_why()));
+    // 6 lines either side count; 7 don't.
+    let gap = |n: usize| format!("SpellcheckIssue\n{}\"why\"", "\n".repeat(n));
+    assert!(Tests::of(vec![gap(5)]).covers(&issue_why()));
+    assert!(!Tests::of(vec![gap(6)]).covers(&issue_why()));
+    let after = format!("\"why\"\n{}SpellcheckIssue", "\n".repeat(5));
+    assert!(Tests::of(vec![after]).covers(&issue_why()));
+    let far_after = format!("\"why\"\n{}SpellcheckIssue", "\n".repeat(6));
+    assert!(!Tests::of(vec![far_after]).covers(&issue_why()));
+    // A distinctive name keeps the bare rule.
+    let camel = Rule::property("ifNoneMatch", "Conditional", None, &["other"]);
+    assert!(Tests::of(vec!["h.get(\"ifNoneMatch\")".into()]).covers(&camel));
+    assert!(Tests::of(vec!["x.if_none_match".into()]).covers(&camel));
 }

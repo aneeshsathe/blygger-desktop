@@ -28,6 +28,7 @@ mod newer_contract;
 mod no_git;
 mod personal_data;
 mod profiles;
+mod publish;
 mod read_sync;
 mod reader_order;
 mod reading;

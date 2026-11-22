@@ -34,8 +34,11 @@ fn edition() -> Value {
         "layout": {
             "title": "Morning edition",
             "lede": "Three things worth your time.",
+            // AgenticEdition.layout.agent: who wrote it, the "model" optional.
             "agent": { "name": "resident", "model": "invented-model-1" },
             "generatedAt": "2026-11-21T06:55:00.000Z",
+            // Each entry is an AgenticResolvedEntry: the assistant's reference
+            // and words, and its "entry", the reading entry it resolved to.
             "sections": [
                 { "title": "Lead", "kind": "lead", "note": null, "entries": [
                     { "sub": "sub-a", "remoteId": "r1", "version": 2,
@@ -53,6 +56,8 @@ fn edition() -> Value {
                 ]}
             ]
         },
+        // AgenticEdition.draft: the private draft thread it was composed as,
+        // by its item "id".
         "draft": { "id": "draft-1" }
     })
 }
@@ -153,6 +158,7 @@ fn a_never_written_edition_has_no_layout() {
 
 #[test]
 fn feeds_read_with_their_names_and_the_default_title() {
+    // listAgenticFeeds' answer (GET /api/agentic): the "feeds" in order.
     let v = json!({ "feeds": [
         { "id": "default", "title": "Daily digest", "revision": 2, "updatedAt": "2026-11-21T07:00:00.000Z" },
         { "id": "weekly", "title": "weekly", "revision": 0, "updatedAt": null }

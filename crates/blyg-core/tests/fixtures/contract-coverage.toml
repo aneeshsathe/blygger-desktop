@@ -53,6 +53,8 @@ reason = "Burrow doesn't ask for catch-up's cards because its own Catch up (blyg
 reason = "catch-up's answer (operation catchUp), which Burrow doesn't ask for: its own Catch up lays out the conversation (blyg_core::catchup)"
 items = [
   "property:CatchUp.cards",
+  "property:CatchUp.cards[].depth",
+  "property:CatchUp.cards[].html",
   "property:CatchUp.ordered",
   "enum:CatchUp.ordered=depth",
   "enum:CatchUp.ordered=time",
@@ -66,9 +68,16 @@ reason = "Burrow doesn't read the helper catalogue because the capabilities' ope
 reason = "the helper catalogue (operation listHelpers), which Burrow doesn't read: it gates on the capabilities' operation names"
 items = [
   "property:listHelpers/200.helpers",
+  "property:listHelpers/200.helpers[].description",
+  "property:listHelpers/200.helpers[].kind",
   "property:listHelpers/200.helpers[].operation",
+  "property:listHelpers/200.helpers[].ui",
   "enum:listHelpers/200.helpers[].kind=mechanical",
 ]
+
+[[exempt]]
+item = "property:AgenticEdition.edition"
+reason = "Burrow doesn't read an edition's `edition` (the assistant's AgenticEditionInput, echoed back for its next PUT) because it draws `layout`, the same edition with each reference resolved and the unresolvable ones left out (blyg_core::agentic::parse_edition), and never writes an edition (putAgentic is the assistant's); Studio's tab draws `layout` too"
 
 [[exempt]]
 item = "property:*.studioTheme"
@@ -84,6 +93,7 @@ items = [
   "property:extSpellcheckGetWords/200.gz",
   "property:extSpellcheckGetWords/200.lang",
   "property:extSpellcheckGetWords/200.notice",
+  "property:extSpellcheckGetWords/200.words",
   "enum:extSpellcheckGetWords/200.lang=en-US",
 ]
 
@@ -94,8 +104,11 @@ reason = "Burrow doesn't ask the spellcheck extension's proofread because its ed
 [[group]]
 reason = "the spellcheck extension's proofread answer (operation extSpellcheckProofread), which Burrow doesn't ask: its editor's Proofread is its own AI"
 items = [
+  "property:SpellcheckIssue.find",
   "property:SpellcheckIssue.replace",
   "property:SpellcheckIssue.why",
+  "property:extSpellcheckProofread/200.issues",
+  "property:extSpellcheckProofread/200.model",
   "property:extSpellcheckProofread/200.truncated",
 ]
 
