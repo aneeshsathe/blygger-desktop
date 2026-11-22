@@ -27,25 +27,6 @@ fn row_of<'a>(rows: &'a [ReadingItem], sub: &str, id: &str) -> &'a ReadingItem {
         .unwrap_or_else(|| panic!("{sub}/{id} isn't held"))
 }
 
-/// Unsubscribes when dropped, so a failed test leaves no subscription
-/// behind (the next test's subscribe would get a 409).
-struct Subscribed<'a>(&'a LiveBackend, SubId);
-
-impl Drop for Subscribed<'_> {
-    fn drop(&mut self) {
-        let _ = self.0.unsubscribe(&self.1);
-    }
-}
-
-/// Puts a rule back on when dropped.
-struct RuleBackOn<'a>(&'a LiveBackend, &'static str);
-
-impl Drop for RuleBackOn<'_> {
-    fn drop(&mut self) {
-        let _ = self.0.save_background_rule(self.1, true);
-    }
-}
-
 /// The studio's rules as stored (`GET /api/settings`).
 fn stored_rules(base: &str) -> Value {
     let (st, v) = owner("GET", base, "/api/settings", None);
@@ -107,6 +88,8 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         return;
     };
     assert!(rules.on(BURST), "on by default");
+    // `superseded` would hold each part too, whatever `burst` says.
+    let _superseded = superseded_off(&me);
     let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("burst");
     let (_, p1) = published(
@@ -122,7 +105,7 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         None,
     );
     let sub = me.subscribe(&src_url, None).unwrap();
-    let _unsub = Subscribed(&me, sub.id.clone());
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&p1, &p2]);
 
     let thread_text =
@@ -158,11 +141,11 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
 
     // The burst rule off: one key written, the others as stored (wordless
     // turned off first, so "as stored" isn't just the default).
-    let _wordless = RuleBackOn(&me, "wordless");
+    let _wordless = RuleBack(&me, "wordless", rules.on("wordless"));
     me.save_background_rule("wordless", false).unwrap();
     let before = stored_rules(&e.url);
     assert_eq!(before["wordless"], json!(false));
-    let _burst = RuleBackOn(&me, BURST);
+    let _burst = RuleBack(&me, BURST, true);
     let back = me.save_background_rule(BURST, false).unwrap();
     assert!(!back.on(BURST));
     let after = stored_rules(&e.url);
@@ -238,7 +221,7 @@ fn wordless_and_unchanged_republishes_go_to_background() {
         None,
     );
     let sub = me.subscribe(&src_url, None).unwrap();
-    let _unsub = Subscribed(&me, sub.id.clone());
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&quoted, &again]);
     let (_, only_quotes) = published(&source, Kind::Thread, &format!("![[{quoted}]]"), None);
     poll(&me, &sub.id, &only_quotes, 1);
@@ -269,4 +252,155 @@ fn wordless_and_unchanged_republishes_go_to_background() {
     );
     assert_eq!(why(&again).reasons, ["maintenance"]);
     assert_eq!(why(&again).why().as_deref(), Some("republished unchanged"));
+}
+
+/// Publish one of your own fragments straight through the owner API; its id.
+fn own_published(text: &str) -> String {
+    let e = e2e();
+    let (st, v) = owner(
+        "POST",
+        &e.url,
+        "/api/items",
+        Some(json!({ "mode": "blank", "kind": "fragment", "contentMd": text })),
+    );
+    assert!(st == 200 || st == 201, "{st} {v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (st, v) = owner(
+        "POST",
+        &e.url,
+        &format!("/api/items/{id}/publish"),
+        Some(json!({ "expectedRevision": server_rev(&id) })),
+    );
+    assert_eq!(st, 200, "{v}");
+    id
+}
+
+/// Your own posts a test made, taken out of the Background lens when
+/// dropped, pass or fail, so later tests don't walk a lens of many pages:
+/// each is deleted if the studio lets it go, else given the owner's
+/// Foreground choice. Clearing the choice isn't enough: studio 0.68's
+/// `superseded` holds posts published minutes apart in Background anyway.
+struct OwnPostsOut {
+    api: Api,
+    ids: Vec<String>,
+}
+
+impl Drop for OwnPostsOut {
+    fn drop(&mut self) {
+        use blyg_core::background::Placement;
+        for id in &self.ids {
+            let deleted = self
+                .api
+                .get_item(id)
+                .and_then(|w| self.api.delete_item(id, w.revision))
+                .is_ok();
+            if !deleted {
+                let key = (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(id));
+                let _ = self
+                    .api
+                    .set_reading_placement(&key, Some(Placement::Foreground));
+            }
+        }
+    }
+}
+
+/// The studio expires a reading cursor whenever the reading collection
+/// moves, as it does on every post a subscription's backfill imports
+/// (studio 0.68: and on every neighbour that post supersedes). A Background
+/// lens that changes under every walk is left as held for that pull: the
+/// sync goes on without an error, the set isn't emptied, and a later pull
+/// reads it whole.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_lens_that_changes_under_every_walk_waits_for_the_next_pull() {
+    use blyg_core::background::{LENS_LIMIT, LENS_QUERY, Placement};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    if !api.serves_background().unwrap() {
+        eprintln!("skipped: this studio has no Background");
+        return;
+    }
+    let t = tag("lens-moves");
+    let own = |id: &str| (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(id));
+    let mut made = OwnPostsOut {
+        api: Api::new(&e.url, e.cred.clone()),
+        ids: Vec::new(),
+    };
+    // More than one page of the lens: your own posts, moved there by hand.
+    let mut placed = Vec::new();
+    for i in 0..=LENS_LIMIT {
+        let id = own_published(&format!("{t} {i}"));
+        made.ids.push(id.clone());
+        api.set_reading_placement(&own(&id), Some(Placement::Background))
+            .unwrap();
+        placed.push(id);
+    }
+    let flipper = own_published(&format!("{t} flipper"));
+    made.ids.push(flipper.clone());
+
+    // While `moving`, the reading collection moves before every later page
+    // of the lens (a placement flipped), so each walk's cursor expires.
+    let moving = Arc::new(AtomicBool::new(false));
+    let (on, base, cred, flip_id) = (
+        moving.clone(),
+        e.url.clone(),
+        e.cred.clone(),
+        flipper.clone(),
+    );
+    // The flipper is in Background when the hook first fires: Foreground first.
+    let mut flip = true;
+    let hook: Hook = Box::new(move |req: &str| {
+        let lens_page = req.starts_with("GET /api/reading?")
+            && req.contains(LENS_QUERY)
+            && req.contains("cursor=");
+        if on.load(Ordering::SeqCst) && lens_page {
+            flip = !flip;
+            let to = if flip {
+                Placement::Background
+            } else {
+                Placement::Foreground
+            };
+            Api::new(&base, cred.clone())
+                .set_reading_placement(
+                    &(SubId::from(OWN_SUBSCRIPTION), RemoteId::from(&flip_id)),
+                    Some(to),
+                )
+                .unwrap();
+        }
+        false
+    });
+    let proxy = Proxy::start_with(&e.url, Some(hook));
+    let dir = tempfile::tempdir().unwrap();
+    let me = backend_at(dir.path(), &proxy.url, e.cred.clone(), false);
+    let held = |me: &LiveBackend| {
+        me.background_set()
+            .map_or(0, |s| placed.iter().filter(|id| s.of(&own(id)).on).count())
+    };
+    me.sync_now().unwrap();
+    assert_eq!(held(&me), placed.len(), "read whole while nothing moves");
+
+    // Moved since, and moving under every walk of the lens.
+    api.set_reading_placement(&own(&flipper), Some(Placement::Background))
+        .unwrap();
+    proxy.take_full();
+    moving.store(true, Ordering::SeqCst);
+    me.sync_now()
+        .expect("a lens that keeps changing doesn't fail the sync");
+    let firsts = proxy
+        .take_full()
+        .iter()
+        .filter(|r| r.starts_with("GET /api/reading?") && r.contains(LENS_QUERY))
+        .filter(|r| !r.contains("cursor="))
+        .count();
+    assert!(firsts > 1, "the walk was restarted: {firsts} first pages");
+    assert_eq!(held(&me), placed.len(), "kept as held: nothing pruned");
+
+    // Still again: the next pull reads it whole.
+    moving.store(false, Ordering::SeqCst);
+    api.set_reading_placement(&own(&flipper), None).unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(held(&me), placed.len());
+    assert!(!me.background_set().unwrap().of(&own(&flipper)).on);
 }
