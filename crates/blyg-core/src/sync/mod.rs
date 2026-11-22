@@ -358,6 +358,19 @@ pub(crate) fn server_failure(e: &CoreError) -> Option<bool> {
     Some(m.contains("d1_error") && (m.contains("limit") || m.contains("exceeded")))
 }
 
+/// A list read that failed, as a pull takes it. The list is left as held,
+/// and not accepted, so the next pull asks it again: when it changed under
+/// every walk (`CursorExpired`; a studio expires a reading cursor on every
+/// post a subscription's backfill imports), or the blyg refused it. What
+/// stops the whole pull (offline, rate-limited, signed out) comes back.
+fn left_as_held(e: CoreError) -> Result<()> {
+    match e {
+        CoreError::CursorExpired => Ok(()),
+        e if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+        _ => Ok(()),
+    }
+}
+
 fn settled<T>(r: Result<T>) -> Result<Option<T>> {
     match r {
         Ok(v) => Ok(Some(v)),
@@ -1448,11 +1461,7 @@ impl Engine {
                     reading_changed |= changed;
                     self.accept(&rev, "signals", SIGNALS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => left_as_held(e)?,
             }
         }
         // --- hoppers --- the hoppers and every membership (yours too), for
@@ -1464,11 +1473,7 @@ impl Engine {
                     reading_changed |= changed;
                     self.accept(&rev, "hoppers", HOPPERS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => left_as_held(e)?,
             }
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
@@ -1486,11 +1491,7 @@ impl Engine {
                     reading_changed |= changed;
                     self.accept(&rev, "background", background::BACKGROUND_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => left_as_held(e)?,
             }
         }
         // --- shelf sync --- read when its counter moved, sent when it
@@ -1505,10 +1506,7 @@ impl Engine {
                     }
                     self.accept(&rev, "shelf", SHELF_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => left_as_held(e)?,
             }
         }
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
@@ -1524,10 +1522,7 @@ impl Engine {
                     self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?;
                 }
                 Ok(None) => self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?,
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => left_as_held(e)?,
             }
         }
         // --- end upkeep ---
@@ -2027,8 +2022,12 @@ impl Engine {
         if start == Start::Nothing {
             return Ok(out);
         }
-        // A failure here leaves a walk under way where it is.
-        let flags = self.read_flags()?;
+        // A failure here leaves a walk under way where it is; a flags read
+        // that kept changing leaves the list as held for this pull.
+        let flags = match self.read_flags() {
+            Err(CoreError::CursorExpired) => return Ok(out),
+            r => r?,
+        };
         self.set_read_sync(flags.read_sync())?;
         self.set_read_clear(flags.read_clear())?;
         // Read marks sent from here since the last head read explain a
