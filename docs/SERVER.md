@@ -39,10 +39,16 @@ studio to 0.49.12 or later".
 capabilities list, and your writes go through. But nothing held here is removed on that
 studio's lists' word until Burrow knows the contract: a page in a shape Burrow doesn't
 know would read as an empty or ended list. Items, reading posts, subscriptions,
-hoppers, thumbs, read marks, contacts and shelf entries it doesn't list stay on this
-Mac; removals made here (an unsubscribe, a deleted post) still go. The shelf is read
-but not written: a change to it waits, queued, until Burrow is updated. Burrow says "Your
-blyg runs a newer studio" once a session, and asks to be updated.
+hoppers, thumbs, read marks, contacts and Saved entries it doesn't list stay on this
+Mac; removals made here (an unsubscribe and its posts, a deleted post) still go. The
+contract is read again on each safety-net pull and before a removal, so a studio
+upgraded while Burrow runs is seen first. Saved is read but not written: a change to it
+waits, queued, until Burrow is updated (the status bar reads Synced meanwhile). Burrow
+says "Your blyg runs a newer studio" once a session, and asks to be updated.
+
+`wholeBlyg` on `POST /api/subscriptions` is sent to every studio but contract 5.0, and
+asked again without it only when a 400 names the key (studio 0.49's strict body:
+`request: Unrecognized key: "wholeBlyg"`).
 
 ## Signing in
 

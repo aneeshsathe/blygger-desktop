@@ -15,10 +15,13 @@
 //!   more; a second 409 leaves both sides as they are for the next pull.
 //! - The first sync takes the union, the blyg's order first.
 //! - On a contract newer than Burrow knows (`sync/newer.rs`) the shelf is
-//!   read and shown here as the union (nothing comes off on its word), and
-//!   never written: a change made here stays queued until a Burrow that
-//!   knows the contract sends it. A union sent back would bring back what
-//!   another device took off, and the 50-entry cap would trim it.
+//!   read and shown here as the union (nothing comes off on its word; what
+//!   this side took off stays off), and never written: a change made here
+//!   stays queued until a Burrow that knows the contract sends it. A union
+//!   sent back would bring back what another device took off, and the
+//!   50-entry cap would trim it. Meanwhile the status bar reads Synced (a
+//!   held op isn't due) and Saved says the change is syncing: the
+//!   once-a-session notice is the only sign that it's held.
 //! - Your posts the blyg can't name yet (scratch notes, drafts not sent)
 //!   stay on this computer's shelf in their places, and go once they can.
 
@@ -154,11 +157,21 @@ impl Engine {
     }
 
     /// --- newer contract --- The blyg's shelf, shown here as the union with
-    /// this side's (the blyg's order first), and nothing sent: no `PUT`, no
-    /// new base. True when the shelf here changed.
+    /// this side's (the blyg's order first), less what this side took off
+    /// since the blyg last agreed (in the base, not here): that removal
+    /// stays, waiting to be sent. Nothing is sent: no `PUT`, no new base.
+    /// True when the shelf here changed.
     pub(super) fn show_shelf_union(&self, server: &Remote) -> Result<bool> {
-        let union = merge(None, &self.store.shelf_wire(), &server.entries);
-        self.store.apply_shelf(&union)
+        let local = self.store.shelf_wire();
+        let base = self.shelf_base().unwrap_or_default();
+        let taken_off: Vec<&Entry> = base.iter().filter(|e| !local.contains(e)).collect();
+        let theirs: Vec<Entry> = server
+            .entries
+            .iter()
+            .filter(|e| !taken_off.contains(e))
+            .cloned()
+            .collect();
+        self.store.apply_shelf(&merge(None, &local, &theirs))
     }
 
     /// The blyg holds `r`: it's the base of the next merge.

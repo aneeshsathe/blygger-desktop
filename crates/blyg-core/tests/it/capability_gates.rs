@@ -113,6 +113,7 @@ fn the_gated_operations_are_the_contracts() {
     let gated = [
         blyg_core::contacts::CONTACTS_OPERATION,
         blyg_core::changelog::CHANGELOG_OPERATION,
+        blyg_core::changelog::SETTINGS_OPERATION,
     ]
     .into_iter()
     .chain(blyg_core::outbound::GROUPS_OPERATIONS.iter().copied());

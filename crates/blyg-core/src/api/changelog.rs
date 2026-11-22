@@ -1,25 +1,37 @@
 //! --- changelog display --- studio 0.58's changelog settings and summaries
-//! (private contract 5.8.0; `crate::changelog`). Asked only of a studio
-//! whose capabilities list `summarizeChangelog`; any other is never sent
-//! the route, the keys or the `history` flag.
+//! (private contract 5.8.0; `crate::changelog`). Two gates, since the
+//! studio lists only the operations a token's scopes grant:
+//! - display (the settings keys, and the note draft's `history` flag)
+//!   follows a read: the keys are in what `GET /api/settings` shows
+//!   (`getSettings`, read scope). A studio before 0.58 has none of them,
+//!   and is never sent the keys or the flag.
+//! - summaries follow `summarizeChangelog` (draft scope).
 
 use serde_json::{Value, json};
 
 use super::{Api, enc};
 use crate::access_ai::DraftedNote;
 use crate::backend::{CoreError, Result};
-use crate::changelog::{CHANGELOG_OPERATION, ChangelogSettings, ChangelogSummary, SummaryOf};
+use crate::changelog::{
+    CHANGELOG_OPERATION, ChangelogSettings, ChangelogSummary, SETTINGS_OPERATION, SummaryOf,
+};
 
 impl Api {
-    /// Whether this studio has changelog display and summaries (asks its
-    /// capabilities).
+    /// Whether this studio has changelog display: its settings, as a read
+    /// shows them, carry the keys.
     pub fn serves_changelog(&self) -> Result<bool> {
+        Ok(self.changelog_settings()?.is_some())
+    }
+
+    /// Whether this studio writes changelog summaries for this token (its
+    /// capabilities list `summarizeChangelog`).
+    pub fn serves_changelog_summary(&self) -> Result<bool> {
         self.offers_all(&[CHANGELOG_OPERATION])
     }
 
     /// The changelog keys of `GET /api/settings`. `Ok(None)`: not served.
     pub fn changelog_settings(&self) -> Result<Option<ChangelogSettings>> {
-        if !self.serves_changelog()? {
+        if !self.offers_all(&[SETTINGS_OPERATION])? {
             return Ok(None);
         }
         let v: Option<Value> = Self::optional(self.call("GET", "/api/settings", None))?;
@@ -42,7 +54,7 @@ impl Api {
     /// there's nothing to summarize or one is being written; 429/502 when
     /// the model can't be asked.
     pub fn summarize_changelog(&self, of: &SummaryOf) -> Result<ChangelogSummary> {
-        if !self.serves_changelog()? {
+        if !self.serves_changelog_summary()? {
             return Err(CoreError::Other(NEEDS_0_58.into()));
         }
         let v = self.call("POST", "/api/changelog-summary", Some(of.body()))?;

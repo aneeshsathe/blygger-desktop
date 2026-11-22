@@ -797,13 +797,10 @@ impl Engine {
         Ok(())
     }
 
-    /// What the blyg's lists may remove here, its contract checked first
-    /// (once a session). A failed check: nothing.
-    pub(crate) fn lists_prune(&self) -> Prune {
-        match self.check_server(false) {
-            Ok(()) => self.store.lists_prune(),
-            Err(_) => Prune::Withheld,
-        }
+    /// The blyg's contract, checked (once a session) before a read outside
+    /// a pull replaces something held here (`LiveBackend`'s refreshes).
+    pub(crate) fn check_contract(&self) -> Result<()> {
+        self.check_server(false)
     }
 
     /// The server is too old: say so once (until it isn't).
@@ -1344,17 +1341,24 @@ impl Engine {
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self, background: bool) -> Result<()> {
+        let net_due = {
+            let st = self.state();
+            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
+        };
+        let checked = self.state().compatible;
         self.check_server(false)?;
+        // --- newer contract --- The safety net checks the contract again
+        // (one conditional read): a studio upgraded mid-session is seen
+        // before its lists remove anything.
+        if net_due && checked {
+            self.recheck_contract();
+        }
         let rev = self.revisions()?;
         // No change counters (studio 0.67+), but the blyg answers reads
         // conditionally: every list is asked each pull, and one that hasn't
         // changed comes back 304, as held (`api::conditional`). The safety
         // net then paces only the whole walks of the reading list.
         let validating = self.validating(&rev);
-        let net_due = {
-            let st = self.state();
-            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
-        };
         let full = (rev.is_none() && !validating) || net_due;
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
         // Read only because the safety net is due: what such a read finds
@@ -1398,14 +1402,9 @@ impl Engine {
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
-                    let held = self.store.subscriptions();
-                    // --- newer contract --- what its list lacks stays.
-                    let subs = match self.store.lists_prune() {
-                        Prune::Allowed => subs,
-                        Prune::Withheld => newer::keep_held(&held, subs, |s| s.id.clone()),
-                    };
-                    subs_changed = walk::subscriptions_differ(&held, &subs);
-                    let changed = self.store.replace_subscriptions(&subs)?;
+                    let held = self.hold_subscriptions(subs)?;
+                    subs_changed = held.differ;
+                    let changed = held.changed;
                     surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
                     reading_changed |= changed;
                     self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
@@ -2186,6 +2185,9 @@ impl Engine {
                     return Ok(out);
                 }
                 Step::Done { whole, prune } => {
+                    // --- newer contract --- A walk may span pulls: the
+                    // contract is checked again before it prunes.
+                    let prune = prune && self.recheck_contract() == Prune::Allowed;
                     if prune && self.store.prune_reading_except(&r.walk.keys)? {
                         out.changed = true;
                         out.surprise |= r.walk.forced;

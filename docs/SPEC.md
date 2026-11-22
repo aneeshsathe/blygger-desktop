@@ -411,17 +411,27 @@ would read as an empty or ended list, so **nothing held here is removed on that
 studio's lists' word** (`api::Prune::Withheld`, held by `Store::lists_prune` and asked
 by every removal a list drives, `sync/newer.rs`): your items gone from `GET
 /api/items` (`Store::merge_all`), reading rows a whole walk didn't read
-(`walk::Read`'s `Step::Done`, `Store::prune_reading`), thumbs a signals list lacks
-(`replace_thumbs`), hoppers and memberships (`replace_hoppers`), read marks another
-device seems to have cleared (`reconcile_read_state`), subscriptions and contacts
-(kept after the served list, `newer::keep_held`). The shelf is read and shown as the
-union of the blyg's and this side's, and never written to such a blyg: it's sent whole,
-so a union sent back would bring back what another device took off (and the 50-entry
-cap would trim it); a change made here waits, queued, until a Burrow that knows the
-contract (`Engine::show_shelf_union`). What the studio works out and Burrow only caches
-(the Background set, stale quotes, the mentions lens, syndication lists, an RSS post
-re-keyed under a new guid) is taken as served. Removals you make here still go: an unsubscribe, a deleted contact or
-post. The app says it once a session (`CoreEvent::ServerNewer`, a toast: "Your blyg
+(`walk::Read`'s `Step::Done`, `Store::prune_reading`), an RSS post's old row re-keyed
+under a new guid (`merge_reading_page`: both rows stay, with the old one's thumb and
+Saved place), thumbs a signals list lacks (`replace_thumbs`), hoppers and memberships
+(`replace_hoppers`), read marks another device seems to have cleared
+(`reconcile_read_state`), subscriptions on every path that replaces the list (a pull, a
+refresh, a subscribe, a rename: `Engine::hold_subscriptions`) and contacts (by id, else
+handle), kept after the served list (`newer::keep_held`). The store starts withheld and
+the contract check allows it; the contract is read again on each safety-net pull, at
+the end of a walk before it prunes and before a subscription list drops one
+(`Engine::recheck_contract`), so a studio upgraded mid-session is seen first. Saved is
+read and shown as the union of the blyg's and this side's, less what this side took off
+since the blyg last agreed, and never written to such a blyg: it's sent whole, so a
+union sent back would bring back what another device took off (and the 50-entry cap
+would trim it); a change made here waits, queued, until a Burrow that knows the
+contract (`Engine::show_shelf_union`). Meanwhile the status bar reads Synced (a held
+op isn't due) and Saved says the change is syncing: the once-a-session toast is the
+only sign that it's held. What the studio works out and Burrow only caches (the
+Background set, stale quotes, the mentions lens, syndication lists) is taken as
+served. Removals you make here still go, at once: an unsubscribe takes its rows
+(`Store::drop_subscription_rows`), a deleted contact, hopper or post goes. The app says
+it once a session (`CoreEvent::ServerNewer`, a toast: "Your blyg
 runs a newer studio", `server_notice::newer_toast_sub`). The connect check lets such a
 blyg connect.
 

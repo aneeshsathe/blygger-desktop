@@ -136,9 +136,14 @@ impl ChangelogSettings {
     }
 }
 
-/// The operation whose listing in a studio's capabilities means it has
-/// changelog display and summaries (contract 5.8.0, studio 0.58).
+/// The operation whose listing in a studio's capabilities means it writes
+/// changelog summaries (contract 5.8.0, studio 0.58; draft scope, so listed
+/// only to a token that may draft).
 pub const CHANGELOG_OPERATION: &str = "summarizeChangelog";
+
+/// The read whose answer shows the changelog display keys, when the studio
+/// has them (`GET /api/settings`, read scope).
+pub const SETTINGS_OPERATION: &str = "getSettings";
 
 /// Whose changelog to summarize.
 #[derive(Debug, Clone, PartialEq, Eq)]

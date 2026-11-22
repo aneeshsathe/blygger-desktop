@@ -837,8 +837,13 @@ impl Backend for LiveBackend {
         }
         let mut list = got.unwrap_or_default();
         // --- newer contract --- what its book lacks stays here.
-        if self.e().lists_prune() == crate::api::Prune::Withheld {
-            list = crate::sync::newer::keep_held(&self.contacts(), list, |c| c.handle.clone());
+        use crate::sync::newer::{keep_held, same_contact};
+        let held = self.contacts();
+        let drops = held
+            .iter()
+            .any(|h| !list.iter().any(|c| same_contact(c, h)));
+        if drops && self.e().recheck_contract() == crate::api::Prune::Withheld {
+            list = keep_held(&held, list, same_contact);
         }
         self.keep_contacts(&list)
     }
@@ -931,8 +936,9 @@ impl Backend for LiveBackend {
     }
 
     fn refresh_subscriptions(&self) -> Result<()> {
+        self.e().check_contract()?;
         let subs = self.e().track(self.e().api.list_subscriptions())?;
-        if self.e().store.replace_subscriptions(&subs)? {
+        if self.e().hold_subscriptions(subs)?.changed {
             self.e().emit(CoreEvent::ReadingChanged);
         }
         Ok(())
@@ -1524,7 +1530,7 @@ impl Backend for LiveBackend {
         let sub = subs.iter().find(|s| s.id == id).cloned();
         let sub = match sub {
             Some(s) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
                 s
             }
             None => {
@@ -1553,6 +1559,9 @@ impl Backend for LiveBackend {
     fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.e().track(self.e().api.delete_subscription(sub_id))?;
         self.e().store.edit_subscription(sub_id, |_| false)?;
+        // Your removal: its rows go now, not on the next whole walk's word
+        // (which a newer contract's never is: `sync/newer.rs`).
+        self.e().store.drop_subscription_rows(sub_id)?;
         self.e().emit(CoreEvent::ReadingChanged);
         self.send(Msg::Pull);
         Ok(())
@@ -1597,7 +1606,7 @@ impl Backend for LiveBackend {
         // with `title: null`); a failed refresh keeps the local edit.
         match self.e().api.list_subscriptions() {
             Ok(subs) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
             }
             Err(_) => self.e().store.edit_subscription(sub_id, |s| {
                 if let Some(t) = title {

@@ -109,13 +109,32 @@ pub fn offers(capabilities: &Value, op: &str) -> bool {
 /// `version`. The key (5.1.0, studio 0.50.0) has no operation of its own to
 /// look for, so this is the floor rule: only the floor contract, 5.0, is
 /// known to refuse it (its body is strict: 400). Anything else is sent it,
-/// and a 400 is asked again without it (`Api::post_subscription`).
+/// and a 400 that names the key is asked again without it
+/// (`Api::post_subscription`, [`names_whole_blyg`]).
 pub fn takes_whole_blyg(version: &str) -> bool {
     let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
     !matches!(
         (parts.next().flatten(), parts.next().flatten()),
         (Some(CONTRACT_MAJOR), Some(0))
     )
+}
+
+/// Whether `e` is a 400 refusing `wholeBlyg` itself. A strict body (studio
+/// 0.49, contract 5.0) answers the unknown key through its `schemaError`:
+/// message `request: Unrecognized key: "wholeBlyg"`, the same text in
+/// `details.issues`. Any other 400 (a bad URL, say) is the answer, and
+/// asking again without the key would only hide it.
+pub fn names_whole_blyg(e: &CoreError) -> bool {
+    match e {
+        CoreError::Rejected {
+            status: 400,
+            message,
+            details,
+        } => std::iter::once(message)
+            .chain(details)
+            .any(|m| m.contains("wholeBlyg")),
+        _ => false,
+    }
 }
 
 /// What Burrow makes of a studio's `contractVersion`.
@@ -1029,8 +1048,9 @@ impl Api {
     /// studio takes it. A URL that names one of a blyg's public hoppers
     /// otherwise proposes (and confirms) a hopper subscription, which Burrow
     /// doesn't model: it follows the whole blyg instead (spec 0.4 §16.12
-    /// rule 4). The key changes nothing for any other URL. A 400 to the key
-    /// is asked again without it; when that works, the key isn't sent again.
+    /// rule 4). The key changes nothing for any other URL. A 400 naming the
+    /// key ([`names_whole_blyg`]) is asked again without it; when that
+    /// works, the key isn't sent again.
     fn post_subscription(&self, body: Value) -> Result<Value> {
         if !self.whole_blyg() {
             return self.call("POST", "/api/subscriptions", Some(body));
@@ -1038,7 +1058,7 @@ impl Api {
         let mut with = body.clone();
         with["wholeBlyg"] = json!(true);
         match self.call("POST", "/api/subscriptions", Some(with)) {
-            Err(CoreError::Rejected { status: 400, .. }) => {
+            Err(e) if names_whole_blyg(&e) => {
                 let r = self.call("POST", "/api/subscriptions", Some(body));
                 if r.is_ok() {
                     *self.whole_blyg.lock().unwrap() = Some(false);

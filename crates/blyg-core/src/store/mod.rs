@@ -93,10 +93,11 @@ pub struct Store {
     /// connection's update hook.
     reading_dirty: Arc<Mutex<reading::Dirty>>,
     /// Whether the blyg's lists may remove what's held here: `Withheld` on
-    /// a contract newer than this Burrow knows (set by sync's contract
-    /// check). Every removal on a list's word asks it: `merge_all`,
-    /// `prune_reading`, `replace_thumbs`, `replace_hoppers` and
-    /// `reconcile_read_state`'s clears.
+    /// a contract newer than this Burrow knows, and until sync's contract
+    /// check (`Engine::check_server`) has allowed it. Every removal on a
+    /// list's word asks it: `merge_all`, `prune_reading`, `replace_thumbs`,
+    /// `replace_hoppers`, `reconcile_read_state`'s clears and
+    /// `merge_reading_page`'s re-keys.
     lists_prune: Mutex<Prune>,
 }
 
@@ -344,7 +345,8 @@ impl Store {
             origin_cache: Mutex::new(None),
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
-            lists_prune: Mutex::new(Prune::Allowed),
+            // Nothing is removed on a list's word before the contract is known.
+            lists_prune: Mutex::new(Prune::Withheld),
             conn: Mutex::new(conn),
         })
     }
