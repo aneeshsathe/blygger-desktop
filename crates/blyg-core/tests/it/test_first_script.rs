@@ -233,7 +233,8 @@ fn run_with_stub_cargo(r: &Repo, base: &str, tip: &str) -> (i32, String, String)
     use std::os::unix::fs::PermissionsExt;
     let bin = tempfile::tempdir().unwrap();
     let cargo = bin.path().join("cargo");
-    let fake = "#!/bin/sh\necho \"$@\" >>\"$(dirname \"$0\")/calls\"\necho 'test adds ... FAILED'\n";
+    let fake =
+        "#!/bin/sh\necho \"$@\" >>\"$(dirname \"$0\")/calls\"\necho 'test adds ... FAILED'\n";
     std::fs::write(&cargo, fake).unwrap();
     std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!(
