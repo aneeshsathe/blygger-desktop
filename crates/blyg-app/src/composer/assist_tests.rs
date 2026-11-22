@@ -205,8 +205,12 @@ fn emails_pastes_and_code_never_open_it(cx: &mut TestAppContext) {
     assert_eq!(labels(&view, cx), None, "inside a code fence");
 }
 
-/// `setup`, on a blyg that rewrites `@handle` at publish (contacts).
-fn setup_handles(cx: &mut TestAppContext) -> (Entity<MainView>, &mut VisualTestContext) {
+/// `setup`, on a blyg that rewrites `@handle` at publish (contacts),
+/// running the studio version `studio` (`None`: unknown).
+fn setup_handles<'a>(
+    studio: Option<&str>,
+    cx: &'a mut TestAppContext,
+) -> (Entity<MainView>, &'a mut VisualTestContext) {
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -221,6 +225,7 @@ fn setup_handles(cx: &mut TestAppContext) -> (Entity<MainView>, &mut VisualTestC
     });
     let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
     fake.set_rewrites_handles(true);
+    fake.set_studio_version(studio);
     let backend: Arc<dyn Backend> = fake.clone();
     let (view, cx) = cx.add_window_view(move |window, cx| {
         MainView::new(
@@ -236,38 +241,77 @@ fn setup_handles(cx: &mut TestAppContext) -> (Entity<MainView>, &mut VisualTestC
     (view, cx)
 }
 
-/// Studio 0.66 (#158): a contact's pick writes `@handle ` with a space, and
-/// a possessive, hyphen or closing punctuation typed straight after it takes
-/// the space's place, so `@lin's` and `@lin-driven` read as written.
-#[gpui_kit::test]
-fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) {
-    let (view, cx) = setup_handles(cx);
-    let before = open_at_end(&view, DRAFT_THREAD, cx);
-    cx.simulate_input("In @li");
+/// Pick Lin after typing `typed` (which ends in `@li`).
+fn pick_lin(view: &Entity<MainView>, typed: &str, cx: &mut VisualTestContext) {
+    cx.simulate_input(typed);
     cx.run_until_parked();
-    assert_eq!(labels(&view, cx).unwrap()[0], "Lin");
+    assert_eq!(labels(view, cx).unwrap()[0], "Lin");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
+}
+
+/// Studio 0.66 (#158): a contact's pick writes `@handle ` with a space, and
+/// a possessive, hyphen or closing punctuation typed straight after it takes
+/// the space's place, so `@lin's` and `@lin-driven` read as written. One
+/// undo takes the punctuation back to the pick, never to `@lin '`.
+#[gpui_kit::test]
+fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(Some("0.68.0"), cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
     assert_eq!(text(&view, cx), format!("{before}In @lin "), "a pick ends in a space");
     cx.simulate_input("'");
     cx.run_until_parked();
     assert_eq!(text(&view, cx), format!("{before}In @lin'"), "the space gives way");
-    cx.simulate_input("s case, then @li");
+    cx.simulate_input("s case, then");
+    pick_lin(&view, " @li", cx);
+    // One key at a time, as typing is.
+    cx.simulate_input("-");
     cx.run_until_parked();
-    cx.simulate_keystrokes("enter");
-    cx.simulate_input("-driven");
+    assert!(text(&view, cx).ends_with("then @lin-"), "{}", text(&view, cx));
+    cx.simulate_input("driven");
     cx.run_until_parked();
     assert_eq!(
         text(&view, cx),
         format!("{before}In @lin's case, then @lin-driven")
     );
     // A letter after a pick keeps the space.
-    cx.simulate_input(" and @li");
-    cx.run_until_parked();
-    cx.simulate_keystrokes("enter");
+    pick_lin(&view, " and @li", cx);
     cx.simulate_input("x");
     cx.run_until_parked();
     assert!(text(&view, cx).ends_with(" and @lin x"), "{}", text(&view, cx));
+    // Undo: the closed-up punctuation goes in one step, back to the pick.
+    pick_lin(&view, " or @li", cx);
+    cx.simulate_input(")");
+    cx.run_until_parked();
+    assert!(text(&view, cx).ends_with(" or @lin)"), "{}", text(&view, cx));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-z"));
+    cx.run_until_parked();
+    let t = text(&view, cx);
+    assert!(!t.ends_with(" or @lin )"), "never a state nobody typed: {t:?}");
+    assert!(t.ends_with(" or @lin "), "back to the pick: {t:?}");
+}
+
+/// Studio 0.56-0.65 links only a whole-token handle at publish, so there the
+/// pick writes `@handle` with no space, as before, and nothing closes up.
+/// An unknown version reads as new (above).
+#[gpui_kit::test]
+fn on_an_older_studio_a_pick_writes_the_bare_handle(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(Some("0.65.0"), cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
+    assert_eq!(text(&view, cx), format!("{before}In @lin"));
+    cx.simulate_input(" says");
+    cx.run_until_parked();
+    assert_eq!(text(&view, cx), format!("{before}In @lin says"));
+}
+
+#[gpui_kit::test]
+fn an_unknown_studio_version_reads_natural_grammar(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(None, cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
+    assert_eq!(text(&view, cx), format!("{before}In @lin "));
 }
 
 /// Studio 0.66 (#157) dropped Shift+Enter's backslash line break: Enter, with

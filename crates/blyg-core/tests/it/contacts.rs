@@ -90,3 +90,18 @@ fn unresolved_handles_come_back_as_a_publish_warning() {
         Some("not in your contacts, left as written: @sam")
     );
 }
+
+/// Studio 0.66 (#158) reads `@handle`s in natural grammar (`@lin-driven`
+/// names Lin). Burrow follows it on 0.66 and later, and when the studio's
+/// version is unknown; on 0.56-0.65 it keeps the old reading.
+#[test]
+fn natural_grammar_starts_at_studio_0_66() {
+    use blyg_core::contacts::natural_grammar;
+    assert!(natural_grammar(Some("0.66.0")));
+    assert!(natural_grammar(Some("0.68.0")));
+    assert!(natural_grammar(Some("1.0.0")));
+    assert!(!natural_grammar(Some("0.65.9")));
+    assert!(!natural_grammar(Some("0.56.0")));
+    assert!(natural_grammar(None), "unknown: the new reading");
+    assert!(natural_grammar(Some("not a version")), "unreadable: unknown");
+}

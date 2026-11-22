@@ -21,16 +21,26 @@ fn contact(handle: Option<&str>) -> Candidate {
 
 #[test]
 fn a_handle_pick_writes_a_space_after_it() {
-    let (t, caret) = insert("Thanks @li", 7, 10, &contact(Some("lin")));
+    let (t, caret) = insert("Thanks @li", 7, 10, &contact(Some("lin")), true);
     assert_eq!(t, "Thanks @lin ");
     assert_eq!(caret, t.len());
     // Text already after the caret stays where it was.
-    let (t, caret) = insert("Thanks @li, again", 7, 10, &contact(Some("lin")));
+    let (t, caret) = insert("Thanks @li, again", 7, 10, &contact(Some("lin")), true);
     assert_eq!(t, "Thanks @lin , again");
     assert_eq!(&t[..caret], "Thanks @lin ");
     // A plain link (a blyg that doesn't rewrite handles) takes no space.
-    let (t, _) = insert("Thanks @li", 7, 10, &contact(None));
+    let (t, _) = insert("Thanks @li", 7, 10, &contact(None), true);
     assert_eq!(t, "Thanks [Lin Okafor](https://lin.example.org/)");
+}
+
+/// Before studio 0.66 a word glued to a handle isn't a mention at publish,
+/// so the pick writes `@handle` alone, as it did, and adds no space to
+/// close up.
+#[test]
+fn on_an_older_studio_a_handle_pick_writes_no_space() {
+    let (t, caret) = insert("Thanks @li", 7, 10, &contact(Some("lin")), false);
+    assert_eq!(t, "Thanks @lin");
+    assert_eq!(caret, t.len());
 }
 
 #[test]

@@ -8,14 +8,20 @@
 
 use blyg_render::{HandleCard, Kind, RenderOpts, Resolution, Resolver, render_preview};
 
-/// A book with `lin` and, where asked, the hyphenated `lin-k`.
+/// A book with `lin` and, where asked, the hyphenated `lin-k`, on a studio
+/// that reads natural grammar (0.66 on) unless `old` says it's 0.56-0.65.
 struct Book {
     with_lin_k: bool,
+    old: bool,
 }
 
 impl Resolver for Book {
     fn resolve(&self, _id: &str) -> Resolution {
         Resolution::NotFound
+    }
+
+    fn natural_handles(&self) -> bool {
+        !self.old
     }
 
     fn contact(&self, handle: &str) -> Option<HandleCard> {
@@ -43,7 +49,33 @@ fn html(md: &str, with_lin_k: bool) -> String {
         data_line: false,
         ..Default::default()
     };
-    render_preview(md, Kind::Fragment, &Book { with_lin_k }, &opts).html
+    let book = Book {
+        with_lin_k,
+        old: false,
+    };
+    render_preview(md, Kind::Fragment, &book, &opts).html
+}
+
+/// On studio 0.56-0.65 publish links only a whole-token handle, so the
+/// preview does too: `@lin-driven` stays text there, `@lin's` still links.
+#[test]
+fn an_older_studio_keeps_the_whole_token_reading() {
+    let opts = RenderOpts {
+        data_line: false,
+        ..Default::default()
+    };
+    let book = Book {
+        with_lin_k: true,
+        old: true,
+    };
+    let html = |md: &str| render_preview(md, Kind::Fragment, &book, &opts).html;
+    assert_eq!(
+        html("a @lin-driven agenda, @lin_ish"),
+        "<p>a @lin-driven agenda, @lin_ish</p>\n"
+    );
+    assert_eq!(html("In @lin's case"), format!("<p>In {LIN}'s case</p>\n"));
+    assert_eq!(html("@lin-k"), format!("<p>{LIN_K}</p>\n"));
+    assert_eq!(html("@lin-k-led"), "<p>@lin-k-led</p>\n");
 }
 
 #[test]
