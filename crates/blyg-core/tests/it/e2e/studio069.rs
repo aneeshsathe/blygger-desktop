@@ -202,6 +202,69 @@ fn the_dictionary_is_shared_both_ways() {
     assert!(me.edit_dictionary(&Edit::Add("two words".into())).is_err());
 }
 
+/// A sign-in with only `owner:read`: the studio lists `getDictionary` but
+/// not `putDictionarySource`. Its read says so (`writable` false); Learn
+/// Spelling sends nothing and queues nothing (the word stays on this
+/// computer), with no error to show. A word queued offline before Burrow
+/// knew is dropped at the next read, and forgotten as taught, so it's
+/// never unlearned for having "left" the blyg.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_read_only_sign_in_learns_on_this_computer_only() {
+    use blyg_core::dictionary::{PENDING_META, Pending, TAUGHT_META};
+    let e = e2e();
+    let Some(token) = minted_token(&["owner:read"]) else {
+        eprintln!("skipped: no manual tokens on this studio");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let me = backend_at(dir.path(), &e.url, Credential::Token(token), false);
+    let Some(d) = me.dictionary().expect("read the dictionary") else {
+        eprintln!("skipped: this studio doesn't advertise getDictionary");
+        return;
+    };
+    assert!(!d.writable, "owner:read can't write the dictionary");
+    assert!(
+        manual(tempfile::tempdir().unwrap().path())
+            .dictionary()
+            .unwrap()
+            .unwrap()
+            .writable,
+        "the owner's own sign-in can"
+    );
+    let word = tag("readonlyword");
+    let d = me
+        .edit_dictionary(&Edit::Add(word.clone()))
+        .expect("no error: kept on this computer");
+    assert!(!d.writable);
+    assert!(!d.owner_words().contains(&word), "never sent");
+    let store = blyg_core::store::Store::open(&dir.path().join(blyg_core::live::DB_FILE)).unwrap();
+    assert!(
+        Pending::parse(store.meta(PENDING_META).as_deref(), &e.url).is_empty(),
+        "nothing queued"
+    );
+
+    // Queued offline, before Burrow knew the sign-in was read-only.
+    let mut queued = Pending::parse(None, &e.url);
+    queued.push(Edit::Add(word.clone()));
+    store.set_meta(PENDING_META, &queued.to_meta()).unwrap();
+    me.dictionary_teach(&word, true).unwrap();
+    let d = me.dictionary().unwrap().expect("offered");
+    assert!(!d.owner_words().contains(&word), "still never sent");
+    assert!(
+        Pending::parse(store.meta(PENDING_META).as_deref(), &e.url).is_empty(),
+        "dropped"
+    );
+    assert!(
+        !me.dictionary_taught().unwrap().contains(&word),
+        "not Burrow's to unlearn: {:?}",
+        store.meta(TAUGHT_META)
+    );
+    let (st, raw) = owner("GET", &e.url, "/api/dictionary", None);
+    assert_eq!(st, 200, "{raw}");
+    assert!(!raw.to_string().contains(&word), "{raw}");
+}
+
 /// Catch up's summary, asked of the blyg for a thread that quotes one of
 /// your posts: a summary from the text helpers model, or a plain refusal
 /// when no key is set (never "not offered" on a studio that lists the
