@@ -27,6 +27,7 @@ mod reading;
 mod save_if_base;
 mod scratch;
 mod sync;
+mod syndication_contract;
 mod test_first_script;
 mod timing_scan;
 mod typing;

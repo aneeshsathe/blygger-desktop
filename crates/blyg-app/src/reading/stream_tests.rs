@@ -678,3 +678,69 @@ fn lineage_and_its_ring_show_the_counts_and_opening_marks_read(cx: &mut TestAppC
     assert_eq!(opened(&view, cx).as_deref(), Some(LIN_BENCH));
     assert_eq!(read_version(&fake, LIN_BENCH), Some(1), "marked read");
 }
+
+/// Studio 0.67.1: every reading card says where its author says the post
+/// is also ("the author says it is also at …", under its source line), and
+/// so does the full view, however it was opened (here, by its address).
+/// A followed post whose blyg lists a copy elsewhere (the fake serves one
+/// for Kit's "Tides"), in the stream, selected (so on screen).
+fn a_post_with_a_copy(view: &Entity<MainView>, fake: &FakeBackend, cx: &mut VisualTestContext) {
+    fake.with_reading(|rows| {
+        let mut r = rows[0].clone();
+        r.remote_id = KIT_TIDES.into();
+        rows.insert(0, r);
+    });
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    settle(cx);
+    let ix = view
+        .read_with(cx, |v, _| {
+            v.reading
+                .shown_rows()
+                .position(|r| r.remote_id == KIT_TIDES)
+        })
+        .expect("the post is in the stream");
+    view.update_in(cx, |v, window, cx| v.stream_select(ix, window, cx));
+    settle(cx);
+}
+
+#[gpui_kit::test]
+fn copies_elsewhere_show_on_the_card_and_in_the_full_view(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    assert_eq!(
+        crate::app::syndication::ALSO_AT,
+        "the author says it is also at"
+    );
+    a_post_with_a_copy(&view, &fake, cx);
+    assert!(cx.debug_bounds("stream-copies").is_some(), "on the card");
+
+    view.update_in(cx, |v, window, cx| {
+        v.open_original(KIT.into(), KIT_TIDES.into(), None, window, cx)
+    });
+    settle(cx);
+    assert!(
+        cx.debug_bounds("reading-copies").is_some(),
+        "in the full view"
+    );
+}
+
+/// A click on a copy opens it and leaves the card alone: it isn't
+/// selected by the click that lands on its line.
+#[gpui_kit::test]
+fn a_click_on_a_copy_opens_it_and_leaves_the_card(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    a_post_with_a_copy(&view, &fake, cx);
+    // On screen, and not selected.
+    view.update(cx, |v, cx| {
+        v.reading.sel = None;
+        cx.notify();
+    });
+    settle(cx);
+    let link = crate::test_wait::still(cx, "stream-copies-0");
+    cx.simulate_click(link.center(), Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        cx.opened_url().as_deref(),
+        Some("https://social.example.net/@kit/113")
+    );
+    assert_eq!(selected(&view, cx), None, "the card isn't selected");
+}

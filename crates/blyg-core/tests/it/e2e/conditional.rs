@@ -3,7 +3,7 @@
 //! Every private `GET` but `/changes` answers with an `ETag`, and a bodyless
 //! 304 when asked with it and nothing changed; `POST /read-batch` children
 //! take `ifNoneMatch`. `GET /changes` is deprecated, and gone in studio 0.67:
-//! [`Shim`] answers it 404 (as 0.67 will) to prove sync does without it.
+//! [`Shim`] answers it 404 on an older studio too, to prove sync does without it.
 //! On a studio before 0.65 (no `ETag`s) each test says so and skips.
 
 use super::*;
@@ -26,22 +26,22 @@ fn conditional(api: &Api) -> bool {
 /// asks the Worker for `/api/changez` in place of `/api/changes` (same
 /// length, so nothing else moves): an unknown route, 404, as studio 0.67
 /// answers once `/changes` is gone.
-struct Shim {
-    url: String,
+pub(super) struct Shim {
+    pub(super) url: String,
     bytes: Arc<AtomicU64>,
     not_modified: Arc<AtomicU64>,
     requests: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Wire {
-    requests: u64,
-    not_modified: u64,
-    bytes: u64,
+pub(super) struct Wire {
+    pub(super) requests: u64,
+    pub(super) not_modified: u64,
+    pub(super) bytes: u64,
 }
 
 impl Shim {
-    fn start(target: &str, no_changes: bool) -> Shim {
+    pub(super) fn start(target: &str, no_changes: bool) -> Shim {
         use std::io::{Read, Write};
         let upstream = target.trim_start_matches("http://").to_string();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -127,7 +127,7 @@ impl Shim {
     }
 
     /// What came through since the last call.
-    fn take(&self) -> Wire {
+    pub(super) fn take(&self) -> Wire {
         Wire {
             requests: self.requests.swap(0, Ordering::Relaxed),
             not_modified: self.not_modified.swap(0, Ordering::Relaxed),

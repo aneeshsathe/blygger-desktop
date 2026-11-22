@@ -12,9 +12,11 @@
 //!   never fold or hide another party's post because of one, and never take
 //!   it to mean the item's author is the account that posted the copy.
 //!
-//! The studio side (blygger-studio's `feat/syndication`, contract 5.9.0;
-//! every wire shape the client depends on is in this file, so a change to
-//! it lands in one place):
+//! The studio side (released in blygger-studio 0.67.0, contract 6.0.0:
+//! `getSyndication`, `putSyndication`, schemas `Syndication` and
+//! `SyndicationEntry`; `tests/it/syndication_contract.rs` holds these shapes
+//! to the vendored contract). Every wire shape the client depends on is in
+//! this file, so a change to it lands in one place:
 //!
 //! - A separate resource, not a member of the owner API's item:
 //!   `GET /api/items/:id/syndication` → `{entries: [{url, version}],
