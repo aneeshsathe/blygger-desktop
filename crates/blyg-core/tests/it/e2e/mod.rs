@@ -2216,7 +2216,8 @@ fn without_changes_an_unchanged_pull_is_all_304s() {
     );
     assert!(idle.contains(&"GET /api/items".to_string()), "{idle:?}");
     assert!(
-        idle.iter().any(|r| r.starts_with("GET /api/reading/imported")),
+        idle.iter()
+            .any(|r| r.starts_with("GET /api/reading/imported")),
         "the reading list's head: {idle:?}"
     );
     assert!(
@@ -7300,7 +7301,10 @@ fn syndication_is_written_in_place_and_read_by_a_second_client() {
     assert_eq!(st, 200, "{lens}");
     let entry = lens["items"]
         .as_array()
-        .and_then(|es| es.iter().find(|x| x["imported"]["remoteId"] == sid.as_str()))
+        .and_then(|es| {
+            es.iter()
+                .find(|x| x["imported"]["remoteId"] == sid.as_str())
+        })
         .unwrap_or_else(|| panic!("the entry in the lens: {lens}"));
     assert_eq!(
         served(&entry["imported"]).as_deref(),
