@@ -72,6 +72,9 @@ fn an_assistants_edition_is_read_with_its_entries_resolved() {
 
     // The assistant's edition.
     let t = tag("agentic");
+    // Who wrote it: an AgenticEditionInput's agent, whose "model" comes back
+    // in the layout (asserted below).
+    let agent = json!({ "name": "e2e-assistant", "model": "invented-model" });
     let (_, sid) = published(
         &me,
         Kind::Fragment,
@@ -88,7 +91,7 @@ fn an_assistants_edition_is_read_with_its_entries_resolved() {
             "edition": {
                 "title": format!("{t} edition"),
                 "lede": "An invented lede.",
-                "agent": { "name": "e2e-assistant", "model": "invented-model" },
+                "agent": agent,
                 "sections": [{
                     "title": "Lead", "kind": "lead",
                     "entries": [
