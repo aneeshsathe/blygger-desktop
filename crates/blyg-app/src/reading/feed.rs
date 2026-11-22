@@ -31,7 +31,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 pub(crate) use super::feed_vm::*;
-use super::sources_vm::{Smart, Source};
+use super::sources_vm::Source;
 use crate::app::MainView;
 
 impl MainView {

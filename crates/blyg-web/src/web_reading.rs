@@ -141,7 +141,7 @@ pub struct WebReading {
     // --- web-parity --- the operations `/api/capabilities` advertises (the
     // studio may reuse a contract number without a feature, so features are
     // gated on these, never on `contractVersion`).
-    pub ops: Option<HashSet<String>>,
+    pub ops: Option<HashSet<&'static str>>,
     // --- end web-parity ---
     /// This session's browsing trail.
     pub trail: String,
@@ -244,7 +244,7 @@ pub fn source_key(s: &Source) -> String {
                 Smart::Disliked => "disliked",
                 Smart::Threads => "threads",
                 Smart::Fragments => "fragments",
-                Smart::Shelf => "shelf", // --- shelf sync ---
+                Smart::Shelf => "shelf",     // --- shelf sync ---
                 Smart::Agentic => "agentic", // --- reader order ---
                 Smart::Raw => "raw",         // --- reader order ---
             }
@@ -755,7 +755,12 @@ impl Burrow {
                 let Some(mut s) = self.rd.subs.iter().find(|s| s.id == a.id).cloned() else {
                     return error("That subscription isn't here any more");
                 };
-                let d = self.wr.diags.get(a.id.as_str()).cloned().unwrap_or_default();
+                let d = self
+                    .wr
+                    .diags
+                    .get(a.id.as_str())
+                    .cloned()
+                    .unwrap_or_default();
                 let msg = match action {
                     "pause" => {
                         let on = a.on.unwrap_or(true);
@@ -1021,7 +1026,7 @@ impl Burrow {
             "lens": match self.wr.lens { None => "all", Some(Kind::Thread) => "thread", Some(Kind::Fragment) => "fragment" },
             "filtered": self.wr.source != Source::default() || self.wr.lens.is_some(),
             "subsLoaded": !self.is_live() || self.wr.subs_loaded,
-            "order": self.feed_control(), // --- reader order ---
+            "readerOrder": self.feed_control(), // --- reader order ---
         }))
     }
 
@@ -1211,17 +1216,9 @@ impl Burrow {
                     .map(str::to_string)
                     .or(Some(String::new()));
                 // --- web-parity ---
-                self.wr.ops = Some(
-                    v.get("operations")
-                        .and_then(Value::as_array)
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(Value::as_str)
-                                .map(str::to_string)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                );
+                // What it lists of the operations the web gates on, each
+                // asked by name (`parity::offered`).
+                self.wr.ops = Some(crate::parity::offered(&v));
                 // --- end web-parity ---
                 1
             }

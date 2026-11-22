@@ -303,7 +303,10 @@ mod tests {
         // A studio without changelogs (none listed, whatever its
         // contract): nothing either.
         let mut old = live();
-        old.wr_loaded("capabilities", r#"{"contractVersion":"6.2.0","operations":[]}"#);
+        old.wr_loaded(
+            "capabilities",
+            r#"{"contractVersion":"6.2.0","operations":[]}"#,
+        );
         set_mode(&mut old, "history");
         assert_eq!(old.wr_changelog_ask("a|a1"), "null");
     }

@@ -113,7 +113,7 @@ impl Burrow {
     /// The Updates screen: `{loaded, error, can, canRefresh, canProbe,
     /// note, rows}`. `can`: the blyg lists stale threads at all.
     pub fn upd_view(&self) -> String {
-        let can = self.can("listStaleThreads");
+        let can = self.can(super::STALE_OPERATION);
         let list = match &self.parity.stale {
             None => return json(&json!({ "loaded": false, "can": can, "rows": [] })),
             Some(Err(e)) => {
@@ -165,8 +165,8 @@ impl Burrow {
         json(&json!({
             "loaded": true,
             "can": can,
-            "canRefresh": self.can("refreshItem"),
-            "canProbe": self.can("getItemFreshness"),
+            "canRefresh": self.can(super::REFRESH_OPERATION),
+            "canProbe": self.can(super::FRESHNESS_OPERATION),
             "note": REFRESH_NOTE,
             "rows": rows,
         }))
@@ -191,7 +191,7 @@ impl Burrow {
     /// The refresh request for thread `sid`: `{req, id}` (`id`, the local
     /// id, for `live_command_answer`), or `{error}`.
     pub fn upd_refresh_request(&self, sid: &str, note: &str) -> String {
-        if !self.can("refreshItem") {
+        if !self.can(super::REFRESH_OPERATION) {
             return json(&json!({ "error": "Your blyg doesn't refresh quotes" }));
         }
         let Some(lid) = self.store.by_server(sid) else {

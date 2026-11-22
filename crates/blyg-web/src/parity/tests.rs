@@ -59,9 +59,9 @@ fn unread(b: &Burrow) -> u64 {
 
 #[test]
 fn capabilities_gate_on_operation_names_not_the_contract() {
-    let b = live(&["markRead"]);
+    let b = live(&["markRead", "listStaleThreads"]);
     assert!(b.wr_ops_known());
-    assert!(b.wr_can("markRead"));
+    assert!(b.wr_can("listStaleThreads"));
     assert!(!b.wr_can("markReadBatch"));
     let ask = v(b.mark_all_ask(NOW));
     assert_eq!(ask["can"], false, "5.9.0 alone doesn't make it so");

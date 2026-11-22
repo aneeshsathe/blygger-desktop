@@ -18,9 +18,7 @@
 //! are `{code, message, details}`.
 
 use blyg_core::api::wire::{CursorPage, WireItem, kind_str};
-use blyg_core::api::{
-    CONTRACT_MAJOR, CONTRACT_MAJOR_NEWEST, CURSOR_RESTARTS, Contract, contract,
-};
+use blyg_core::api::{CONTRACT_MAJOR, CONTRACT_MAJOR_NEWEST, CURSOR_RESTARTS, Contract, contract};
 use blyg_core::{Kind, RemoteRef};
 use serde::Serialize;
 use serde_json::{Value, json};

@@ -58,9 +58,9 @@ pub(crate) mod contacts;
 pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
 // --- reader order --- studio 0.68's tabs: the Feed's order and controls, Raw.
 pub(crate) mod feed;
-pub(crate) mod feed_vm;
 #[cfg(test)]
 mod feed_tests;
+pub(crate) mod feed_vm;
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;

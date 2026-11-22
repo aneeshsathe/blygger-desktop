@@ -88,7 +88,7 @@ impl Burrow {
         json(&json!({
             "n": n,
             "label": self.wr_source_label(),
-            "can": !self.is_live() || self.can("markReadBatch"),
+            "can": !self.is_live() || self.can(super::MARK_BATCH_OPERATION),
             "known": !self.is_live() || self.wr.ops.is_some(),
             "offline": self.is_live() && self.offline,
         }))
@@ -103,7 +103,7 @@ impl Burrow {
                 &json!({ "error": "You're offline. Mark all read when the blyg is back." }),
             );
         }
-        if self.is_live() && !self.can("markReadBatch") {
+        if self.is_live() && !self.can(super::MARK_BATCH_OPERATION) {
             return json(&json!({ "error": "Your blyg doesn't take read marks in bulk." }));
         }
         let rows = needs_read(&self.view_rows(now_ms));

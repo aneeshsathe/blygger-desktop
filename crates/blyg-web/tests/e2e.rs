@@ -488,8 +488,12 @@ fn shelf_and_background_lenses_match_the_studio() {
     }
     me.sync_now().unwrap();
     for k in [&own, &theirs(&both), &theirs(&backed)] {
-        me.set_reading_placement(&(k.0.as_str().into(), k.1.as_str().into()), false, Some(Placement::Background))
-            .unwrap();
+        me.set_reading_placement(
+            &(k.0.as_str().into(), k.1.as_str().into()),
+            false,
+            Some(Placement::Background),
+        )
+        .unwrap();
     }
     me.sync_now().unwrap();
 

@@ -350,6 +350,27 @@ struct Gate {
 /// Every capability gate Burrow has. `every_operation_constant_is_classified`
 /// fails on a constant in product code that isn't here.
 const GATES: &[Gate] = &[
+    // --- Burrow in a browser (blyg-web/src/parity/mod.rs `offered`) ---
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::MARK_BATCH_OPERATION",
+        guards: Guards::Write,
+        what: "the web's Mark all read, one request for the chosen source",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::STALE_OPERATION",
+        guards: Guards::Read,
+        what: "the web's Updates screen: threads whose quotes have newer versions",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::REFRESH_OPERATION",
+        guards: Guards::Write,
+        what: "the web's Refresh of a thread's quotes",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::FRESHNESS_OPERATION",
+        guards: Guards::Read,
+        what: "the web's probe of one thread's quotes at their blygs",
+    },
     // --- studio 0.69 ---
     Gate {
         constant: "blyg-core/src/agentic.rs::GET_OPERATION",

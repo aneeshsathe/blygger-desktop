@@ -27,17 +27,17 @@ use wasm_bindgen::prelude::*;
 pub mod api;
 /// `vm.rs` calls `crate::keymap::{hint, hint_owned, keyless_on}`.
 mod keymap;
+pub mod live;
 /// `vm.rs` and `reading/vm.rs` call `crate::platform_text`.
 pub mod platform_text;
-pub mod live;
 mod read_api;
 pub mod seed;
 pub mod shelf; // --- shelf sync --- (studio 0.61)
 pub mod store;
 pub mod theme;
 // --- web-reading ---
-pub mod web_reading;
-pub mod web_feed; // --- reader order --- (studio 0.68: Feed, Raw, Agentic, Saved)
+pub mod web_feed;
+pub mod web_reading; // --- reader order --- (studio 0.68: Feed, Raw, Agentic, Saved)
 // --- end web-reading ---
 // --- reader view / changelog --- the author's site, changelog display.
 pub mod web_changelog;

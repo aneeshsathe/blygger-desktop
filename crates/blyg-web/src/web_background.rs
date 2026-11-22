@@ -30,7 +30,7 @@ fn not_served() -> String {
 impl Burrow {
     /// The blyg serves Background (live, with capabilities read).
     pub(crate) fn bg_served(&self) -> bool {
-        self.is_live() && self.wr.ops.as_ref().is_some_and(|o| o.contains(OPERATION))
+        self.is_live() && self.can(OPERATION)
     }
 
     /// Put each row's place on it, from the lens as last read (nothing

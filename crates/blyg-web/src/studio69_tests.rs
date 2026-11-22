@@ -33,7 +33,10 @@ fn the_mount_is_whatever_comes_before_burrow_in_the_pages_path() {
     assert_eq!(api::mount_of("/burrow/index.html"), "");
     // A path-mounted blyg.
     assert_eq!(api::mount_of("/notes/burrow/"), "/notes");
-    assert_eq!(api::mount_of("/notes/deep/burrow/index.html"), "/notes/deep");
+    assert_eq!(
+        api::mount_of("/notes/deep/burrow/index.html"),
+        "/notes/deep"
+    );
     // Not served as Burrow: nothing to go on, so no mount.
     assert_eq!(api::mount_of("/"), "");
     assert_eq!(api::mount_of("/notes/"), "");
@@ -133,15 +136,25 @@ fn reading_row(rid: &str) -> Value {
 fn a_304_hands_back_the_body_last_read_never_an_empty_list() {
     let mut b = live();
     let path = "/api/items?limit=100";
-    assert_eq!(b.cond_etag(path), None, "nothing kept: asked unconditionally");
+    assert_eq!(
+        b.cond_etag(path),
+        None,
+        "nothing kept: asked unconditionally"
+    );
     let body = json!({ "items": [{ "id": "a" }], "nextCursor": null }).to_string();
     let a = v(b.cond_answer(path, 200, &body, "\"e1\""));
-    assert_eq!((a["status"].as_u64(), a["same"].as_bool()), (Some(200), Some(false)));
+    assert_eq!(
+        (a["status"].as_u64(), a["same"].as_bool()),
+        (Some(200), Some(false))
+    );
     assert_eq!(a["body"], body);
     assert_eq!(b.cond_etag(path).as_deref(), Some("\"e1\""));
     // Not modified: the body last read, byte for byte.
     let a = v(b.cond_answer(path, 304, "", ""));
-    assert_eq!((a["status"].as_u64(), a["same"].as_bool()), (Some(200), Some(true)));
+    assert_eq!(
+        (a["status"].as_u64(), a["same"].as_bool()),
+        (Some(200), Some(true))
+    );
     assert_eq!(a["body"], body);
     // Only the cursor moved (a feed poll): the same rows.
     let moved = json!({ "items": [{ "id": "a" }], "nextCursor": "c2" }).to_string();
@@ -158,7 +171,10 @@ fn a_304_hands_back_the_body_last_read_never_an_empty_list() {
     );
     // Errors pass through as they came.
     let a = v(b.cond_answer(path, 429, "{}", ""));
-    assert_eq!((a["status"].as_u64(), a["same"].as_bool()), (Some(429), Some(false)));
+    assert_eq!(
+        (a["status"].as_u64(), a["same"].as_bool()),
+        (Some(429), Some(false))
+    );
 }
 
 #[test]
@@ -225,7 +241,10 @@ fn a_studio_with_changes_is_still_planned_by_its_counters() {
 #[test]
 fn the_page_asks_conditionally_and_never_prefetches_changes() {
     let net = include_str!("../www/net.js");
-    assert!(!net.contains("'/api/changes'"), "contract 6 has no /api/changes");
+    assert!(
+        !net.contains("'/api/changes'"),
+        "contract 6 has no /api/changes"
+    );
     assert!(net.contains("headers['if-none-match'] = etag;"));
     assert!(net.contains("etag: res.headers.get('etag') ?? ''"));
     let live = include_str!("../www/live.js");
@@ -334,26 +353,30 @@ fn the_feed_follows_the_blygs_reader_order() {
     // pace-layered, as native's (`ReaderOrder::default`); a choice is kept
     // in this tab.
     assert_eq!(
-        v(b.wr_sources(NOW))["order"]["value"],
+        v(b.wr_sources(NOW))["readerOrder"]["value"],
         blyg_core::order::ReaderOrder::default().as_str()
     );
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered");
+    assert_eq!(v(b.wr_sources(NOW))["readerOrder"]["value"], "pace-layered");
     let r = v(b.wr_set_reader_order("newest"));
     assert!(r.get("req").is_none(), "{r}");
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
+    assert_eq!(v(b.wr_sources(NOW))["readerOrder"]["value"], "newest");
     // A blyg that keeps it (studio 0.68): its choice, and a change is sent.
     b.w_set_settings(r#"{"readerOrder":"newest"}"#);
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
+    assert_eq!(v(b.wr_sources(NOW))["readerOrder"]["value"], "newest");
     let r = v(b.wr_set_reader_order("pace-layered"));
     assert_eq!(
         r["req"],
         json!({ "method": "PATCH", "path": "/api/settings", "body": { "readerOrder": "pace-layered" } })
     );
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "pace-layered", "at once");
+    assert_eq!(
+        v(b.wr_sources(NOW))["readerOrder"]["value"],
+        "pace-layered",
+        "at once"
+    );
     // Refused: back to what the blyg keeps.
     b.wr_reader_order_answer(r["at"].as_f64().unwrap(), 500, "{}");
-    assert_eq!(v(b.wr_sources(NOW))["order"]["value"], "newest");
-    let o = &v(b.wr_sources(NOW))["order"];
+    assert_eq!(v(b.wr_sources(NOW))["readerOrder"]["value"], "newest");
+    let o = &v(b.wr_sources(NOW))["readerOrder"];
     assert_eq!(o["label"], "Chronological");
 }
 

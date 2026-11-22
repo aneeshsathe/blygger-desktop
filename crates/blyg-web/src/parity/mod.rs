@@ -13,8 +13,9 @@
 //! `contractVersion`: the studio may reuse a contract number without the
 //! feature.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use blyg_core::api::offers;
 use blyg_core::upkeep::ThreadFreshness;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
@@ -26,6 +27,49 @@ pub mod access;
 pub mod filters;
 pub mod mark_all;
 pub mod updates;
+
+/// Mark all read in one request (`mark_all.rs`).
+pub const MARK_BATCH_OPERATION: &str = "markReadBatch";
+/// The Updates screen's list of threads with stale quotes (`updates.rs`).
+pub const STALE_OPERATION: &str = "listStaleThreads";
+/// Refresh a thread's quotes (`updates.rs`).
+pub const REFRESH_OPERATION: &str = "refreshItem";
+/// Probe one thread's quotes at their blygs (`updates.rs`).
+pub const FRESHNESS_OPERATION: &str = "getItemFreshness";
+
+/// The operations the web gates a feature on that `answer` (`GET
+/// /api/capabilities`) lists: each asked of it by name with `offers`, so
+/// every gate is a constant the capability checks can see
+/// (`blyg-core/tests/it/capability_gates.rs`).
+pub(crate) fn offered(answer: &Value) -> HashSet<&'static str> {
+    let mut on = HashSet::new();
+    let mut ask = |op: &'static str, listed: bool| {
+        if listed {
+            on.insert(op);
+        }
+    };
+    ask(MARK_BATCH_OPERATION, offers(answer, MARK_BATCH_OPERATION));
+    ask(STALE_OPERATION, offers(answer, STALE_OPERATION));
+    ask(REFRESH_OPERATION, offers(answer, REFRESH_OPERATION));
+    ask(FRESHNESS_OPERATION, offers(answer, FRESHNESS_OPERATION));
+    ask(
+        blyg_core::shelf::GET_OPERATION,
+        offers(answer, blyg_core::shelf::GET_OPERATION),
+    );
+    ask(
+        blyg_core::shelf::PUT_OPERATION,
+        offers(answer, blyg_core::shelf::PUT_OPERATION),
+    );
+    ask(
+        blyg_core::background::OPERATION,
+        offers(answer, blyg_core::background::OPERATION),
+    );
+    ask(
+        blyg_core::changelog::CHANGELOG_OPERATION,
+        offers(answer, blyg_core::changelog::CHANGELOG_OPERATION),
+    );
+    on
+}
 
 /// The web's state for these screens. Nothing here is persisted.
 #[derive(Default)]

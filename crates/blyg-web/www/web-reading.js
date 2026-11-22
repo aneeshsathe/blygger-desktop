@@ -154,7 +154,7 @@ function sourcesHtml(d, { manage = true } = {}) {
       ${markAllOffered() ? '<button type="button" data-go="markall" title="Mark every post here read (⌃⌥A)">✓ Mark all read…</button>' : ''}
     </div>` : ''}
     <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
-    ${orderHtml(d.order)}
+    ${orderHtml(d.readerOrder)}
     ${rows}`;
 }
 // --- reader order --- the Feed's order (src/web_feed.rs), where the list
