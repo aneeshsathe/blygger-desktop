@@ -2897,7 +2897,7 @@ fn new_settings(v: &Value) -> Value {
 }
 
 /// Every settings write Burrow makes is a partial `PATCH /api/settings`
-/// (skills/capability-gating, rule 5), so the fields a write doesn't name
+/// (skills/capability-gating, "Writes are partial"), so the fields a write doesn't name
 /// survive it. Studio 0.68's `readerOrder` and the four new
 /// `backgroundRules` keys (contract 6.1.0), set elsewhere, are as they were
 /// after each of Burrow's seven settings writers; a rule Burrow writes

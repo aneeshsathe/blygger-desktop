@@ -29,7 +29,6 @@ first and the studio second; where they differ, file it upstream, don't guess.
 - **Quote the clause.** When code implements a MUST, cite the section in a
   comment or test name. When the spec is silent, say so and pick the studio's
   behaviour, then note it as a candidate spec issue.
-- **Gate on capabilities, never on version numbers.** See `capability-gating`.
 - **One order function.** Lists sorted in more than one place drift apart; the
   backend's order is not an order. See `list-order-and-refresh`.
 - **Remote HTML is hostile.** See `client-security`.
