@@ -112,6 +112,8 @@ mod stream_tests;
 mod studio069_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ux_reading_tests; // --- ux 0.28 ---
 
 use std::collections::{HashMap, HashSet};
 
