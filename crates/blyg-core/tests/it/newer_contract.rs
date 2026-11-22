@@ -122,7 +122,7 @@ fn a_newer_contract_still_takes_your_writes() {
     let sid = b.item(&id).unwrap().server_id.expect("on the blyg").0;
     let st = env.mock.state();
     assert_eq!(st.items[&sid].content_md, "written here");
-    assert_eq!(st.items[&sid].status, "published");
+    assert_eq!(st.items[&sid].status, "public");
 }
 
 #[test]
@@ -157,8 +157,7 @@ fn a_known_contract_still_removes_what_the_blyg_dropped() {
             "{contract}: a whole list is the truth"
         );
         assert!(
-            !env
-                .events()
+            !env.events()
                 .iter()
                 .any(|e| matches!(e, CoreEvent::ServerNewer(_))),
             "{contract}: nothing to tell"

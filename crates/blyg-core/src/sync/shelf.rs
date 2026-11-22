@@ -13,7 +13,9 @@
 //!   of it (`shelf::merge`), and the result is `PUT` with the revision it
 //!   was read at. A 409 (it moved again meanwhile) reads and merges once
 //!   more; a second 409 leaves both sides as they are for the next pull.
-//! - The first sync takes the union, the blyg's order first.
+//! - The first sync takes the union, the blyg's order first. So does every
+//!   sync with a studio on a contract newer than Burrow knows
+//!   (`sync/newer.rs`): nothing comes off here on its list's word.
 //! - Your posts the blyg can't name yet (scratch notes, drafts not sent)
 //!   stay on this computer's shelf in their places, and go once they can.
 
@@ -102,7 +104,12 @@ impl Engine {
     }
 
     fn settle_shelf(&self, server: Remote, retry: bool) -> Result<bool> {
-        let base = self.shelf_base();
+        // --- newer contract --- merged as on a first sync, the union: a
+        // list it lacks an entry from takes nothing off here.
+        let base = match self.store.lists_prune() {
+            crate::api::Prune::Allowed => self.shelf_base(),
+            crate::api::Prune::Withheld => None,
+        };
         let local = self.store.shelf_wire();
         let (merged, over) = cap(merge(base.as_deref(), &local, &server.entries));
         if merged == server.entries {

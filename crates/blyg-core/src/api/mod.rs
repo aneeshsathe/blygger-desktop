@@ -66,9 +66,11 @@ use wire::*;
 /// tokens made for the old host-root `/api` of a mounted blyg working, up
 /// to studio 0.64; 0.65 refuses them, and Burrow asks for a new sign-in:
 /// `Api::audience_moved`). It is the oldest major Burrow speaks; the
-/// newest is [`CONTRACT_MAJOR_NEWEST`]. Anything else is refused before a
-/// list is read, because a page in another shape would read as the end of
-/// the list and rows would be pruned.
+/// newest is [`CONTRACT_MAJOR_NEWEST`]. An older one is refused before a
+/// list is read. A newer one ([`Contract::Newer`]) syncs on, gated on the
+/// capabilities it lists, but its lists never remove what's held here
+/// ([`Prune::Withheld`]): a page in another shape would read as the end of
+/// the list, and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
 
 /// The newest private API contract major this Burrow speaks. Contract 6
@@ -108,10 +110,44 @@ pub enum Contract {
     /// 5.x or 6.x: everything syncs.
     Supported,
     /// Older than 5 (or no contract at all: a studio before capability
-    /// discovery). The studio needs updating.
+    /// discovery). The studio needs updating; nothing syncs.
     TooOld,
-    /// Newer than this Burrow (or not a version): Burrow needs updating.
-    TooNew(String),
+    /// A major newer than this Burrow knows, or a version that isn't a
+    /// number. Sync goes on (each feature gated on the capabilities the
+    /// studio lists), your writes go through, and its lists remove nothing
+    /// held here until a Burrow that knows the contract
+    /// ([`Prune::Withheld`]). Burrow says so once (`CoreEvent::ServerNewer`).
+    ///
+    /// A version that isn't a number ("next", "v7") is judged the same: it
+    /// came from a studio that answers `/api/capabilities`, so it isn't one
+    /// from before contract 5, and it's most likely a pre-release. Refusing
+    /// it would stop all sync for nothing; taking it as Newer costs only
+    /// the prunes, and is the safe guess whatever it turns out to be.
+    Newer(String),
+}
+
+/// Whether a list read from a studio may remove what's held here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Prune {
+    /// A contract Burrow knows: a list read to its end is the truth, and
+    /// what it lacks goes (an item deleted, a post unsubscribed from…).
+    #[default]
+    Allowed,
+    /// A newer contract ([`Contract::Newer`]): a list adds and updates, and
+    /// removes nothing, whatever it lacks. A page in a shape Burrow doesn't
+    /// know would otherwise read as an empty or ended list.
+    Withheld,
+}
+
+impl Contract {
+    /// What this contract's lists may remove here (`None`: nothing is read).
+    pub fn prune(&self) -> Option<Prune> {
+        match self {
+            Contract::Supported => Some(Prune::Allowed),
+            Contract::TooOld => None,
+            Contract::Newer(_) => Some(Prune::Withheld),
+        }
+    }
 }
 
 /// Judge a studio's `contractVersion` (`None`: the studio has no
@@ -130,7 +166,7 @@ pub fn contract(version: Option<&str>) -> Contract {
             Contract::Supported
         }
         Some(major) if major < CONTRACT_MAJOR => Contract::TooOld,
-        _ => Contract::TooNew(v.trim().to_string()),
+        _ => Contract::Newer(v.trim().to_string()),
     }
 }
 
@@ -1599,8 +1635,6 @@ pub enum ConnectError {
     /// The studio is older than [`MIN_STUDIO`] (its private API contract
     /// isn't 5.x, or it has none).
     Outdated,
-    /// The studio speaks a newer contract than this Burrow.
-    TooNew(String),
     /// Anything else (a 5xx, or a page that isn't a blyg's JSON).
     Other(String),
 }
@@ -1626,10 +1660,6 @@ impl std::fmt::Display for ConnectError {
             ConnectError::Outdated => write!(
                 f,
                 "Your blyg needs updating: Burrow needs blygger-studio {MIN_STUDIO} or later. Update the studio, then connect again."
-            ),
-            ConnectError::TooNew(c) => write!(
-                f,
-                "This blyg runs studio API contract {c}, which this version of Burrow doesn't speak yet. Update Burrow (Burrow › Check for Updates…), then connect again."
             ),
             ConnectError::Other(m) => f.write_str(m),
         }
@@ -1668,10 +1698,9 @@ pub fn verify_connection(
         ),
         e => ConnectError::Other(e.to_string()),
     };
-    match contract(api.contract_version().map_err(fail)?.as_deref()) {
-        Contract::Supported => {}
-        Contract::TooOld => return Err(ConnectError::Outdated),
-        Contract::TooNew(c) => return Err(ConnectError::TooNew(c)),
+    // A newer contract connects: sync says so once, and keeps what's held.
+    if contract(api.contract_version().map_err(fail)?.as_deref()) == Contract::TooOld {
+        return Err(ConnectError::Outdated);
     }
     api.count_items().map(|n| n as usize).map_err(fail)
 }
@@ -1971,9 +2000,6 @@ mod tests {
         // already does without: a studio on 0.67+ must still sync.
         assert_eq!(contract(Some("6.0.0")), Contract::Supported);
         assert_eq!(contract(Some("6.1.0")), Contract::Supported);
-        assert_eq!(contract(Some("7.0.0")), Contract::TooNew("7.0.0".into()));
-        // Not a version: not something this Burrow knows how to speak.
-        assert_eq!(contract(Some("next")), Contract::TooNew("next".into()));
     }
 
     #[test]

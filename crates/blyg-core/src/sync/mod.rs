@@ -8,6 +8,7 @@
 //! saves stay instant while a push is in flight.
 
 mod background; // --- background --- the studio's Background lens and choices
+pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
@@ -19,7 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::api::wire::ChangeState;
-use crate::api::{Api, Contract, is_transient};
+use crate::api::{Api, Contract, Prune, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
@@ -232,8 +233,12 @@ struct NetState {
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
-    /// The server proved to speak contract 5 this session.
+    /// The server's contract was checked this session: one Burrow speaks,
+    /// or a newer one (`Store::lists_prune` says which).
     compatible: bool,
+    /// --- newer contract --- The app was told the blyg runs a newer
+    /// studio (`CoreEvent::ServerNewer`), once a session.
+    newer_told: bool,
     /// The server proved older than Burrow's minimum, studio 0.49.12 (its
     /// contract isn't 5.x); cleared once it isn't.
     outdated: bool,
@@ -400,6 +405,7 @@ impl Engine {
                 reading_unavailable: false,
                 pushing: false,
                 compatible: false,
+                newer_told: false,
                 outdated: false,
                 reading_served: false,
                 changes: None,
@@ -759,37 +765,44 @@ impl Engine {
     }
 
     /// Make sure the server speaks what Burrow sends: its private API
-    /// contract (`GET {blyg}/api/capabilities`) is 5.x, blygger-studio
-    /// 0.49.12 or later. Checked once per session (one small read), and
-    /// again while it fails, before anything is pushed or pulled: a list
-    /// in another shape would read as empty or ended, and what's held here
-    /// would be pruned. An older studio is `ServerOutdated` (said once, as
-    /// `CoreEvent::ServerOutdated`); a newer contract asks for a newer
-    /// Burrow. Nothing is sent either way, and the local copy stays.
+    /// contract (`GET {blyg}/api/capabilities`) is 5.x or later,
+    /// blygger-studio 0.49.12 or later. Checked once per session (one small
+    /// read), and again while it fails, before anything is pushed or
+    /// pulled. An older studio is `ServerOutdated` (said once, as
+    /// `CoreEvent::ServerOutdated`): nothing is sent, and the local copy
+    /// stays. A newer contract syncs on, but its lists remove nothing held
+    /// here (`sync/newer.rs`; said once, as `CoreEvent::ServerNewer`).
     fn check_server(&self, push: bool) -> Result<()> {
         let _ = push;
         if self.state().compatible {
             return Ok(());
         }
-        match crate::api::contract(self.api.contract_version()?.as_deref()) {
-            Contract::Supported => {
-                self.note_syndication_served(); // --- syndication ---
-                self.note_background_served(); // --- background ---
-                self.note_shelf_served(); // --- shelf sync ---
-                let mut st = self.state();
-                st.compatible = true;
-                st.outdated = false;
-                Ok(())
-            }
-            Contract::TooOld => {
-                self.mark_outdated();
-                Err(CoreError::ServerOutdated)
-            }
-            Contract::TooNew(c) => Err(CoreError::Other(format!(
-                "This blyg runs studio API contract {c}, which this version of Burrow \
-                 doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
-                 was synced, and your local copy is safe."
-            ))),
+        let contract = crate::api::contract(self.api.contract_version()?.as_deref());
+        let Some(prune) = contract.prune() else {
+            self.mark_outdated();
+            return Err(CoreError::ServerOutdated);
+        };
+        self.store.set_lists_prune(prune);
+        self.note_syndication_served(); // --- syndication ---
+        self.note_background_served(); // --- background ---
+        self.note_shelf_served(); // --- shelf sync ---
+        {
+            let mut st = self.state();
+            st.compatible = true;
+            st.outdated = false;
+        }
+        if let Contract::Newer(version) = contract {
+            self.tell_newer(version); // --- newer contract ---
+        }
+        Ok(())
+    }
+
+    /// What the blyg's lists may remove here, its contract checked first
+    /// (once a session). A failed check: nothing.
+    pub(crate) fn lists_prune(&self) -> Prune {
+        match self.check_server(false) {
+            Ok(()) => self.store.lists_prune(),
+            Err(_) => Prune::Withheld,
         }
     }
 
@@ -1385,7 +1398,13 @@ impl Engine {
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
-                    subs_changed = walk::subscriptions_differ(&self.store.subscriptions(), &subs);
+                    let held = self.store.subscriptions();
+                    // --- newer contract --- what its list lacks stays.
+                    let subs = match self.store.lists_prune() {
+                        Prune::Allowed => subs,
+                        Prune::Withheld => newer::keep_held(&held, subs, |s| s.id.clone()),
+                    };
+                    subs_changed = walk::subscriptions_differ(&held, &subs);
                     let changed = self.store.replace_subscriptions(&subs)?;
                     surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
                     reading_changed |= changed;
@@ -2049,6 +2068,7 @@ impl Engine {
             mark,
             self.opts.reading_pages,
             reads_sent,
+            self.store.lists_prune(),
         ) else {
             return Ok(out);
         };
@@ -2163,8 +2183,8 @@ impl Engine {
                     self.stop_read(r);
                     return Ok(out);
                 }
-                Step::Done { whole } => {
-                    if whole && self.store.prune_reading_except(&r.walk.keys)? {
+                Step::Done { whole, prune } => {
+                    if prune && self.store.prune_reading_except(&r.walk.keys)? {
                         out.changed = true;
                         out.surprise |= r.walk.forced;
                         self.emit(CoreEvent::ReadingChanged);

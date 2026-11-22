@@ -502,8 +502,12 @@ impl Store {
     }
 
     /// Remove the held rows `gone(subscription, remote id, observed_at)`
-    /// picks. True if any went.
+    /// picks. True if any went. Nothing goes on a newer contract's word
+    /// (`lists_prune`).
     fn prune_reading(&self, gone: impl Fn(&SubId, &RemoteId, &str) -> bool) -> Result<bool> {
+        if self.lists_prune() == crate::api::Prune::Withheld {
+            return Ok(false);
+        }
         let mut changed = false;
         let mut c = self.conn();
         let tx = c.transaction()?;

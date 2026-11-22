@@ -69,7 +69,10 @@ fn your_items_stay_when_a_newer_contracts_list_lacks_them() {
     assert_eq!(s.item(&s1).unwrap().content_md, "one, edited there");
     s.set_lists_prune(Prune::Allowed);
     s.merge_all(&[wire("S1", "one, edited there")]).unwrap();
-    assert!(s.local_id_for_server("S2").is_none(), "a known contract prunes");
+    assert!(
+        s.local_id_for_server("S2").is_none(),
+        "a known contract prunes"
+    );
 }
 
 #[test]

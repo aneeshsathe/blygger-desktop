@@ -3,9 +3,11 @@
 Burrow is a blygger client (called Blygger Desktop up to 0.6.0; only the
 displayed name changed, see "Naming" below). A native macOS client for a Blygger blog ("blyg") running the Blygger reference
 Worker (blygger-studio) 0.49.12 or later, stock and fully supported: Burrow speaks
-the studio's private API contract 5.x only (`blyg_core::api::CONTRACT_MAJOR`). On an
-older blyg (or a Worker fork) nothing syncs: local changes wait until the studio is
-updated, and Burrow says so once, with a status-bar notice. `docs/SERVER.md` has the
+the studio's private API contracts 5.x and 6.x (`blyg_core::api::CONTRACT_MAJOR` to
+`CONTRACT_MAJOR_NEWEST`). On an older blyg (or a Worker fork) nothing syncs: local
+changes wait until the studio is updated, and Burrow says so once, with a status-bar
+notice. On a newer contract sync goes on but removes nothing held here ("Contract
+guard" below). `docs/SERVER.md` has the
 details. **Synced to** blygger-studio v0.65.0 (contract 5.14.0; Burrow 0.27.0), whose
 rendering is 0.64.1's (`docs/RENDER.md`), and blygger-spec protocol 0.4 r15 (d248bc4,
 `scripts/reader-conformance.sh`). The floor stays `MIN_STUDIO` (0.49.12): every newer
@@ -394,11 +396,29 @@ validation failures); a wrong method is `405`.
 
 **Contract guard.** Before any list is read, once a session, sync reads `GET
 {blyg-url}/api/capabilities` (`Api::contract_version`, authenticated) and checks its
-`contractVersion` (`api::contract`): major 5 is spoken (`CONTRACT_MAJOR`); anything
-older, or a 404 (a studio before 0.49.7, a Worker fork), is `ServerOutdated` ("Burrow
-needs blygger-studio 0.49.12 or later", `api::MIN_STUDIO`) and nothing is pushed or
-pulled; a newer major stops with "update Burrow". The connect check does the same
-(`ConnectError::Outdated` / `TooNew`).
+`contractVersion` (`api::contract`): majors 5 and 6 are spoken (`CONTRACT_MAJOR`,
+`CONTRACT_MAJOR_NEWEST`); anything older, or a 404 (a studio before 0.49.7, a Worker
+fork), is `ServerOutdated` ("Burrow needs blygger-studio 0.49.12 or later",
+`api::MIN_STUDIO`) and nothing is pushed or pulled. The connect check refuses it too
+(`ConnectError::Outdated`).
+
+A newer major, or a `contractVersion` that isn't a number ("next"), is
+`Contract::Newer` (Burrow 0.28.0; before, each new major was an outage until a release
+added it, as contract 6 was in 0.27.3). Sync goes on, each feature gated on the
+operations the capabilities list, as on any studio, and your writes (publish, edits,
+read marks, hoppers, the shelf) go through. But a page in a shape Burrow doesn't know
+would read as an empty or ended list, so **nothing held here is removed on that
+studio's lists' word** (`api::Prune::Withheld`, held by `Store::lists_prune` and asked
+by every removal a list drives, `sync/newer.rs`): your items gone from `GET
+/api/items` (`Store::merge_all`), reading rows a whole walk didn't read
+(`walk::Read`'s `Step::Done`, `Store::prune_reading`), thumbs a signals list lacks
+(`replace_thumbs`), hoppers and memberships (`replace_hoppers`), read marks another
+device seems to have cleared (`reconcile_read_state`), subscriptions and contacts
+(kept after the served list, `newer::keep_held`) and the shelf (merged as on a first
+sync, the union). Removals you make here still go: an unsubscribe, a deleted contact or
+post. The app says it once a session (`CoreEvent::ServerNewer`, a toast: "Your blyg
+runs a newer studio", `server_notice::newer_toast_sub`). The connect check lets such a
+blyg connect.
 
 The authoritative contract is upstream blygger-studio's OpenAPI document
 (`openapi.json`, contract 5.0.0 from studio v0.49.12, vendored as
@@ -493,7 +513,7 @@ The key points:
 - Read state is advertised on `GET /api/reading` (`readState`, `readStateClear`), read
   once a session from `GET /api/reading?limit=1`.
 
-**Change counters, and conditional reads** (`sync/mod.rs`, `api/conditional.rs`, `api/read_batch.rs`). Each pull first reads `GET /api/changes` (one small answer: an `epoch` and a counter per domain) and re-reads only the lists whose counters moved (`ITEMS_DEPS`, `READING_DEPS`, …); a new epoch forgets every stored counter. **Studio 0.65 (contract 5.14.0, studio#152) deprecates `/api/changes`; 0.66 keeps it; 0.67 removes it with contract 6.** Studio 0.65 also answers every private `GET` but `/changes` with an `ETag` (and `Cache-Control: private, no-cache`), and a bodyless `304` when the request's `If-None-Match` matches. There is no capability for it: a blyg offers it when its answers carry an `ETag`. Burrow keeps each URL's last `200` body beside its ETag (in memory, per credential and blyg; whole URL, cursor and query included, as the key; `KEEP_BYTES` 32 MB, least recently used first; no body over 8 MB), asks with `If-None-Match` only where it holds one, and hands a `304` the kept body byte for byte: **a 304 is never read as an empty answer**, so nothing is pruned on a 304 that a 200 wouldn't prune, and a 304 with no body kept is asked again without a validator. `POST /api/read-batch` children take `ifNoneMatch` the same way (sent only with a kept ETag, since an older studio's strict child schema refuses the key) and a `{status: 304, body: null}` child gets the kept body. While counters exist they stay the idle check, and conditional reads only make the re-reads they call for cheaper. When `/changes` answers 404 it isn't asked again for `CHANGES_RECHECK` (3 h), and sync goes by conditional reads (`Engine::validating`): every list is asked each pull (every 60 s), an unchanged one comes back 304 as held, the reading list's head page says whether it moved, and the safety net paces only the reading list's whole walks. A new launch asks its first pull unconditionally. `CONTRACT_MAJOR` stays 5, so a contract-6 studio is still refused ("update Burrow") until Burrow speaks it.
+**Change counters, and conditional reads** (`sync/mod.rs`, `api/conditional.rs`, `api/read_batch.rs`). Each pull first reads `GET /api/changes` (one small answer: an `epoch` and a counter per domain) and re-reads only the lists whose counters moved (`ITEMS_DEPS`, `READING_DEPS`, …); a new epoch forgets every stored counter. **Studio 0.65 (contract 5.14.0, studio#152) deprecates `/api/changes`; 0.66 keeps it; 0.67 removes it with contract 6.** Studio 0.65 also answers every private `GET` but `/changes` with an `ETag` (and `Cache-Control: private, no-cache`), and a bodyless `304` when the request's `If-None-Match` matches. There is no capability for it: a blyg offers it when its answers carry an `ETag`. Burrow keeps each URL's last `200` body beside its ETag (in memory, per credential and blyg; whole URL, cursor and query included, as the key; `KEEP_BYTES` 32 MB, least recently used first; no body over 8 MB), asks with `If-None-Match` only where it holds one, and hands a `304` the kept body byte for byte: **a 304 is never read as an empty answer**, so nothing is pruned on a 304 that a 200 wouldn't prune, and a 304 with no body kept is asked again without a validator. `POST /api/read-batch` children take `ifNoneMatch` the same way (sent only with a kept ETag, since an older studio's strict child schema refuses the key) and a `{status: 304, body: null}` child gets the kept body. While counters exist they stay the idle check, and conditional reads only make the re-reads they call for cheaper. When `/changes` answers 404 it isn't asked again for `CHANGES_RECHECK` (3 h), and sync goes by conditional reads (`Engine::validating`): every list is asked each pull (every 60 s), an unchanged one comes back 304 as held, the reading list's head page says whether it moved, and the safety net paces only the reading list's whole walks. A new launch asks its first pull unconditionally. Contract 6 is spoken since 0.27.3 (`CONTRACT_MAJOR_NEWEST`); a later major syncs without removing anything ("Contract guard").
 
 **Read-state sync** (see `docs/SERVER.md`): each row's `readVersion`; `PUT
 /api/reading/:sub/:remoteId/read {version, readAt?}`, `POST /api/reading/read {items:

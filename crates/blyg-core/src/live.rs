@@ -519,6 +519,12 @@ impl LiveBackend {
         }
     }
 
+    /// --- contacts --- Keep `list` as the local copy of the book.
+    fn keep_contacts(&self, list: &[crate::contacts::Contact]) -> Result<()> {
+        let json = serde_json::to_string(list).map_err(|e| CoreError::Other(e.to_string()))?;
+        self.engine.store.set_meta(CONTACTS_META, &json)
+    }
+
     /// Resolve a URL the way subscribing does: what we already know (your
     /// own blyg, your subscriptions) first, then the subscribe preview (the
     /// owner Worker's §12.1 resolution). Only when that isn't available
@@ -829,9 +835,12 @@ impl Backend for LiveBackend {
         {
             self.keep_studio_version(&v);
         }
-        let json = serde_json::to_string(&got.unwrap_or_default())
-            .map_err(|e| CoreError::Other(e.to_string()))?;
-        store.set_meta(CONTACTS_META, &json)
+        let mut list = got.unwrap_or_default();
+        // --- newer contract --- what its book lacks stays here.
+        if self.e().lists_prune() == crate::api::Prune::Withheld {
+            list = crate::sync::newer::keep_held(&self.contacts(), list, |c| c.handle.clone());
+        }
+        self.keep_contacts(&list)
     }
 
     fn rewrites_handles(&self) -> bool {
@@ -878,6 +887,9 @@ impl Backend for LiveBackend {
 
     fn delete_contact(&self, id: &str) -> Result<()> {
         self.e().track(self.e().api.delete_contact(id))?;
+        // Gone here too, whatever the re-read keeps (`refresh_contacts`).
+        let left: Vec<_> = self.contacts().into_iter().filter(|c| c.id != id).collect();
+        let _ = self.keep_contacts(&left);
         let _ = self.refresh_contacts();
         Ok(())
     }

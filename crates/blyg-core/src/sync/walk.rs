@@ -16,7 +16,9 @@
 //!   change, or a move the head couldn't explain): pages from the first to
 //!   `nextCursor: null`, merged as they arrive, `reading_pages` of them per
 //!   pull, continued on the next pull from the cursor. Only a walk that
-//!   reached the end prunes, with the keys of that one coherent walk.
+//!   reached the end prunes, with the keys of that one coherent walk, and
+//!   only on a contract Burrow knows: a newer one's list never removes a
+//!   row here ([`Prune::Withheld`]).
 //!
 //! [`Read`] is one pull's read as a step machine; `walk_model_tests.rs`
 //! drives it against a model of the studio's list (property tests of
@@ -25,6 +27,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::api::Prune;
 use crate::api::wire::ChangeState;
 use crate::model::{RemoteId, SubId, Subscription};
 
@@ -244,9 +247,10 @@ pub enum Step {
     /// Done for this pull: keep [`Read::kept`] for the next one, accept
     /// nothing.
     Stop,
-    /// The read is done: prune to `walk.keys` first when `whole`, then
-    /// accept `walk.rev` and set the mark to [`Read::next_mark`].
-    Done { whole: bool },
+    /// The read is done: prune to `walk.keys` first when `prune` (a whole
+    /// walk, on a contract whose lists may remove rows), then accept
+    /// `walk.rev` and set the mark to [`Read::next_mark`].
+    Done { whole: bool, prune: bool },
 }
 
 /// One pull's read of the reading list: every decision of
@@ -267,11 +271,18 @@ pub struct Read {
     /// A whole walk is wanted later (`deep_pending`): a late row, or a head
     /// read that found nothing for a moved counter.
     pub deep: bool,
+    /// What the studio's contract lets a complete walk remove.
+    prune: Prune,
 }
 
 impl Read {
     /// Start the read `start` asks for; `held` is the walk an earlier pull
-    /// left (for [`Start::Continue`]). `None`: nothing to read.
+    /// left (for [`Start::Continue`]); `prune`, what the studio's contract
+    /// lets a complete walk remove. `None`: nothing to read.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the facts one pull's read starts from, each named at the call"
+    )]
     pub fn begin(
         start: Start,
         held: Option<Walk>,
@@ -280,6 +291,7 @@ impl Read {
         mark: Option<i64>,
         budget: u32,
         reads_sent: bool,
+        prune: Prune,
     ) -> Option<Read> {
         let walk = match start {
             Start::Nothing => return None,
@@ -298,6 +310,7 @@ impl Read {
             restarts: 0,
             reads_sent,
             deep: false,
+            prune,
         })
     }
 
@@ -336,11 +349,17 @@ impl Read {
                 if !self.walk.changed && !self.reads_sent {
                     self.deep = true;
                 }
-                Step::Done { whole: false }
+                Step::Done {
+                    whole: false,
+                    prune: false,
+                }
             }
             Next::Complete => {
                 self.deep = false;
-                Step::Done { whole: true }
+                Step::Done {
+                    whole: true,
+                    prune: self.prune == Prune::Allowed,
+                }
             }
         }
     }
