@@ -136,16 +136,14 @@ impl ChangelogSettings {
     }
 }
 
-/// Whether a studio with this contract version has changelog display and
-/// summaries (5.8.0 and later).
-pub fn serves_changelog(contract: &str) -> bool {
-    let mut parts = contract.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(5), Some(minor)) => minor >= 8,
-        (Some(major), _) => major > 5,
-        _ => false,
-    }
-}
+/// The operation whose listing in a studio's capabilities means it writes
+/// changelog summaries (contract 5.8.0, studio 0.58; draft scope, so listed
+/// only to a token that may draft).
+pub const CHANGELOG_OPERATION: &str = "summarizeChangelog";
+
+/// The read whose answer shows the changelog display keys, when the studio
+/// has them (`GET /api/settings`, read scope).
+pub const SETTINGS_OPERATION: &str = "getSettings";
 
 /// Whose changelog to summarize.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -396,16 +394,6 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(only.to_json(), json!({"readerChangelogDisplay": "history"}));
-    }
-
-    #[test]
-    fn contract_5_8_serves_it() {
-        assert!(serves_changelog("5.8.0"));
-        assert!(serves_changelog(" 5.12.1"));
-        assert!(serves_changelog("6.0.0"));
-        assert!(!serves_changelog("5.7.3"));
-        assert!(!serves_changelog("4.9.0"));
-        assert!(!serves_changelog("next"));
     }
 
     #[test]

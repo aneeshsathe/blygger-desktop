@@ -2,9 +2,13 @@
 //! (studio 0.61's `GET/PUT /api/shelf`; the shapes and the merge are in
 //! `crate::shelf`).
 //!
-//! - Offered only when the blyg's capabilities list `getShelf` and
-//!   `putShelf` (noted once a session, with the contract check). Otherwise
-//!   the shelf stays on this computer, as before, and nothing is sent.
+//! - Read when the blyg's capabilities list `getShelf`, and written only
+//!   when they list `putShelf` too (noted once a session, with the
+//!   contract check; the studio lists only what a sign-in's scopes grant).
+//!   Without `getShelf` the shelf stays on this computer, as before, and
+//!   nothing is sent. With `getShelf` alone (a read-only sign-in) it's
+//!   shown as on a newer contract, below: the union, and changes made here
+//!   kept here (`SyncState::HeldReadOnly`).
 //! - Read when the `shelf` change counter moved (`SHELF_DEPS`, with the
 //!   rest of a pull), and on the first pull of a session.
 //! - Sent when it changed here (a queued `shelf` op, or a pull that finds
@@ -14,6 +18,14 @@
 //!   was read at. A 409 (it moved again meanwhile) reads and merges once
 //!   more; a second 409 leaves both sides as they are for the next pull.
 //! - The first sync takes the union, the blyg's order first.
+//! - On a contract newer than Burrow knows (`sync/newer.rs`) the shelf is
+//!   read and shown here as the union (nothing comes off on its word; what
+//!   this side took off stays off), and never written: a change made here
+//!   stays queued until a Burrow that knows the contract sends it. A union
+//!   sent back would bring back what another device took off, and the
+//!   50-entry cap would trim it. Meanwhile the status bar reads Synced (a
+//!   held op isn't due) and Saved says the change is syncing: the
+//!   once-a-session notice is the only sign that it's held.
 //! - Your posts the blyg can't name yet (scratch notes, drafts not sent)
 //!   stay on this computer's shelf in their places, and go once they can.
 
@@ -22,7 +34,8 @@ use crate::api::shelf_api::PutShelf;
 use crate::backend::{CoreError, Result};
 use crate::model::CoreEvent;
 use crate::shelf::{
-    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, cap, merge, overflow_message,
+    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, WRITES_META, cap, merge,
+    overflow_message,
 };
 use crate::store::Op;
 
@@ -36,6 +49,29 @@ impl Engine {
     pub(super) fn note_shelf_served(&self) {
         if let Ok(on) = self.api.serves_shelf() {
             self.set_shelf_served(on);
+        }
+        if let Ok(on) = self.api.takes_shelf() {
+            let _ = self.store.set_meta(WRITES_META, if on { "1" } else { "0" });
+        }
+    }
+
+    /// Whether this sign-in may write the shelf, as of the last check.
+    fn shelf_writes(&self) -> bool {
+        self.store.meta(WRITES_META).as_deref() == Some("1")
+    }
+
+    /// Why a change made here isn't sent: the blyg's contract is newer than
+    /// Burrow knows, or this sign-in may only read the shelf. `None`: it's
+    /// sent (or there's no synced shelf to hold it for).
+    pub(super) fn shelf_held(&self) -> Option<SyncState> {
+        if !self.shelf_served() {
+            None
+        } else if self.store.lists_prune() == crate::api::Prune::Withheld {
+            Some(SyncState::HeldNewer)
+        } else if !self.shelf_writes() {
+            Some(SyncState::HeldReadOnly)
+        } else {
+            None
         }
     }
 
@@ -55,6 +91,14 @@ impl Engine {
     pub fn shelf_state(&self) -> SyncState {
         if !self.shelf_served() {
             SyncState::Local
+        } else if let Some(held) = self.shelf_held() {
+            // Shown as the blyg has it plus what's kept here; only a change
+            // made here is worth a word.
+            if self.store.shelf_waiting() {
+                held
+            } else {
+                SyncState::Synced
+            }
         } else if self.store.shelf_waiting() || self.shelf_unsent() {
             SyncState::Waiting
         } else {
@@ -92,6 +136,8 @@ impl Engine {
     /// the result when it differs. True when the shelf here changed.
     pub(super) fn sync_shelf(&self) -> Result<bool> {
         match self.api.get_shelf()? {
+            // --- newer contract --- and a read-only sign-in: shown, not written.
+            Some(server) if self.shelf_held().is_some() => self.show_shelf_union(&server),
             Some(server) => self.settle_shelf(server, true),
             None => {
                 // No route after all: the shelf stays here.
@@ -143,6 +189,24 @@ impl Engine {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// --- newer contract --- The blyg's shelf, shown here as the union with
+    /// this side's (the blyg's order first), less what this side took off
+    /// since the blyg last agreed (in the base, not here): that removal
+    /// stays, waiting to be sent. Nothing is sent: no `PUT`, no new base.
+    /// True when the shelf here changed.
+    pub(super) fn show_shelf_union(&self, server: &Remote) -> Result<bool> {
+        let local = self.store.shelf_wire();
+        let base = self.shelf_base().unwrap_or_default();
+        let taken_off: Vec<&Entry> = base.iter().filter(|e| !local.contains(e)).collect();
+        let theirs: Vec<Entry> = server
+            .entries
+            .iter()
+            .filter(|e| !taken_off.contains(e))
+            .cloned()
+            .collect();
+        self.store.apply_shelf(&merge(None, &local, &theirs))
     }
 
     /// The blyg holds `r`: it's the base of the next merge.

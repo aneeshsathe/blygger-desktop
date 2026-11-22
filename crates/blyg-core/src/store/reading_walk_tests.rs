@@ -56,6 +56,7 @@ fn held(s: &Store) -> Vec<String> {
 #[test]
 fn a_page_merge_removes_nothing() {
     let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let kinds = HashMap::new();
     // Held from before: an old row, and one at the head the server has
     // since dropped.
@@ -78,6 +79,7 @@ fn a_page_merge_removes_nothing() {
 #[test]
 fn the_prune_after_a_complete_walk_takes_what_it_did_not_read() {
     let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let kinds = HashMap::new();
     let all = [
         row("s1", "a", "2026-11-03T00:00:00Z", None),
@@ -100,6 +102,7 @@ fn the_prune_after_a_complete_walk_takes_what_it_did_not_read() {
 #[test]
 fn a_row_listed_further_on_is_not_taken_for_a_renamed_one() {
     let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let kinds = HashMap::new();
     let page_url = Some("https://a.blyg.example.com/same");
     // An old row on the same page URL, which a later page still lists.

@@ -56,15 +56,18 @@ fn entries_map_to_the_wire_as_the_studio_names_them() {
     );
 }
 
+/// Read on `getShelf` (owner:read), written on `putShelf` too.
 #[test]
-fn offered_only_when_both_operations_are_listed() {
+fn read_on_get_shelf_and_written_on_put_shelf() {
     assert!(serves(
         &json!({"operations": ["getShelf", "putShelf", "listItems"]})
     ));
     assert!(serves(
         &json!({"operations": {"getShelf": {}, "putShelf": {}}})
     ));
-    assert!(!serves(&json!({"operations": ["getShelf"]})));
+    assert!(serves(&json!({"operations": ["getShelf"]})));
+    assert!(!takes(&json!({"operations": ["getShelf"]})));
+    assert!(takes(&json!({"operations": ["getShelf", "putShelf"]})));
     // The contract number alone never turns it on.
     assert!(!serves(
         &json!({"contractVersion": "5.10.0", "operations": ["listItems"]})

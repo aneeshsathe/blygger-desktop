@@ -133,16 +133,9 @@ impl MentionSource {
     }
 }
 
-/// Whether a `contractVersion` serves `/mention-groups` and
-/// `/mentions/summary` (5.2.0).
-pub fn serves_groups(version: &str) -> bool {
-    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(5), Some(minor)) => minor >= 2,
-        (Some(major), _) => major > 5,
-        _ => false,
-    }
-}
+/// The operations whose listing in a studio's capabilities means it serves
+/// `/mention-groups` and `/mentions/summary` (contract 5.2.0).
+pub const GROUPS_OPERATIONS: &[&str] = &["listMentionGroups", "getMentionSummary"];
 
 #[cfg(test)]
 mod tests {
@@ -220,14 +213,5 @@ mod tests {
         .unwrap();
         assert_eq!(o.target_version, None);
         assert_eq!(o.detail(), "not tried yet");
-    }
-
-    #[test]
-    fn groups_and_summary_need_5_2() {
-        assert!(serves_groups("5.2.0"));
-        assert!(serves_groups("5.7.1"));
-        assert!(serves_groups("6.0.0"));
-        assert!(!serves_groups("5.1.9"));
-        assert!(!serves_groups(""));
     }
 }

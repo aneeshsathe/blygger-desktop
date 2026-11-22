@@ -1252,6 +1252,11 @@ pub enum CoreEvent {
     /// The server turned out to be older than blygger-studio 0.47 (sent
     /// once per session, when first noticed). See `Backend::server_outdated`.
     ServerOutdated,
+    /// The server speaks a contract newer than this Burrow knows (its
+    /// `contractVersion`, as served): sync goes on, but removes nothing held
+    /// here until Burrow is updated (`api::Contract::Newer`). Sent once per
+    /// session, when first noticed.
+    ServerNewer(String),
     /// The server turned out to be a stock blygger-studio, without the
     /// extensions in docs/SERVER.md (sent once per local database). See
     /// `Backend::server_extensions`.

@@ -1008,6 +1008,13 @@ pub trait Backend: Send + Sync {
         false
     }
 
+    /// Whether this sign-in may place posts and blygs in Background (and
+    /// change its rules). False with a read-only sign-in: the lens shows,
+    /// the actions don't.
+    fn background_placing(&self) -> bool {
+        false
+    }
+
     /// The studio's Background lens as last read (`None`: not served, or
     /// not read yet). Put it on rows with `BackgroundSet::annotate`. Local.
     fn background_set(&self) -> Option<crate::background::BackgroundSet>;

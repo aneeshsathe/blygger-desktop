@@ -8,6 +8,7 @@
 //! saves stay instant while a push is in flight.
 
 mod background; // --- background --- the studio's Background lens and choices
+pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
@@ -19,7 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::api::wire::ChangeState;
-use crate::api::{Api, Contract, is_transient};
+use crate::api::{Api, Contract, Prune, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
@@ -232,8 +233,12 @@ struct NetState {
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
-    /// The server proved to speak contract 5 this session.
+    /// The server's contract was checked this session: one Burrow speaks,
+    /// or a newer one (`Store::lists_prune` says which).
     compatible: bool,
+    /// --- newer contract --- The app was told the blyg runs a newer
+    /// studio (`CoreEvent::ServerNewer`), once a session.
+    newer_told: bool,
     /// The server proved older than Burrow's minimum, studio 0.49.12 (its
     /// contract isn't 5.x); cleared once it isn't.
     outdated: bool,
@@ -400,6 +405,7 @@ impl Engine {
                 reading_unavailable: false,
                 pushing: false,
                 compatible: false,
+                newer_told: false,
                 outdated: false,
                 reading_served: false,
                 changes: None,
@@ -737,7 +743,7 @@ impl Engine {
     pub fn earliest_due(&self) -> Option<i64> {
         let held = {
             let st = self.state();
-            st.read_denied || st.hopper_denied
+            st.read_denied || st.hopper_denied || self.shelf_held().is_some()
         };
         if !held {
             return self.store.earliest_due();
@@ -759,38 +765,42 @@ impl Engine {
     }
 
     /// Make sure the server speaks what Burrow sends: its private API
-    /// contract (`GET {blyg}/api/capabilities`) is 5.x, blygger-studio
-    /// 0.49.12 or later. Checked once per session (one small read), and
-    /// again while it fails, before anything is pushed or pulled: a list
-    /// in another shape would read as empty or ended, and what's held here
-    /// would be pruned. An older studio is `ServerOutdated` (said once, as
-    /// `CoreEvent::ServerOutdated`); a newer contract asks for a newer
-    /// Burrow. Nothing is sent either way, and the local copy stays.
+    /// contract (`GET {blyg}/api/capabilities`) is 5.x or later,
+    /// blygger-studio 0.49.12 or later. Checked once per session (one small
+    /// read), and again while it fails, before anything is pushed or
+    /// pulled. An older studio is `ServerOutdated` (said once, as
+    /// `CoreEvent::ServerOutdated`): nothing is sent, and the local copy
+    /// stays. A newer contract syncs on, but its lists remove nothing held
+    /// here (`sync/newer.rs`; said once, as `CoreEvent::ServerNewer`).
     fn check_server(&self, push: bool) -> Result<()> {
         let _ = push;
         if self.state().compatible {
             return Ok(());
         }
-        match crate::api::contract(self.api.contract_version()?.as_deref()) {
-            Contract::Supported => {
-                self.note_syndication_served(); // --- syndication ---
-                self.note_background_served(); // --- background ---
-                self.note_shelf_served(); // --- shelf sync ---
-                let mut st = self.state();
-                st.compatible = true;
-                st.outdated = false;
-                Ok(())
-            }
-            Contract::TooOld => {
-                self.mark_outdated();
-                Err(CoreError::ServerOutdated)
-            }
-            Contract::TooNew(c) => Err(CoreError::Other(format!(
-                "This blyg runs studio API contract {c}, which this version of Burrow \
-                 doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
-                 was synced, and your local copy is safe."
-            ))),
+        let contract = crate::api::contract(self.api.contract_version()?.as_deref());
+        let Some(prune) = contract.prune() else {
+            self.mark_outdated();
+            return Err(CoreError::ServerOutdated);
+        };
+        self.store.set_lists_prune(prune);
+        self.note_syndication_served(); // --- syndication ---
+        self.note_background_served(); // --- background ---
+        self.note_shelf_served(); // --- shelf sync ---
+        {
+            let mut st = self.state();
+            st.compatible = true;
+            st.outdated = false;
         }
+        if let Contract::Newer(version) = contract {
+            self.tell_newer(version); // --- newer contract ---
+        }
+        Ok(())
+    }
+
+    /// The blyg's contract, checked (once a session) before a read outside
+    /// a pull replaces something held here (`LiveBackend`'s refreshes).
+    pub(crate) fn check_contract(&self) -> Result<()> {
+        self.check_server(false)
     }
 
     /// The server is too old: say so once (until it isn't).
@@ -1331,17 +1341,24 @@ impl Engine {
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self, background: bool) -> Result<()> {
+        let net_due = {
+            let st = self.state();
+            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
+        };
+        let checked = self.state().compatible;
         self.check_server(false)?;
+        // --- newer contract --- The safety net checks the contract again
+        // (one conditional read): a studio upgraded mid-session is seen
+        // before its lists remove anything.
+        if net_due && checked {
+            self.recheck_contract();
+        }
         let rev = self.revisions()?;
         // No change counters (studio 0.67+), but the blyg answers reads
         // conditionally: every list is asked each pull, and one that hasn't
         // changed comes back 304, as held (`api::conditional`). The safety
         // net then paces only the whole walks of the reading list.
         let validating = self.validating(&rev);
-        let net_due = {
-            let st = self.state();
-            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
-        };
         let full = (rev.is_none() && !validating) || net_due;
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
         // Read only because the safety net is due: what such a read finds
@@ -1385,8 +1402,9 @@ impl Engine {
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
-                    subs_changed = walk::subscriptions_differ(&self.store.subscriptions(), &subs);
-                    let changed = self.store.replace_subscriptions(&subs)?;
+                    let held = self.hold_subscriptions(subs)?;
+                    subs_changed = held.differ;
+                    let changed = held.changed;
                     surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
                     reading_changed |= changed;
                     self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
@@ -1763,6 +1781,9 @@ impl Engine {
     fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
         (st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread))
             || (st.hopper_denied && op.kind == OpKind::Hopper) // --- hoppers ---
+            // --- newer contract --- the shelf isn't written to such a blyg,
+            // nor by a sign-in that may only read it.
+            || (op.kind == OpKind::Shelf && self.shelf_held().is_some())
     }
 
     /// A read-state write answered 403 (`e`, which names the missing scope,
@@ -2041,15 +2062,16 @@ impl Engine {
         let held = (start == Start::Continue)
             .then(|| self.state().walk.take())
             .flatten();
-        let Some(mut r) = Read::begin(
+        let Some(mut r) = Read::begin(walk::Begin {
             start,
             held,
-            rev.clone(),
+            rev: rev.clone(),
             forced,
             mark,
-            self.opts.reading_pages,
+            budget: self.opts.reading_pages,
             reads_sent,
-        ) else {
+            prune: self.store.lists_prune(),
+        }) else {
             return Ok(out);
         };
         let kinds: HashMap<SubId, SubscriptionKind> = self
@@ -2163,8 +2185,11 @@ impl Engine {
                     self.stop_read(r);
                     return Ok(out);
                 }
-                Step::Done { whole } => {
-                    if whole && self.store.prune_reading_except(&r.walk.keys)? {
+                Step::Done { whole, prune } => {
+                    // --- newer contract --- A walk may span pulls: the
+                    // contract is checked again before it prunes.
+                    let prune = prune && self.recheck_contract() == Prune::Allowed;
+                    if prune && self.store.prune_reading_except(&r.walk.keys)? {
                         out.changed = true;
                         out.surprise |= r.walk.forced;
                         self.emit(CoreEvent::ReadingChanged);

@@ -11,6 +11,10 @@
 //! posts with labelled links waited. It still shows for such a post while
 //! the blyg is outdated, though now everything waits.
 //!
+//! A blyg on a studio newer than this Burrow knows (`NEWER_TOAST`) gets a
+//! toast once a session: sync goes on, but removes nothing on this Mac
+//! until Burrow is updated (`blyg_core::api::Contract::Newer`).
+//!
 //! There used to be a second notice here, a sheet listing what a studio
 //! older than 0.40 limits. The 0.47 floor made it unreachable: every blyg
 //! old enough to see it already gets this one, and nothing is sent to it.
@@ -59,7 +63,27 @@ pub const HELD_FIX: &str = "write them as [[id]] and publish";
 /// The list row's tooltip on a post that waits for them.
 pub const HELD_TIP: &str = concat!("Waiting: your blyg needs studio ", blyg_core::min_studio!());
 
+/// The toast when the blyg runs a studio newer than this Burrow knows
+/// (`CoreEvent::ServerNewer`): sync goes on, and removes nothing here.
+pub const NEWER_TOAST: &str = "Your blyg runs a newer studio";
+
+/// [`NEWER_TOAST`]'s line, naming the contract the blyg served.
+pub fn newer_toast_sub(contract: &str) -> String {
+    crate::keymap::hint_owned(format!(
+        "This Burrow doesn't know its API yet (contract {contract}). It keeps syncing \
+         what it can, and won't remove anything on this Mac until it's updated. \
+         Check for updates: Check for Updates… in the Burrow menu."
+    ))
+}
+
 impl MainView {
+    /// Sync found a blyg on a newer studio: said once a session, and kept
+    /// up until clicked.
+    pub(super) fn server_newer(&mut self, contract: &str, cx: &mut Context<Self>) {
+        self.show_toast(NEWER_TOAST, Some(newer_toast_sub(contract).into()), cx);
+        self.studio.guards.sticky_toast = Some(self.toast_seq);
+    }
+
     /// Sync just found an outdated server (or a connect did).
     pub(super) fn server_outdated(&mut self, cx: &mut Context<Self>) {
         self.show_toast(
@@ -106,6 +130,10 @@ impl MainView {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "newer_notice_tests.rs"]
+mod newer_tests;
 
 #[cfg(test)]
 mod tests {

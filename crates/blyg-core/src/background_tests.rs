@@ -328,16 +328,24 @@ fn a_threads_parts_are_its_burst_entries() {
     assert!(burst_parts(&rows).is_empty());
 }
 
+/// The lens is read on `listReading` (owner:read); placing needs
+/// `setReadingPlacement` (owner:manage). The number alone never turns
+/// either on.
 #[test]
 fn served_only_when_the_capabilities_list_the_operation() {
-    assert!(serves(
-        &json!({"operations": ["getShelf", "setReadingPlacement"]})
+    assert!(serves(&json!({"operations": ["listReading"]})));
+    assert!(serves(&json!({"operations": {"listReading": {}}})));
+    assert!(!places(&json!({"operations": ["listReading"]})));
+    assert!(places(
+        &json!({"operations": ["listReading", "setReadingPlacement"]})
     ));
-    assert!(serves(&json!({"operations": {"setReadingPlacement": {}}})));
     assert!(!serves(
         &json!({"contractVersion": "5.10.0", "operations": ["getShelf"]})
     ));
     assert!(!serves(&json!({"contractVersion": "5.10.0"})));
+    // A lens answer carries each entry's `background`; plain rows don't.
+    assert!(is_lens(&[json!({"background": {"reasons": []}})]));
+    assert!(!is_lens(&[json!({"imported": {}})]));
 }
 
 #[test]

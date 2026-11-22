@@ -47,6 +47,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
+use crate::api::Prune;
 use crate::api::wire::{WireItem, kind_str, parse_kind, parse_status, status_str};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
@@ -91,6 +92,13 @@ pub struct Store {
     /// The `reading` rowids written since the cache last looked, from the
     /// connection's update hook.
     reading_dirty: Arc<Mutex<reading::Dirty>>,
+    /// Whether the blyg's lists may remove what's held here: `Withheld` on
+    /// a contract newer than this Burrow knows, and until sync's contract
+    /// check (`Engine::check_server`) has allowed it. Every removal on a
+    /// list's word asks it: `merge_all`, `prune_reading`, `replace_thumbs`,
+    /// `replace_hoppers`, `reconcile_read_state`'s clears and
+    /// `merge_reading_page`'s re-keys.
+    lists_prune: Mutex<Prune>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,8 +345,21 @@ impl Store {
             origin_cache: Mutex::new(None),
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
+            // Nothing is removed on a list's word before the contract is known.
+            lists_prune: Mutex::new(Prune::Withheld),
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Whether the blyg's lists may remove what's held here.
+    pub fn lists_prune(&self) -> Prune {
+        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// What the blyg's contract lets its lists remove (sync's contract
+    /// check).
+    pub fn set_lists_prune(&self, prune: Prune) {
+        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner()) = prune;
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
@@ -1030,8 +1051,10 @@ impl Store {
 
     /// Merge a full `GET /api/items` listing. Applies the conflict rule and
     /// removes local copies of items the server no longer has (unless they
-    /// carry unpushed edits, which will recreate them).
+    /// carry unpushed edits, which will recreate them, or the contract is
+    /// newer than Burrow's: `lists_prune`).
     pub fn merge_all(&self, wires: &[WireItem]) -> Result<MergeOutcome> {
+        let prune = self.lists_prune() == Prune::Allowed;
         let mut out = MergeOutcome::default();
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -1073,7 +1096,7 @@ impl Store {
             }
         }
         for (sid, row) in &by_sid {
-            if !seen.contains(sid) && !row.item.pending_sync && !row.item.conflict {
+            if prune && !seen.contains(sid) && !row.item.pending_sync && !row.item.conflict {
                 tx.execute(
                     "DELETE FROM versions WHERE local_id = ?1",
                     [&row.item.local_id.0],
@@ -1640,3 +1663,6 @@ mod loose_tests; // --- loose ends ---
 
 #[cfg(test)]
 mod fts_tests; // text-index upkeep
+
+#[cfg(test)]
+mod newer_tests;

@@ -1,6 +1,7 @@
 //! --- contacts --- Studio 0.56 parity against the in-process mock:
 //! `GET /api/contacts` (cached locally), `unresolvedHandles` on publish,
-//! and `GET /api/reading?mentions=true`, all gated on contract 5.7.
+//! and `GET /api/reading?mentions=true`, all gated on the capabilities
+//! listing `listContacts` (contract 5.7), never on the version.
 
 use crate::common::*;
 use blyg_core::*;
@@ -16,11 +17,12 @@ fn row(sub: &str, rid: &str) -> serde_json::Value {
     })
 }
 
-fn env_at(contract: &str) -> Env {
+fn env_at(contract: &str, ops: &[&str]) -> Env {
     let env = Env::new();
     {
         let mut st = env.mock.state();
         st.contract_version = Some(contract.into());
+        st.operations = ops.iter().map(|o| o.to_string()).collect();
         // Not in the 5.0.0 OpenAPI fixture.
         st.unchecked.push("/api/contacts".into());
         st.unchecked.push("/api/reading".into());
@@ -36,7 +38,7 @@ fn env_at(contract: &str) -> Env {
 
 #[test]
 fn contacts_are_fetched_and_kept_from_5_7() {
-    let env = env_at("5.7.0");
+    let env = env_at("5.7.0", CONTACTS);
     let b = env.manual();
     assert!(b.contacts().is_empty(), "nothing until fetched");
     assert!(!b.rewrites_handles());
@@ -60,9 +62,11 @@ fn contacts_are_fetched_and_kept_from_5_7() {
     );
 }
 
+const CONTACTS: &[&str] = &["listContacts"];
+
 #[test]
 fn an_older_contract_is_never_asked() {
-    let env = env_at("5.6.0");
+    let env = env_at("5.6.0", &[]);
     let b = env.manual();
     b.refresh_contacts().unwrap();
     assert!(b.contacts().is_empty());
@@ -78,7 +82,7 @@ fn an_older_contract_is_never_asked() {
 
 #[test]
 fn unresolved_handles_come_back_as_a_publish_warning() {
-    let env = env_at("5.7.0");
+    let env = env_at("5.7.0", CONTACTS);
     env.mock.state().unresolved_handles = vec!["sam".into()];
     let b = env.manual();
     let id = b
@@ -116,7 +120,7 @@ fn natural_grammar_starts_at_studio_0_66() {
 #[test]
 fn the_studio_version_is_kept_from_the_contacts_refresh() {
     use blyg_core::contacts::natural_grammar_at;
-    let env = env_at("5.7.0");
+    let env = env_at("5.7.0", CONTACTS);
     env.mock.state().public.insert(
         "/blyg.json".into(),
         json!({ "version": "0.3", "generator": "blygger-studio/0.68.0" }),
@@ -131,4 +135,28 @@ fn the_studio_version_is_kept_from_the_contacts_refresh() {
     let b = env.manual();
     assert_eq!(b.studio_version().as_deref(), Some("0.68.0"), "kept");
     assert!(natural_grammar_at(&b));
+}
+
+/// The capabilities decide, not the version: a contract that names 5.7 but
+/// doesn't list `listContacts` is never asked, and one Burrow can't read
+/// ("next") that lists it is.
+#[test]
+fn contacts_follow_the_listed_operation_not_the_version() {
+    let env = env_at("5.7.0", &[]);
+    let b = env.manual();
+    b.refresh_contacts().unwrap();
+    assert!(!b.rewrites_handles());
+    assert!(
+        !env.mock
+            .state()
+            .log
+            .iter()
+            .any(|l| l.contains("/api/contacts")),
+        "never asked"
+    );
+    let env = env_at("next", CONTACTS);
+    let b = env.manual();
+    b.refresh_contacts().unwrap();
+    assert!(b.rewrites_handles());
+    assert_eq!(b.contacts().len(), 1);
 }

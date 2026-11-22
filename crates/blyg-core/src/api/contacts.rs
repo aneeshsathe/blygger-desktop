@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 
 use super::{Api, enc};
 use crate::backend::{CoreError, Result};
-use crate::contacts::{Contact, ContactInput, parse_contacts, parse_reading_keys, serves_contacts};
+use crate::contacts::{
+    CONTACTS_OPERATION, Contact, ContactInput, parse_contacts, parse_reading_keys,
+};
 use crate::model::{RemoteId, SubId};
 use crate::outbound::{MentionGroup, MentionSource, MentionSummary, OutboundMention};
 
@@ -17,10 +19,7 @@ const MAX_PAGES: usize = 50;
 impl Api {
     /// Whether this studio serves contacts (asks its capabilities).
     pub fn serves_contacts(&self) -> Result<bool> {
-        Ok(self
-            .contract_version()?
-            .as_deref()
-            .is_some_and(serves_contacts))
+        self.offers_all(&[CONTACTS_OPERATION])
     }
 
     /// `GET /api/contacts`, every page. `Ok(None)`: not served (a contract
@@ -137,12 +136,10 @@ impl Api {
         Self::optional(self.collect("/api/mentions", "direction=outbound"))
     }
 
-    /// Whether this studio serves `/mention-groups` and `/mentions/summary`.
-    fn serves_groups(&self) -> Result<bool> {
-        Ok(self
-            .contract_version()?
-            .as_deref()
-            .is_some_and(crate::outbound::serves_groups))
+    /// Whether this studio serves `/mention-groups` and `/mentions/summary`
+    /// (its capabilities list both operations).
+    pub fn serves_groups(&self) -> Result<bool> {
+        self.offers_all(crate::outbound::GROUPS_OPERATIONS)
     }
 
     /// `GET /api/mentions/summary`. `Ok(None)`: not served (before 5.2).
