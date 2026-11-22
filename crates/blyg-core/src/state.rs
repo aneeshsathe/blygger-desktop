@@ -114,6 +114,10 @@ pub struct AppState {
     /// hint was shown (once, the first Ctrl+B while writing).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub bold_key_hint_shown: bool,
+    /// --- auto cross-post --- Per post, the cross-post macros to start when
+    /// it's published (`<extension>/<macro>`), by `"<blyg host> <local id>"`.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub auto_cross_post: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// --- tray --- A post waiting in the quote tray: what the picker writes

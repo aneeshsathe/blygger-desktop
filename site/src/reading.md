@@ -448,8 +448,10 @@ makes:
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.
 - **Fork**: a new thread from a *pinned* version of the post. Forking only
-  descends from pins, so on the current version Fork is greyed out and its
-  tooltip says where to find a pin.
+  descends from pins, so on an unpinned current version Fork is greyed out
+  and its tooltip says where to find a pin. When the current version is
+  itself pinned (the pill reads `📌 vN · current`), ⋯ More lists it as
+  **Fork this pin**, which forks it.
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
 - **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
 
@@ -714,7 +716,11 @@ hashes, and its JSON).
 verified responses to your own posts, grouped by post: who quoted, replied to
 or forked which post, and when. (Reading's **Mentions** source is different:
 the posts you hold that mention you, to read.) You can hide one, and your own
-posts list their mentions under them in ⌘Y and in the reading pane.
+posts list their mentions under them in ⌘Y and in the reading pane. Click a
+response's name to read the post that responded in the reader, as a blyg
+link in a post opens; ↗ opens its web page where links go (the browser pane,
+or your default browser). Click **On “…”** above a group to open your own
+post, the one those responses point at.
 
 **Linked from.** When someone's post links to yours with `[[id]]` (on
 blygger-studio 0.64 and later), your blyg gets a **link notice**. A link isn't

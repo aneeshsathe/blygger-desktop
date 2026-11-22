@@ -1027,6 +1027,7 @@ impl MainView {
             version: r.version,
             current: r.version,
             pins: vec![],
+            current_pinned: false,
             shelved: self.on_reading_shelf(r), // --- shelf sync ---
         };
         [

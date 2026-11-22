@@ -278,6 +278,7 @@ use sheet::publish::{HeldLabelsSheet, PublishSheet, TangleSheet};
 // The main window's features, each a child module extending `MainView`.
 mod chrome; // title bar, config-problems banner, status bar, toasts
 mod connect; // connecting and disconnecting a blyg
+mod esc; // Esc and clicks take the keyboard back from web views (Windows)
 mod looks; // config file, prefs, theme, fonts, Settings' hotkey
 #[cfg(test)]
 mod size_cap; // app.rs's line cap

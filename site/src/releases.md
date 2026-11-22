@@ -52,6 +52,35 @@ Quotes refreshed, Including rewritten quotes, Small edits and Followed within
 15 minutes each put a post in Background, with a badge saying why and a switch
 on Settings' BACKGROUND row.
 
+### Cross-post a post each time you publish it
+
+With the bundled cross-post on, the Publish sheet has **Then cross-post to**,
+with a chip for each site you allowed (Substack Notes, Bluesky, Farcaster).
+Tick one, and every time you publish that post Burrow starts its cross-post
+by itself, one site after another. ⇧⌘P with the post open has the same
+**Cross-post automatically to …: on/off** rows. The choice is kept per
+post on this computer. It only starts the run: each one still shows you the
+text and posts only when you click Post. See [Cross-posting automatically,
+per post](extensions.md#cross-posting-automatically-per-post).
+
+### Windows
+
+**Esc** closes the open sheet, palette, Menu or browser pane even after a
+click in a web page (the browser pane, the preview, the reader's post), and
+a click anywhere else in the window takes the keyboard back from the page.
+The extensions guide walks through [cross-posting on Windows, step by
+step](extensions.md#on-windows-step-by-step).
+
+### Smaller fixes
+
+- **Responses** (⇧⌘M): clicking who responded opens their post in Burrow's
+  reader, ↗ opens its page in the browser pane, and **On “…”** opens your
+  own post.
+- A post whose **current version is pinned** can be forked: ⋯ More lists
+  **Fork this pin**, and the version pill reads `📌 vN · current`.
+- The full editor's **live preview** no longer jumps down and back when you
+  start a new line.
+
 ## Burrow 0.27.3
 
 A fix for blygs on blygger-studio 0.67 or later. Those studios speak a newer

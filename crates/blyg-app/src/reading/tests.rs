@@ -410,6 +410,55 @@ fn mentions_are_a_list_without_counts(cx: &mut TestAppContext) {
     }));
 }
 
+/// A mention opens the post that mentioned yours in the reader, not the
+/// default browser; its group's "On “title”" opens your post in Posts.
+#[gpui_kit::test]
+fn a_mention_opens_its_post_in_burrow(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
+    settle(cx);
+    let (rue, own) = view.read_with(cx, |v, _| {
+        let groups = v.mention_groups();
+        let rue = groups
+            .iter()
+            .flat_map(|g| g.3.iter())
+            .find(|r| r.who == "Rue")
+            .cloned()
+            .unwrap();
+        let own = groups
+            .iter()
+            .find(|g| g.0.starts_with("On friction"))
+            .and_then(|g| g.1.clone())
+            .unwrap();
+        (rue, own)
+    });
+    let (origin, id, version) = rue.post.clone().expect("the mention names its post");
+    assert_eq!(
+        (origin.as_str(), id.as_str(), version),
+        (RUE, "01K2Mm1", Some(1))
+    );
+    view.update_in(cx, |v, window, cx| {
+        v.open_mention(rue.source.clone(), rue.post.clone(), window, cx)
+    });
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.reading.view, View::Reading, "the reader, in Burrow");
+        assert!(!v.browser.open, "not as a web page");
+    });
+    // Back to Mentions: "On “On friction…”" opens your post.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
+    settle(cx);
+    view.update_in(cx, |v, window, cx| v.open_mentioned_post(&own, window, cx));
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.reading.view, View::Posts);
+        assert_eq!(
+            v.current.as_ref().map(|c| c.local_id.clone()),
+            Some(own.clone())
+        );
+    });
+}
+
 #[gpui_kit::test]
 fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
@@ -901,6 +950,49 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     assert!(tip(&chips(&view, cx), "Quote").contains("feed posts"));
     // ...and has no id to link, so no Link post.
     assert!(!chips(&view, cx).iter().any(|c| c.id == "Link post"));
+}
+
+/// A post whose current version is pinned has no separate 📌 entry in
+/// the pill to step to, so Fork works on the current version itself
+/// (before, it stayed greyed with nowhere to go).
+#[gpui_kit::test]
+fn a_pinned_current_version_forks_from_the_current_view(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // Ada's tide tables: 📌 v1, and v2 current, now pinned as well.
+    fake.pin_current("sub-ada", ADA_TIDES);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    open_row(&view, ADA_TIDES, cx);
+    let pill = view.read_with(cx, |v, _| v.pill_model()).expect("a pill");
+    assert!(pill.label.starts_with("📌 v2 · current"), "{}", pill.label);
+    let row = chips(&view, cx);
+    let fork = row.iter().find(|c| c.id == "Fork").expect("Fork");
+    assert!(fork.enabled, "a pinned current version forks");
+    assert_eq!(fork.label, "Fork this pin");
+    assert!(
+        fork.tip.contains("📌 v2") && fork.tip.contains("forked_from"),
+        "{}",
+        fork.tip
+    );
+    // It sits behind ⋯ More, under its live label, and choosing it forks.
+    let more: Vec<String> = view.read_with(cx, |v, _| {
+        v.post_more_items().into_iter().map(|i| i.0).collect()
+    });
+    assert!(more.contains(&"Fork this pin".to_string()), "{more:?}");
+    view.update_in(cx, |v, window, cx| {
+        v.run_menu_cmd(super::sources::MenuCmd::PostAction("Fork"), window, cx)
+    });
+    settle(cx);
+    let forked: Vec<_> = fake
+        .items()
+        .into_iter()
+        .filter_map(|i| i.forked_from)
+        .collect();
+    assert_eq!(forked.len(), 1, "one fork");
+    assert_eq!(
+        (forked[0].id.as_str(), forked[0].version),
+        (ADA_TIDES, 2),
+        "it forks the current pin"
+    );
 }
 
 /// Studio 0.8.0's `link post`: a new fragment holding `[[id]]`, a plain

@@ -275,6 +275,13 @@ pub struct Studio {
 }
 
 impl Studio {
+    /// --- esc --- The preview and the reader's post give the keyboard back
+    /// to the app (a no-op where they don't have it).
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.focus_parent());
+        self.reader.hand_back_keyboard();
+    }
+
     /// The window became active again: if a WebView kept the keyboard (or it
     /// fell to the window itself), give it back to GPUI so typing works.
     pub fn reclaim_keyboard(&self) {
@@ -409,6 +416,17 @@ impl Studio {
             .last()
             .or(line_map.first())
             .map(|(_, b)| *b)
+    }
+
+    /// The newest render was made from the text on screen (`len` bytes of
+    /// it). Until a render catches up with an edit, its line map is stale:
+    /// a new line shifts every block after the caret down one, so the map
+    /// would name the next block and the preview would scroll there, then
+    /// back once the render landed (pressing ⏎ twice to start a paragraph
+    /// bounced it down and up). Any edit changes the length, bar a
+    /// same-length replacement, which leaves line breaks where they were.
+    fn renders(&self, len: usize) -> bool {
+        self.latest_src.as_ref().is_some_and(|s| s.len() == len)
     }
 
     fn sync_scroll(&mut self) {
@@ -673,10 +691,15 @@ impl MainView {
         }
         self._subs
             .push(cx.observe(&self.editor, |this, editor, cx| {
-                let line = editor.read(cx).cursor_position().line as usize;
+                let ed = editor.read(cx);
+                let line = ed.cursor_position().line as usize;
                 if line != this.studio.caret_line {
                     this.studio.caret_line = line;
-                    this.studio.sync_scroll();
+                    // Only with a line map for the text on screen: the render
+                    // scrolls the preview itself when it lands.
+                    if this.studio.renders(ed.text().len()) {
+                        this.studio.sync_scroll();
+                    }
                 }
             }));
         if self.studio.view.preview_visible() {
@@ -720,6 +743,7 @@ impl MainView {
                     self.editor.update(cx, |s, cx| s.focus(window, cx));
                 }
             }
+            SurfaceEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
             // --- quote targets --- in the studio preview, still the profile.

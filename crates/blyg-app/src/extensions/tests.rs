@@ -939,6 +939,170 @@ mod macros {
         view.read_with(cx, |v, _| assert!(!v.macro_cross_post_hint()));
     }
 
+    /// --- auto cross-post --- A post can be set to cross-post when it's
+    /// published (the palette's on/off row, or the Publish sheet's chips):
+    /// publishing it starts the run, which still opens on the Preview sheet.
+    /// Another post isn't affected.
+    #[gpui_kit::test]
+    fn a_post_set_to_cross_post_starts_the_run_when_published(cx: &mut TestAppContext) {
+        const AUTO: &str = "Cross-post automatically to Substack Notes";
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        let other = fake.create_draft(Kind::Fragment, "Low water.").unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        // A draft: the row is there, off.
+        let rows = labels(&view, cx);
+        assert!(rows.contains(&format!("{AUTO}: off")), "{rows:?}");
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        let i = view.read_with(cx, |v, _| {
+            let Some(Overlay::Palette { rows, .. }) = &v.ext.overlay else {
+                panic!("no palette")
+            };
+            rows.iter()
+                .position(|r| r.label == format!("{AUTO}: off"))
+                .expect("the row")
+        });
+        view.update_in(cx, |v, window, cx| v.ext_run_row(i, window, cx));
+        cx.run_until_parked();
+        assert!(labels(&view, cx).contains(&format!("{AUTO}: on")));
+        // The other post: off, and publishing it starts nothing.
+        view.update_in(cx, |v, window, cx| {
+            v.open(&other, window, cx);
+            v.start_publish(other.clone(), None, window, cx);
+        });
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(!v.browser.automation.running(), "not set for this post");
+        });
+        // Publishing the post starts its run: the Preview sheet.
+        view.update_in(cx, |v, window, cx| {
+            v.open(&post, window, cx);
+            v.start_publish(post.clone(), None, window, cx);
+        });
+        wait(&view, cx, "the Preview sheet", |cx| {
+            view.read_with(cx, |v, _| {
+                v.sheet
+                    .is::<crate::app::browser::automation::PreviewSheet>()
+            })
+        });
+        assert_eq!(fake.item(&post).unwrap().status, Status::Public);
+        // Off again from the row.
+        view.update_in(cx, |v, _, cx| {
+            v.toggle_auto_crosspost(&post, XP, "cross-post-note", cx)
+        });
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty())
+        });
+    }
+
+    /// --- auto cross-post --- The macro cross-posting to Substack Notes.
+    const NOTE_MACRO: &str = "cross-post-note";
+
+    /// --- auto cross-post --- A post already copied to a site isn't
+    /// cross-posted there again when it's published again (v2).
+    #[gpui_kit::test]
+    fn a_post_with_a_copy_on_the_site_does_not_cross_post_again(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        view.update_in(cx, |v, _, cx| {
+            v.toggle_auto_crosspost(&post, XP, NOTE_MACRO, cx)
+        });
+        let copy = blyg_core::syndication::SyndicationEntry::new(
+            "https://substack.com/@tidepools/note/c-101",
+            1,
+        );
+        fake.set_syndication(&post, &[copy]).unwrap();
+        view.update_in(cx, |v, window, cx| {
+            v.start_publish(post.clone(), None, window, cx)
+        });
+        wait(&view, cx, "v2 published", |cx| {
+            toast(&view, cx).0.starts_with("Published v2")
+        });
+        let (_, sub) = toast(&view, cx);
+        assert!(!sub.contains("cross-posting"), "{sub}");
+        view.read_with(cx, |v, _| assert!(!v.browser.automation.running()));
+        // Still chosen: a site without a copy would go.
+        view.update_in(cx, |v, _, cx| {
+            assert!(!v.auto_crosspost_chosen(&post, cx).is_empty())
+        });
+    }
+
+    /// --- auto cross-post --- Publishing twice before the first run starts
+    /// queues each site once.
+    #[gpui_kit::test]
+    fn a_site_is_queued_once_per_post(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        let (first, second) = view.update_in(cx, |v, window, cx| {
+            v.toggle_auto_crosspost(&post, XP, NOTE_MACRO, cx);
+            let first = v.auto_crosspost_after_publish(&post, window, cx);
+            let second = v.auto_crosspost_after_publish(&post, window, cx);
+            (first, second)
+        });
+        assert_eq!(first, vec!["Substack Notes".to_string()]);
+        assert!(second.is_empty(), "queued again: {second:?}");
+    }
+
+    /// --- auto cross-post --- A run that posted without its copy recorded
+    /// turns the choice off, so the next publish doesn't post it again.
+    #[gpui_kit::test]
+    fn a_run_that_posted_unrecorded_turns_the_choice_off(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        view.update_in(cx, |v, window, cx| {
+            v.toggle_auto_crosspost(&post, XP, NOTE_MACRO, cx);
+            v.auto_crosspost_after_publish(&post, window, cx);
+        });
+        // The queued run starts (its text is being prepared).
+        cx.run_until_parked();
+        view.update_in(cx, |v, window, cx| {
+            let posted = crate::app::browser::automation::Outcome::Posted {
+                message: "Posted".into(),
+                via: crate::app::browser::automation::insert::Via::Paste,
+            };
+            v.auto_crosspost_after_run(&posted, false, window, cx);
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty());
+        });
+    }
+
+    /// --- auto cross-post --- Deleting a draft forgets its choices.
+    #[gpui_kit::test]
+    fn deleting_a_draft_forgets_its_cross_post_choice(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let draft = fake.create_draft(Kind::Fragment, "Low water.").unwrap();
+        view.update_in(cx, |v, window, cx| {
+            v.open(&draft, window, cx);
+            v.toggle_auto_crosspost(&draft, XP, NOTE_MACRO, cx);
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        wait(&view, cx, "the draft deleted", |_| {
+            fake.item(&draft).is_none()
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&draft, cx).is_empty())
+        });
+    }
+
     #[gpui_kit::test]
     fn choosing_it_prepares_the_text_and_opens_the_preview_sheet(cx: &mut TestAppContext) {
         let v = vault();

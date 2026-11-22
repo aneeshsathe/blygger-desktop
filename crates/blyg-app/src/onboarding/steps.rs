@@ -1755,6 +1755,27 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- auto cross-post (0.28.0) ---
+    Step {
+        id: "auto-crosspost",
+        since: "0.28.0",
+        title: ui_text("Cross-post a post each time you publish it"),
+        caption: ui_text(
+            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site, and \
+                  each time you publish that post Burrow starts its cross-post by itself, one \
+                  site after another. Post › Extensions… has the same on/off rows for the open \
+                  post. It only starts the run: you still check the text and click Post. \
+                  (A sample: nothing runs.)",
+        ),
+        keys: &[Key::ExtPalette],
+        key_label: ui_text("Post menu"),
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "extensions",
         since: "0.10.0",
@@ -2110,7 +2131,13 @@ pub const TOURS: &[Tour] = &[
         id: "extensions",
         title: "Extensions and cross-post",
         blurb: "Cross-post, and what extensions may do.",
-        steps: &["cross-post", "extensions", "manage", "consent"],
+        steps: &[
+            "cross-post",
+            "auto-crosspost",
+            "extensions",
+            "manage",
+            "consent",
+        ],
     },
     Tour {
         id: "blyg",

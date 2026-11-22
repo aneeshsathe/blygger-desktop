@@ -465,15 +465,17 @@ impl MainView {
             MenuCmd::SiteFor(sub, on) => self.set_site_for_sub(sub, on, cx), // --- reader view ---
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
             MenuCmd::MarkAllRead(source) => return self.ask_mark_all_read(source, window, cx),
-            // Fork is greyed in the row's sense: it says where forking lives.
+            // Fork is greyed in the row's sense: it says where forking lives,
+            // unless the current version is itself a pin (then it forks).
             MenuCmd::PostAction("Fork") => {
-                let tip = self
+                let chip = self
                     .reading_action_chips()
                     .into_iter()
-                    .find(|c| c.id == "Fork")
-                    .map(|c| c.tip)
-                    .unwrap_or_default();
-                self.show_toast(tip, None, cx)
+                    .find(|c| c.id == "Fork");
+                match chip {
+                    Some(c) if c.enabled => self.reading_action("Fork", window, cx),
+                    c => self.show_toast(c.map(|c| c.tip).unwrap_or_default(), None, cx),
+                }
             }
             MenuCmd::PostAction(id) => self.reading_action(id, window, cx),
             MenuCmd::AddToTrail => self.add_to_trail(window, cx), // --- trails ---

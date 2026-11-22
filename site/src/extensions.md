@@ -76,6 +76,66 @@ Windows. It needs no API key, app
 password or Farcaster signer: it fills in the same composer you would use by
 hand.
 
+### On Windows, step by step
+
+This is the whole path on Windows, from nothing to a first cross-post. The
+sections after it explain each part in more detail, with the Mac keys. On
+Windows every ⌘ is **Ctrl**, and the menus are under the **Menu** button at
+the top left of the window.
+
+1. **Turn cross-post on.** Open **Menu › Post › Extensions…**, then choose
+   **Manage extensions…** at the bottom of the list. Find **cross-post** and
+   click **Turn on**.
+2. **Choose the sites.** A sheet lists what cross-post asks for: reading your
+   posts, showing its sheets, and one line for each site it can post to
+   (Substack Notes, Bluesky, Farcaster). Untick the sites you don't use, then
+   click **Allow**. You can change this later with **Allow…** on the same
+   card, or by editing the `extension-allow` lines shown below.
+3. **Sign in to each site once.** Press **Ctrl+Shift+P**, type the site's
+   name and pick **Open Bluesky**, **Open Farcaster** or **Open Substack
+   Notes**. The site opens in the browser pane on the right. Sign in there as
+   you would in any browser. The pane keeps the sign-in after Burrow quits,
+   in its own WebView2 profile, so you do this once per site.
+4. **Open the post.** Click **Posts**, then the published post you want to
+   share. A draft can't be cross-posted, because the copy links back to the
+   post on your blyg.
+5. **Start the cross-post.** Press **Ctrl+Shift+P** and pick **Cross-post to
+   Bluesky…** (or Farcaster, or Substack Notes). The first sheet shows the
+   note: the post's opening paragraph and its link. Edit it if you like,
+   then press **Ctrl+Enter** or click **continue** at the bottom of the
+   sheet.
+6. **Check the composer, then post.** Burrow opens the site's composer in
+   the pane and puts the note in it. The second sheet asks **Post this to
+   the site?** Look at the page beside it. Press **Enter** or click **post**
+   to send it (Burrow clicks the site's Post button, or Cast on Farcaster).
+   Press **Esc** or click **cancel** to stop with nothing posted. If the
+   site's composer didn't take the text, Burrow says so, leaves the text on
+   your clipboard, and you paste it with **Ctrl+V** and click Post yourself.
+7. **Optional: start it by itself next time.** In the **Publish** sheet
+   (Ctrl+Enter), tick the sites under **Then cross-post to**. Burrow
+   remembers them for that post, and each time you publish it, the
+   cross-post starts on its own, one site after another. You still check
+   each one and press Enter to post it. To change it later, untick the site
+   there, or press **Ctrl+Shift+P** and pick **Cross-post automatically to
+   … : on** to turn it off.
+
+A few things to know on Windows:
+
+- **Esc** closes either sheet, and nothing is posted. Between the sheets,
+  while the page loads, Esc folds the pane instead. If you've clicked into
+  the page, the first Esc only gives the keyboard back to Burrow (the site
+  sees it too, so its own pop-up closes), and a second Esc folds the pane.
+  The run keeps going while the pane is folded, and **Ctrl+Shift+B** or the
+  status bar's **show pane** brings it back.
+- If a site has signed you out, the run stops with "Sign in to … in this
+  pane" (on Farcaster, it stops because the composer never opens). Nothing is
+  posted. Do step 3 again and start over.
+- If a run stops with a problem, nothing was posted. The details are in
+  `%LOCALAPPDATA%\Blygger\extensions\cross-post\macro.log`, which lists
+  what the page had (never your text or the page's). See
+  [Before you rely on it](#before-you-rely-on-it).
+- Burrow waits at least 60 seconds between two cross-posts to the same site.
+
 ### Turning it on
 
 ```text
@@ -158,6 +218,38 @@ extension-setting = cross-post bluesky-max-chars=300
 # the longest cast, in bytes (default 320; 1024 if your account can send long casts)
 extension-setting = cross-post farcaster-max-bytes=1024
 ```
+
+### Cross-posting automatically, per post
+
+A post can start its cross-posts by itself when you publish it. In the
+**Publish** sheet (⌘⏎), tick the sites under **Then cross-post to**, or press
+⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
+(and the same for the other sites) to turn it on. The palette row then reads
+**on**, and choosing it again turns it off. The choice belongs to that post
+alone and is remembered: other posts are unaffected, and it lasts across
+publishes until you untick it.
+
+When the post is published, Burrow queues a cross-post for each ticked site
+and starts them one after another. The publish toast ("cross-posting to
+Bluesky, Farcaster") shows as the first one is being prepared, before its
+first sheet. "Automatically" only starts the run. Each one still shows both
+sheets, and nothing is posted until you press Post. Cancelling one (esc)
+skips that site, and the next one starts. A run that can't start (the site
+is no longer allowed, you're offline, the post has no link) shows its own
+toast saying why, and the next one starts. A run that leaves the page to
+you stops the rest, and its toast says which sites weren't started
+("Not started: …"), so you can run them from ⇧⌘P. That happens when a step
+fails, the box doesn't take the text, or you stop after Post was clicked,
+and also when a cross-post you started by hand leaves the page to you while
+others wait.
+
+**Each site once per post.** Publishing the post again (v2, v3…) doesn't
+post it to a site again when its **Copies elsewhere** already lists a copy
+there (the run records it when it can read the new post's link). When a run
+posts but its copy couldn't be recorded, that site is turned off for the
+post, so the next publish doesn't post it twice; tick it again to post a new
+version. Deleting a draft forgets its choices. The choices are kept in
+Burrow's `state.json`, by blyg and post. They never reach your blyg.
 
 ### Before you rely on it
 
