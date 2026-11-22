@@ -28,6 +28,7 @@ mod conditional;
 mod links;
 mod maths;
 mod sign_in_path;
+mod subscribe_guard;
 mod tangle;
 
 use std::collections::HashSet;
