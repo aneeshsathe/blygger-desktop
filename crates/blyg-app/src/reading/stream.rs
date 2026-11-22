@@ -919,7 +919,7 @@ impl MainView {
                         cx.new(|_| {
                             super::Tip(
                                 "More for this post: AI reply, Link post, Open on web, → Notes, \
-                                 + Add to shelf, ⤳ Add to trail…"
+                                 + Save, ⤳ Add to trail…"
                                     .into(),
                             )
                         })

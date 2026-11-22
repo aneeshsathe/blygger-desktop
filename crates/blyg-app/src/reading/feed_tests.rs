@@ -112,7 +112,7 @@ fn a_row_newer_than_the_order_goes_on_top() {
     assert_eq!(ids(&rows, &shown)[0], "new");
 }
 
-/// Hoppers, Saved, trails, Mentions and Raw keep their own order; the
+/// Hoppers, Saved, trails, Mentions, Background and Raw keep their own order; the
 /// stream and every other source follow the Feed's.
 #[test]
 fn which_lists_follow_the_feeds_order() {
@@ -120,7 +120,6 @@ fn which_lists_follow_the_feeds_order() {
         Source::Smart(Smart::All),
         Source::Smart(Smart::Threads),
         Source::Smart(Smart::Unread),
-        Source::Smart(Smart::Background),
         Source::Folder("f".into()),
         Source::Sub("sub-ada".into()),
         Source::Own,
@@ -129,6 +128,7 @@ fn which_lists_follow_the_feeds_order() {
     }
     for s in [
         Source::Smart(Smart::Shelf),
+        Source::Smart(Smart::Background),
         Source::Smart(Smart::Raw),
         Source::Smart(Smart::Agentic),
         Source::Hopper("h".into()),

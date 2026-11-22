@@ -215,6 +215,8 @@ struct State {
     )>,
     bg_blygs: Vec<SubId>,
     bg_rules: Vec<(String, bool)>,
+    /// --- reader order --- the Feed's order (`Settings.readerOrder`).
+    reader_order: blyg_core::order::ReaderOrder,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -417,7 +419,8 @@ impl FakeBackend {
                 bg_choices: Vec::new(), // --- background ---
                 bg_blygs: Vec::new(),
                 bg_rules: background_seed::rules(),
-                trails: Vec::new(), // --- trails ---
+                reader_order: Default::default(), // --- reader order ---
+                trails: Vec::new(),               // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
                 site: fake_site(),                          // --- site ---
@@ -440,6 +443,15 @@ impl FakeBackend {
         if let Some(it) = st.items.iter_mut().find(|i| &i.local_id == id) {
             it.server_id = Some(ServerId(server.into()));
         }
+    }
+
+    /// Tests written to the chronological list (newest first, edited since
+    /// read on top): the Feed set to Chronological, as a user can. The
+    /// pace-layered Feed has its own tests (`reading/feed_tests.rs`).
+    #[cfg(test)]
+    pub fn chronological(self) -> Self {
+        self.lock().reader_order = blyg_core::order::ReaderOrder::Newest;
+        self
     }
 
     /// Tests: keep uploads in memory only (don't touch the data dir).
@@ -2189,7 +2201,7 @@ impl Backend for FakeBackend {
             (true, None) if st.shelf.len() >= 50 => {
                 return Err(CoreError::Rejected {
                     status: 400,
-                    message: "Your shelf holds at most 50 posts. Take one off first.".into(),
+                    message: "Saved holds at most 50 posts. Remove one first.".into(),
                     details: vec![],
                 });
             }
@@ -2830,6 +2842,24 @@ impl Backend for FakeBackend {
         Ok(self.background_rules()?.unwrap_or_default())
     }
     // --- end background ---
+
+    // --- reader order --- the blyg's setting, in memory.
+    fn reader_order(&self) -> blyg_core::order::ReaderOrder {
+        self.lock().reader_order
+    }
+
+    fn load_reader_order(&self) -> Result<Option<blyg_core::order::ReaderOrder>> {
+        Ok(Some(self.lock().reader_order))
+    }
+
+    fn save_reader_order(
+        &self,
+        order: blyg_core::order::ReaderOrder,
+    ) -> Result<blyg_core::order::ReaderOrder> {
+        self.remote_guard()?;
+        self.lock().reader_order = order;
+        Ok(order)
+    }
 
     // --- hoppers --- the store's rules: membership is local and instant;
     // a hopper's own fields go to the "server" (refused offline).

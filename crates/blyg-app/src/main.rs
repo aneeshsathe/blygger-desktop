@@ -461,8 +461,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::contacts::AddAuthorToContacts,
                 ),
                 // --- shelf ---
-                MenuItem::action("Shelf…", app::shelf::ShowShelf),
-                MenuItem::action("Add to Shelf / Remove from Shelf", app::shelf::ToggleShelf),
+                MenuItem::action("Saved…", app::shelf::ShowShelf),
+                MenuItem::action("Save / Remove from Saved", app::shelf::ToggleShelf),
                 // --- tangles --- the quote tray, split view
                 MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
                 MenuItem::action("Open Beside", app::split::OpenBeside),

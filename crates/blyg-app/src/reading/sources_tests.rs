@@ -30,7 +30,11 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
             cx,
         );
     });
-    let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
+    let fake = Arc::new(
+        FakeBackend::with_timing(Timing::instant())
+            .chronological() // the list these tests read is newest first
+            .without_media_cache(),
+    );
     let backend: Arc<dyn Backend> = fake.clone();
     let f2 = fake.clone();
     let (view, cx) = cx.add_window_view(move |window, cx| {

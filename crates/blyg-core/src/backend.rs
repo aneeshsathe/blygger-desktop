@@ -1046,6 +1046,39 @@ pub trait Backend: Send + Sync {
         Err(CoreError::Other("Background isn't supported here".into()))
     }
 
+    // --- reader order --- the Feed's order (`Settings.readerOrder`,
+    // studio 0.68). Burrow orders locally (`crate::order`); the choice is
+    // the blyg's setting when it has one, else kept here.
+
+    /// The Feed's order as last read or chosen. Local; pace-layered until
+    /// told otherwise.
+    fn reader_order(&self) -> crate::order::ReaderOrder {
+        crate::order::ReaderOrder::default()
+    }
+
+    /// Read the blyg's `readerOrder` (and keep it). `Ok(None)`: the blyg
+    /// doesn't have the setting; the local choice stands.
+    fn load_reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        Ok(None)
+    }
+
+    /// Choose the Feed's order: kept here, and written to the blyg (that
+    /// key alone) when it has the setting. The order kept back.
+    fn save_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let _ = order;
+        Err(CoreError::Other("the reader order isn't kept here".into()))
+    }
+
+    /// Every cached changelog of someone else's post, by `(origin, remote
+    /// id)`: their pins slow a post's sinking in the pace-layered Feed.
+    /// Local.
+    fn cached_changelogs(&self) -> std::collections::HashMap<(String, String), Vec<RemoteVersion>> {
+        std::collections::HashMap::new()
+    }
+
     // --- hoppers ---
     // The blyg's hoppers (studio's createHopper … removeHopperItem). The list
     // and memberships are local reads of what the last pull stored. A

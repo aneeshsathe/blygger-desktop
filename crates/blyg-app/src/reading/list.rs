@@ -781,6 +781,10 @@ impl MainView {
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
         let mut actions = vec![self.render_mode_toggle(cx)];
+        // --- reader order --- the Feed's own controls (kinds, order).
+        if let Some(c) = self.render_feed_controls(cx) {
+            actions.insert(0, c);
+        }
         if !stream {
             // --- reader folders --- the sources pane's button (⌥⌘S).
             actions.insert(0, self.render_sources_button(cx));
@@ -1316,7 +1320,7 @@ impl MainView {
                     cx.new(|_| {
                         super::Tip(
                             "More for this post: AI reply, Link post, → Notes, Hopper ›, \
-                             + Add to shelf, ⤳ Add to trail…"
+                             + Save, ⤳ Add to trail…"
                                 .into(),
                         )
                     })

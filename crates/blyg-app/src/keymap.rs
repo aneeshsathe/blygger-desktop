@@ -686,15 +686,15 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-b",
             Main,
             ShowShelf,
-            "Shelf: the posts you keep to hand (1–9 opens one)",
-            Some("Post › Shelf…")
+            "Saved: the posts you keep to hand (1–9 opens one)",
+            Some("Post › Saved…")
         ),
         kb!(
             "alt-cmd-b",
             Main,
             ToggleShelf,
-            "Add the open post to your shelf, or remove it",
-            Some("Post › Add to Shelf / Remove from Shelf")
+            "Save the open post, or remove it from Saved",
+            Some("Post › Save / Remove from Saved")
         ),
         // --- end own posts ---
         // --- trails --- (`t` / ⇧T on the reading screen are its own keys,

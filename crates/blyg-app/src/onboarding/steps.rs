@@ -144,13 +144,18 @@ pub enum Key {
     // --- 0.24.0 --- (studio 0.61)
     /// The sample post went to Background (b, or its chip).
     Background,
-    /// The sample post went on the shelf (+ Add to shelf).
+    /// The sample post went on the shelf (+ Save).
     ShelfReading,
     /// Reading's Shelf lens is the source.
     ShelfLens,
     // --- 0.25.0 ---
     /// Reading's Mentions feed is the source.
     MentionsFeed,
+    // --- 0.28.0 --- (studio 0.68)
+    /// The Feed was switched to Chronological (its own control).
+    FeedOrder,
+    /// Reading's Raw is the source.
+    RawTab,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -313,6 +318,8 @@ pub enum Setup {
     ShelfLens,
     /// Reader on All, with posts that quote, reply to, link to and name you.
     MentionsFeed,
+    /// --- 0.28.0 --- Reader on the Feed, pace-layered.
+    FeedOrder,
     /// --- 0.26.0 --- The published sample post open (its lineage line
     /// under it), with Settings open over it at Quiet writing.
     QuietWriting,
@@ -639,16 +646,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf",
         since: "0.18.0",
-        title: ui_text("Keep it on your shelf"),
+        title: ui_text("Keep it in Saved"),
         caption: ui_text_per_platform(
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             ⌥⌘B adds the open post to your shelf: 📚 marks it and it stays at the top of the \
-             list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
-             the shelf syncs with your blyg; otherwise it's kept on this Mac.",
+             ⌥⌘B saves the open post: 📚 marks it and it stays at the top of the list. ⌘B \
+             opens Saved (it was the shelf), and 1–9 opens a post in it. With blygger-studio \
+             0.61 Saved syncs with your blyg; otherwise it's kept on this Mac.",
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             Ctrl+Shift+A adds the open post to your shelf: 📚 marks it and it stays at the top \
-             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. With \
-             blygger-studio 0.61 the shelf syncs with your blyg; otherwise it's kept on this \
+             Ctrl+Shift+A saves the open post: 📚 marks it and it stays at the top of the \
+             list. Ctrl+B opens Saved (it was the shelf), and 1–9 opens a post in it. With \
+             blygger-studio 0.61 Saved syncs with your blyg; otherwise it's kept on this \
              computer.",
         ),
         keys: &[Key::Shelf],
@@ -1315,7 +1322,7 @@ pub const STEPS: &[Step] = &[
         title: ui_text("Reader: sources, posts, post"),
         caption: ui_text(
             "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All, Shelf, and Background, where set-aside and withdrawn posts go), Your blyg \
+                  the Feed, Saved, Background, where set-aside and withdrawn posts go, and Raw), Your blyg \
                   (your own posts, never unread or counted), your hoppers, your folders, which \
                   stay on this Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
                   Stream again.",
@@ -1326,6 +1333,46 @@ pub const STEPS: &[Step] = &[
         button: None,
         setup: Setup::Stream,
         pause_ms: 3000,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.28.0 --- studio 0.68's reading tabs: the pace-layered Feed, Raw.
+    Step {
+        id: "feed-order",
+        since: "0.28.0",
+        title: ui_text("The Feed, pace-layered"),
+        caption: ui_text(
+            "Reading has blygger-studio 0.68's tabs in the sources: “Feed”, Mentions, \
+                  “Agentic feed”, “Saved” (the shelf, renamed), Background and “Raw”. The Feed \
+                  is pace-layered: new posts arrive on top and sink as others come, more slowly \
+                  the more their blyg pinned them, and a new version climbs one place. Click \
+                  “Chronological” for newest first; your blyg remembers the choice.",
+        ),
+        keys: &[Key::FeedOrder],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "raw-tab",
+        since: "0.28.0",
+        title: ui_text("Raw: what came in"),
+        caption: ui_text(
+            "“Raw” lists what came in from the blygs you read, newest first, as it arrived: \
+                  nothing moved to Background, nothing folded under a thread. Small edits, \
+                  refreshed quotes and posts their blyg followed within 15 minutes go to \
+                  Background now; Settings (⌘,) has a switch for each rule. Click Raw.",
+        ),
+        keys: &[Key::RawTab],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
         settle: false,
         stay: true,
     },
@@ -1374,10 +1421,10 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-add",
         since: "0.24.0",
-        title: ui_text("Anyone's post on your shelf"),
+        title: ui_text("Save anyone's post"),
         caption: ui_text(
-            "+ Add to shelf, in ⋯ More under the post, keeps it to hand: someone else's \
-                  post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
+            "“+ Save”, in ⋯ More under the post, keeps it to hand in Saved: someone else's \
+                  post or yours, up to 50, in your order. With blygger-studio 0.61 Saved \
                   syncs with your blyg, so the studio and your other computers share it.",
         ),
         keys: &[Key::ShelfReading],
@@ -1392,11 +1439,11 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-lens",
         since: "0.24.0",
-        title: ui_text("The Shelf lens"),
+        title: ui_text("Saved"),
         caption: ui_text(
-            "Shelf, in the sources, lists everything on your shelf in your order, as the \
-                  studio's Shelf lens does. A shelved post stays here even after it goes to \
-                  Background. Click Shelf.",
+            "“Saved”, in the sources, lists everything you saved in your order, as the \
+                  studio's Saved tab does (it was the Shelf). A saved post stays here even \
+                  after it goes to Background. Click Saved.",
         ),
         keys: &[Key::ShelfLens],
         key_label: ui_text("click"),
@@ -1982,7 +2029,7 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "reading",
         title: "Reading",
-        blurb: "Stream, catch up, Reader, Background, the shelf, Discover.",
+        blurb: "Stream, catch up, Reader, the Feed, Background, Saved, Discover.",
         steps: &[
             "stream",
             "compose",
@@ -1993,6 +2040,8 @@ pub const TOURS: &[Tour] = &[
             "author-site",
             "more-menu",
             "reader",
+            "feed-order",
+            "raw-tab",
             "background",
             "parts",
             "shelf-add",
@@ -2207,6 +2256,8 @@ mod tests {
             Key::ShelfLens,
             Key::Discover,
             Key::MentionsFeed,
+            Key::FeedOrder, // --- 0.28.0 ---
+            Key::RawTab,
             Key::MoreMenu, // --- 0.26.0 ---
             Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,

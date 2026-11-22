@@ -1,6 +1,8 @@
 //! --- background --- Background and Foreground in the reader (blygger-studio
 //! 0.61.0, contract 5.10.0; blygger-spec docs/background-plan.md, phase 1;
-//! the `burst`, `wordless` and `maintenance` rules from studio 0.64).
+//! the `burst`, `wordless` and `maintenance` rules from studio 0.64; phase
+//! 2's measured rules, `quotes-refreshed`, `quotes-material`, `near-same`
+//! and `superseded`, from studio 0.68, contract 6.1.0).
 //!
 //! An entry is in Background when the owner placed it there, or, with no
 //! choice on the entry, when its whole blyg is placed there or a reason that
@@ -45,11 +47,53 @@ pub const SET_META: &str = "background.set";
 pub const NOT_SERVED: &str = "Your blyg needs blygger-studio 0.61 or later for Background";
 
 /// The rules an owner can turn off, in the order Settings lists them
-/// (studio `BACKGROUND_RULES`). Withdrawn isn't one: it's always on. A
-/// studio offers only some of them (0.61: `minor`); Settings shows the ones
-/// its `GET /api/settings` lists ([`BackgroundRules::from_settings`]),
+/// (studio `BACKGROUND_RULES`), which is also the order a card picks its
+/// reason in. Withdrawn isn't one: it's always on. A studio offers only
+/// some of them (0.61: `minor`; 0.64: four; 0.68: eight); Settings shows
+/// the ones its `GET /api/settings` lists ([`BackgroundRules::from_settings`]),
 /// because it refuses a rule it doesn't know with a 400.
-pub const RULES: [&str; 4] = [BURST, "wordless", "maintenance", "minor"];
+pub const RULES: [&str; 8] = [
+    BURST,
+    "wordless",
+    "maintenance",
+    QUOTES_REFRESHED,
+    QUOTES_MATERIAL,
+    "near-same",
+    "minor",
+    SUPERSEDED,
+];
+
+/// A new version with the same text whose quotes now show newer versions
+/// of what they quote (studio 0.68, plan §2.1).
+pub const QUOTES_REFRESHED: &str = "quotes-refreshed";
+
+/// A refresh that brought in a quote whose text was rewritten (beyond
+/// near-same). It counts only while [`QUOTES_REFRESHED`] does too
+/// ([`BackgroundRules::counts`]); off, such refreshes stay in the Feed.
+pub const QUOTES_MATERIAL: &str = "quotes-material";
+
+/// An item its blyg followed with a newer item within
+/// [`SUPERSEDED_WINDOW_MS`]; a later version of it brings it back.
+pub const SUPERSEDED: &str = "superseded";
+
+/// `superseded`'s window (studio `SUPERSEDED_WINDOW_MS`): reader-local, a
+/// constant for now.
+pub const SUPERSEDED_WINDOW_MS: i64 = 15 * 60 * 1000;
+
+/// Whether an item last active at `older_ms` is superseded by a newer item
+/// of its blyg first seen at `newer_ms` (studio `supersedes`).
+pub fn supersedes(newer_ms: i64, older_ms: i64) -> bool {
+    older_ms < newer_ms && newer_ms - older_ms <= SUPERSEDED_WINDOW_MS
+}
+
+/// The reasons that make a version maintenance for the pace-layered order
+/// (studio `MAINTENANCE_REASONS`, RFC-3 R2): it climbs no place.
+pub const MAINTENANCE_REASONS: [&str; 4] = [
+    "maintenance",
+    QUOTES_REFRESHED,
+    QUOTES_MATERIAL,
+    "near-same",
+];
 
 /// The reason a thread's part is in Background (studio 0.64); its
 /// `detail.thread` names the thread.
@@ -119,6 +163,10 @@ impl EntryBackground {
             Some(BURST) => Some(BURST_WHY.into()),
             Some("wordless") => Some("no words of its own".into()),
             Some("maintenance") => Some("republished unchanged".into()),
+            Some(QUOTES_REFRESHED) => Some("quotes refreshed".into()),
+            Some(QUOTES_MATERIAL) => Some("quotes refreshed (rewritten)".into()),
+            Some("near-same") => Some("small edit".into()),
+            Some(SUPERSEDED) => Some("followed within 15 min".into()),
             Some("minor") => Some(
                 match self
                     .detail
@@ -136,6 +184,16 @@ impl EntryBackground {
 }
 
 impl EntryBackground {
+    /// Its current version was maintenance, as the studio measured it: one
+    /// of [`MAINTENANCE_REASONS`] counts (the pace-layered order climbs it
+    /// no place). Only reasons whose rule is on are sent, so with
+    /// `near-same` off a small edit climbs.
+    pub fn maintenance(&self) -> bool {
+        self.reasons
+            .iter()
+            .any(|r| MAINTENANCE_REASONS.contains(&r.as_str()))
+    }
+
     /// The thread this entry is a part of: its `detail.thread`, when
     /// `burst` is among the reasons that count (so not while the rule is
     /// off). A remote id of the same blyg, or your own item's id.
@@ -469,7 +527,19 @@ impl BackgroundRules {
         self.rules.iter().any(|(r, _)| r == rule)
     }
 
-    /// Whether `rule` counts.
+    /// The rule `rule` counts only under (studio `enabledRules`):
+    /// `quotes-material` under `quotes-refreshed`. Settings greys it out
+    /// while that one is off.
+    pub fn needs(rule: &str) -> Option<&'static str> {
+        (rule == QUOTES_MATERIAL).then_some(QUOTES_REFRESHED)
+    }
+
+    /// Whether `rule` acts: it's on, and so is the rule it [`Self::needs`].
+    pub fn counts(&self, rule: &str) -> bool {
+        self.on(rule) && Self::needs(rule).is_none_or(|n| self.on(n))
+    }
+
+    /// Whether `rule`'s switch is on (it may still not act: [`Self::counts`]).
     pub fn on(&self, rule: &str) -> bool {
         self.rules
             .iter()
@@ -501,9 +571,28 @@ pub fn rule_label(rule: &str) -> (&'static str, &'static str) {
             "Republished unchanged",
             "A new version with the same text and the same quotes.",
         ),
+        QUOTES_REFRESHED => (
+            "Quotes refreshed",
+            "A new version with the same text whose quotes now show newer versions \
+             of what they quote.",
+        ),
+        QUOTES_MATERIAL => (
+            "Including rewritten quotes",
+            "A refresh that brings in a quote whose text was rewritten; off keeps \
+             those in the Feed.",
+        ),
+        "near-same" => (
+            "Small edits",
+            "A new version that changes at most 40 characters and 2% of the text.",
+        ),
         "minor" => (
             "Your own minor changes",
             "A version of yours the change classifier calls a typo, minor or refresh.",
+        ),
+        SUPERSEDED => (
+            "Followed within 15 minutes",
+            "An item its blyg followed with a newer item within 15 minutes; a later \
+             version of it comes back. Your own items too.",
         ),
         _ => ("", ""),
     }

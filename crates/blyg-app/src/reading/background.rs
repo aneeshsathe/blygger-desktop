@@ -8,7 +8,10 @@
 //! there is one, and, for someone's post, **⇊ Blyg to Background** / **⇈ Blyg
 //! to Foreground**. Settings › Reading has the rules the blyg offers
 //! (studio 0.64: parts published with a thread, posts with no words of
-//! their own, republished unchanged, your own minor changes). None of it
+//! their own, republished unchanged, your own minor changes; studio 0.68
+//! adds quotes refreshed, including rewritten quotes, small edits and
+//! followed within 15 minutes). "Including rewritten quotes" acts only
+//! while "Quotes refreshed" is on, and is greyed out without it. None of it
 //! marks anything read or changes anything published. An older studio gets
 //! none of it: its Background lens holds withdrawn posts, as before.
 //!
@@ -173,6 +176,10 @@ pub fn rule_toast(rule: &str, on: bool) -> String {
         "wordless" => "Posts with no words of their own",
         "maintenance" => "Posts republished unchanged",
         "minor" => "Your own minor changes",
+        blyg_core::background::QUOTES_REFRESHED => "Posts whose quotes were refreshed",
+        blyg_core::background::QUOTES_MATERIAL => "Refreshes with rewritten quotes",
+        "near-same" => "Small edits",
+        blyg_core::background::SUPERSEDED => "Posts followed within 15 minutes",
         _ => "Those posts",
     };
     if on {
@@ -373,6 +380,9 @@ impl MainView {
             return;
         }
         if let Load::Ready(r) = &self.reading.background.rules {
+            if BackgroundRules::needs(rule).is_some_and(|n| !r.on(n)) {
+                return; // greyed out: it acts only under the rule it needs
+            }
             let on = r.on(rule);
             self.save_background_rule(rule, !on, cx);
         }
@@ -510,11 +520,18 @@ impl MainView {
             let on = rules.on(rule);
             let ring = focused == Some(rule);
             let (label, hint) = rule_label(rule);
+            // "Including rewritten quotes" acts only under "Quotes
+            // refreshed" (studio `enabledRules`): greyed out while it's off.
+            let waits = BackgroundRules::needs(rule).filter(|n| !rules.on(n));
             let c = chip(format!("bg-rule-{rule}").into(), label, on, ring)
                 .flex_none()
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
-                );
+                .when(BackgroundRules::needs(rule).is_some(), |d| d.ml(px(18.)))
+                .when(waits.is_some(), |d| d.opacity(0.5))
+                .when(waits.is_none(), |d| {
+                    d.on_click(
+                        cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
+                    )
+                });
             // The ring's own selector (tests), and the scroll to it after ⇥.
             let c: AnyElement = if ring {
                 let reveal = self.preview.reveal.clone();
@@ -779,7 +796,10 @@ impl MainView {
     /// lists them); `None` without parts.
     pub(crate) fn render_parts_count(&self, key: &Key) -> Option<AnyElement> {
         let n = self.reading.background.parts_of(key).len();
-        if n == 0 {
+        // Raw folds nothing: its parts are listed as they came in.
+        let raw =
+            self.reading.source == super::sources_vm::Source::Smart(super::sources_vm::Smart::Raw);
+        if n == 0 || raw {
             return None;
         }
         let (fg, bg) = self.palette.on_page().quiet_badge();

@@ -465,17 +465,17 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
              shows it on its page."
                 .into(),
         ),
-        // --- shelf sync --- the studio's words ("+ add to shelf").
+        // --- shelf sync --- the studio's words since 0.68 ("+ save", "✓ saved").
         "Shelf" if cx.shelved => on(
-            "− Remove from shelf",
-            "Takes this post off your shelf (Reading › Shelf). The shelf syncs with \
-             your blyg when it keeps one."
+            "✓ Saved",
+            "Removes this post from Saved (Reading › Saved). Saved syncs with your \
+             blyg when it keeps it."
                 .into(),
         ),
         "Shelf" => on(
-            "+ Add to shelf",
-            "Keeps this post to hand on your shelf (Reading › Shelf), in your order. \
-             The shelf syncs with your blyg when it keeps one."
+            "+ Save",
+            "Keeps this post to hand in Saved (Reading › Saved), in your order. Saved \
+             syncs with your blyg when it keeps it."
                 .into(),
         ),
         // --- catch up --- shown only when the post draws on something.

@@ -128,7 +128,7 @@ fn the_sources_pane_lists_hoppers_under_background(cx: &mut TestAppContext) {
     assert_eq!(
         &lines[at - 2..at + 4],
         [
-            "Background",
+            "Raw",
             "Your blyg",
             "# Hoppers",
             "▤ Slow media 3 public",
@@ -169,7 +169,7 @@ fn picking_a_hopper_lists_its_posts_yours_included(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn arrows_in_the_sources_pane_step_through_the_hoppers(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    select(&view, Source::Smart(Smart::Background), cx);
+    select(&view, Source::Smart(Smart::Raw), cx);
     view.update(cx, |v, cx| v.set_pane(Pane::Sources, cx));
     cx.simulate_keystrokes("down");
     settle(cx);

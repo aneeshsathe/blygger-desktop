@@ -640,6 +640,19 @@ impl MainView {
                 Key::MentionsFeed,
                 reader && self.reading.source == crate::app::reading::sources_vm::Source::Mentions,
             ),
+            // --- 0.28.0 ---
+            (
+                Key::FeedOrder,
+                reading && self.reading.feed.order == blyg_core::order::ReaderOrder::Newest,
+            ),
+            (
+                Key::RawTab,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Raw,
+                        ),
+            ),
             (
                 Key::Discover,
                 matches!(
@@ -1302,6 +1315,13 @@ impl MainView {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 cx.notify();
             }
+            // --- 0.28.0 --- Reader on the Feed, pace-layered again (so a
+            // second walk finds the click working).
+            Setup::FeedOrder => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                self.set_reader_order(blyg_core::order::ReaderOrder::PaceLayered, cx);
+                cx.notify();
+            }
             // --- 0.26.0 --- Settings over the published post, at the row.
             Setup::QuietWriting => {
                 self.tutorial_setup(Setup::Versioned, window, cx);
@@ -1423,6 +1443,14 @@ impl MainView {
             "mentions-feed" => {
                 self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
             }
+            // --- 0.28.0 ---
+            "feed-order" => self.set_reader_order(blyg_core::order::ReaderOrder::Newest, cx),
+            "raw-tab" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Raw,
+                ),
+                cx,
+            ),
             "discover" => self.open_discover(window, cx),
             "quiet-writing" => {
                 self.set_quiet_writing(true, cx);

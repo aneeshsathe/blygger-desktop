@@ -5,6 +5,32 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.28.0
+
+Burrow catches up with blygger-studio 0.68's reading.
+
+### Reading in the studio's tabs
+
+The Reader's sources have the studio's tabs: **Feed**, **Mentions**,
+**Agentic feed**, **Saved**, **Background** and **Raw**, beside Burrow's own.
+The Feed is **pace-layered** by default: new posts arrive on top and sink as
+others come, more slowly the more their blyg pinned them, and a new version
+climbs one place. **Chronological** lists newest first; the choice is in the
+reading header and Settings › READER ORDER, and your blyg keeps it. **Raw**
+lists what came in, newest first, with nothing moved to Background or folded.
+The Agentic feed is a placeholder, as in the studio.
+
+### Saved
+
+The shelf is now called **Saved**, as in the studio: **+ Save** under a post,
+⌘B opens Saved and ⌥⌘B saves the open post. Nothing you saved moves.
+
+### Four more Background rules
+
+Quotes refreshed, Including rewritten quotes, Small edits and Followed within
+15 minutes each put a post in Background, with a badge saying why and a switch
+on Settings' BACKGROUND row.
+
 ## Burrow 0.27.2
 
 A speed update. Searching from the omnibar reads only which posts match

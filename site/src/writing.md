@@ -46,21 +46,23 @@ starts with.
 
 ### The shelf
 
-Some posts you keep coming back to: a /now page, a reading log, a running
-list of links. Put them on your **shelf** so you never have to search for
-them. **⌥⌘B** (Post › Add to Shelf / Remove from Shelf) adds the open post to
-your shelf, or removes it. Shelved posts are marked 📚 and stay at the top of the list, in
-your order, above a thin rule. When you search, the shelved posts that match
-come first.
+The shelf is called **Saved** since 0.28.0, as blygger-studio 0.68 calls it;
+it works as before.
 
-**⌘B** (Post › Shelf…) opens the shelf: **1–9** or ⏎ opens a post on it,
-**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post off, and esc closes
-it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
+Some posts you keep coming back to: a /now page, a reading log, a running
+list of links. **Save** them so you never have to search for them. **⌥⌘B**
+(Post › Save / Remove from Saved) saves the open post, or removes it. Saved
+posts are marked 📚 and stay at the top of the list, in your order, above a
+thin rule. When you search, the saved posts that match come first.
+
+**⌘B** (Post › Saved…) opens Saved: **1–9** or ⏎ opens a post in it,
+**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post out, and esc closes
+it. Any post of yours can be saved: a thread, a fragment, a draft or a
 scratch note, up to 50 of them. A withdrawn post leaves it.
 
-Other people's posts go on the shelf too: **+ Add to shelf** under a post in
-Reading (or on its card), and the **Shelf** lens in Reading's sources lists
-everything on it, in your order.
+Other people's posts can be saved too: **+ Save** under a post in Reading
+(or on its card; **✓ Saved** takes it out), and **Saved** in Reading's
+sources lists everything in it, in your order.
 
 With a blyg on studio 0.61 or later, the shelf syncs with your blyg, so the
 studio and your other computers share it. Changes made in two

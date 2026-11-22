@@ -207,7 +207,7 @@ fn a_subscriptions_menu_marks_that_source_from_anywhere(cx: &mut TestAppContext)
     let labels: Vec<String> =
         view.read_with(cx, |v, _| v.menu_items().into_iter().map(|i| i.0).collect());
     assert!(
-        labels.iter().any(|l| l == "Mark All Read in All…"),
+        labels.iter().any(|l| l == "Mark All Read in Feed…"),
         "{labels:?}"
     );
 }

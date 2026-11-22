@@ -412,6 +412,8 @@ impl MainView {
                 .child("Reading your blyg's settings…")
                 .into_any_element(),
         };
+        // --- reader order --- the Feed's order (studio 0.68's readerOrder).
+        let order = row(&p, "READER ORDER", self.render_reader_order_settings(cx));
         // --- background --- the blyg's Background rules (studio 0.61).
         let background = self
             .render_background_settings(cx)
@@ -421,6 +423,7 @@ impl MainView {
             .flex_col()
             .child(site_row)
             .child(row(&p, "CHANGELOG", changelog))
+            .child(order)
             .children(background)
             .into_any_element()
     }
