@@ -188,8 +188,10 @@ WebView2 download page.
   your default browser, Ctrl+Shift+B brings it back). It's a WebView2 with
   its own profile in `%LOCALAPPDATA%\Blygger\browser\webview2\`, so
   sign-ins survive a relaunch and stay apart from the preview. It has no
-  content blocking yet (🛡 is greyed out), and "Open posts on the author's
-  site" is Mac only.
+  content blocking yet (🛡 is greyed out). "Open posts on the author's site"
+  works on Windows too: the post's page takes the reading pane, in a
+  WebView2 like the browser pane's ([Read it on the author's
+  site](reading.md#read-it-on-the-authors-site)).
 - **Esc.** Esc closes the open sheet, palette, Menu or browser pane, as on
   the Mac, even when you last clicked inside a web page (the browser pane or
   the preview). A click anywhere else in the window takes the keyboard back
@@ -216,8 +218,8 @@ preview and the editor is simpler than on the Mac: when the preview hides or
 the window regains focus, the keyboard goes back to the editor.
 
 The browser pane has no content blocking on Windows yet: the block lists are
-compiled to WebKit's content rules, which WebView2 doesn't read. "Open posts
-on the author's site" is Mac only too.
+compiled to WebKit's content rules, which WebView2 doesn't read, so the
+author's-site view has none either.
 
 ### Uninstall on Windows
 
