@@ -65,3 +65,4 @@ goes once its mistake is a compile error):
 | no entries are written into `CHANGELOG.md` between releases (a change adds a fragment in `changes/unreleased/`) | `scripts/changelog-stitch.py check`, run by `blyg-core/tests/it/changelog_stitch.rs` (`the_repos_fragments_pass_check`) |
 | tests assert time only through `wait::Budget`, in ignored `timing_…` reports run by CI's non-blocking `timing` job (macOS only; Windows timing isn't measured); tests guarding an algorithm count work | `blyg-core/tests/it/timing_scan.rs` |
 | blyg-core's test-only hooks (`test-support`) are enabled only in `[dev-dependencies]` | `blyg-core/tests/it/crate_graph.rs` (`test_support_is_only_a_dev_dependency`) |
+| the contract Burrow targets is one its own guard accepts (widen `api::contract` in the change that vendors a new major) | `blyg-core/tests/it/contract_coverage.rs` (`burrow_accepts_the_vendored_contract`) |

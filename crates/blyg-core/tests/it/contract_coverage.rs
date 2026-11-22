@@ -12,8 +12,18 @@
 //!   field (`tangled_from` for `tangledFrom`) when that differs;
 //! - `enum:{where}={value}`: a test holds `"value"` within 3 lines of the
 //!   property or parameter it belongs to (a bare `"link"` is too common);
-//! - `param:{operationId}/{in}:{name}` and `header:{operationId}:{name}`
-//!   (response headers): a test holds `"name"`, any case.
+//! - `param:{operationId}/{in}:{name}`: a test holds `"name"` in the
+//!   contract's own case, or, for a query parameter, sends it in a query
+//!   string (`?name=` or `&name=`). Case matters: the Raw tab's label `"Raw"`
+//!   once counted as the query parameter `raw`, which Burrow never sends, so
+//!   the parameter's honest exemption failed and was deleted;
+//! - `header:{operationId}:{name}` (response headers) and a parameter sent in
+//!   a header: a test holds `"name"`, any case, as HTTP reads header names.
+//!
+//! A parameter isn't asked to sit near its route, as an enum value is near
+//! its property: requests are built by helpers, so a test seldom names both
+//! within a few lines (at studio 0.69 that rule left nearly every checked
+//! name uncovered, this one only the two `raw`s).
 //!
 //! Tests are `crates/*/tests/**.rs` and, in `src/`, `*_tests.rs`, `tests.rs`,
 //! files under a `tests/` directory, a `#[cfg(test)] mod x;` file and the rest
@@ -117,8 +127,12 @@ enum Rule {
     Property(String),
     /// value, and the property or parameter it belongs to.
     Enum(String, Option<String>),
-    /// A parameter or header name, any case.
+    /// A header name (a response header, or a parameter sent in a header),
+    /// any case.
     Name(String),
+    /// A path or query parameter's name, in the contract's case; `true` for
+    /// a query parameter, which a query string in a test also covers.
+    Param(String, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -239,11 +253,11 @@ fn items(doc: &Value) -> Items {
                     continue;
                 };
                 let at = format!("{id}/{place}:{name}");
-                out.add(
-                    format!("param:{at}"),
-                    Rule::Name(name.to_string()),
-                    route.clone(),
-                );
+                let rule = match place {
+                    "header" => Rule::Name(name.to_string()),
+                    _ => Rule::Param(name.to_string(), place == "query"),
+                };
+                out.add(format!("param:{at}"), rule, route.clone());
                 out.schema(&p["schema"], &at, Some(name));
             }
             for c in op["requestBody"]["content"]
@@ -450,6 +464,13 @@ fn has_path(text: &str, segs: &[String]) -> bool {
     })
 }
 
+/// A query string in a test that sends `name`: `?name=` or `&name=`.
+fn has_query(text: &str, name: &str) -> bool {
+    let sent = format!("{name}=");
+    text.match_indices(&sent)
+        .any(|(i, _)| text[..i].ends_with(['?', '&']))
+}
+
 struct Tests {
     files: Vec<String>,
     lower: Vec<String>,
@@ -457,7 +478,10 @@ struct Tests {
 
 impl Tests {
     fn load() -> Tests {
-        let files: Vec<String> = test_sources().into_iter().map(|x| x.1).collect();
+        Tests::of(test_sources().into_iter().map(|x| x.1).collect())
+    }
+
+    fn of(files: Vec<String>) -> Tests {
         let lower = files.iter().map(|t| t.to_ascii_lowercase()).collect();
         Tests { files, lower }
     }
@@ -478,6 +502,12 @@ impl Tests {
             Rule::Name(name) => {
                 let quoted = format!("\"{}\"", name.to_ascii_lowercase());
                 self.lower.iter().any(|t| t.contains(&quoted))
+            }
+            Rule::Param(name, query) => {
+                let quoted = format!("\"{name}\"");
+                self.files
+                    .iter()
+                    .any(|t| t.contains(&quoted) || (*query && has_query(t, name)))
             }
             Rule::Enum(value, parent) => {
                 let quoted = format!("\"{value}\"");
@@ -638,6 +668,24 @@ fn the_vendored_contract_is_the_targets() {
     );
 }
 
+/// The contract Burrow targets is one its own guard accepts. Commit 2bc36e8
+/// ("Target studio v0.68.0 (contract 6.1.0)", release 0.28.0's first)
+/// vendored contract 6.1.0 while `api::contract` accepted major 5 only:
+/// every test passed, and the released Burrow refused every 0.67+ studio
+/// (hotfix 0.27.3 widened the guard).
+#[test]
+fn burrow_accepts_the_vendored_contract() {
+    let doc = current();
+    let version = doc["info"]["version"]
+        .as_str()
+        .expect("openapi-current.json has info.version");
+    let verdict = blyg_core::api::contract(Some(version));
+    assert!(
+        verdict == blyg_core::api::Contract::Supported,
+        "openapi-current.json is contract {version}, which blyg_core::api::contract refuses ({verdict:?}): Burrow wouldn't sync with the studio it targets. Widen the guard (CONTRACT_MAJOR_NEWEST in crates/blyg-core/src/api/mod.rs) in the change that vendors the contract"
+    );
+}
+
 const BEGIN: &str = "# BEGIN baseline";
 const END: &str = "# END baseline";
 
@@ -704,6 +752,22 @@ fn the_matchers_read_tests_as_meant() {
         lower: vec![],
     };
     assert!(!far.covers(&Rule::Enum("link".into(), Some("relation".into()))));
+    // The past false cover: the Raw tab's label isn't the `raw` parameter.
+    let raw = Rule::Param("raw".into(), true);
+    let label = Tests::of(vec!["assert_eq!(tabs[4].label, \"Raw\");".into()]);
+    assert!(!label.covers(&raw));
+    let sent = Tests::of(vec!["api.get(\"/api/reading?limit=5&raw=true\")".into()]);
+    assert!(sent.covers(&raw));
+    assert!(Tests::of(vec!["(\"/api/reading?raw=true\")".into()]).covers(&raw));
+    assert!(Tests::of(vec!["query.push((\"raw\", \"true\"));".into()]).covers(&raw));
+    // Not a query string, and not this parameter's name.
+    assert!(!Tests::of(vec!["let raw=true; \"/x?draw=1&raws=2\"".into()]).covers(&raw));
+    // A path parameter is never read out of a query string.
+    assert!(!sent.covers(&Rule::Param("raw".into(), false)));
+    // Header names match in any case, as HTTP reads them.
+    let etag = Tests::of(vec!["resp.header(\"etag\")".into()]);
+    assert!(etag.covers(&Rule::Name("ETag".into())));
+    assert!(!etag.covers(&Rule::Param("ETag".into(), true)));
     let inline = "fn a() {}\n#[cfg(test)]\nfn helper() {}\n#[cfg(test)]\nmod tests {\n}\n";
     assert_eq!(inline_test_mod(inline), inline.find("#[cfg(test)]\nmod"));
 }
