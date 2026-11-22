@@ -395,11 +395,17 @@ impl Burrow {
         };
         let now = at(now_ms);
         self.set_read_state(key, Some(r.version));
-        let html = if r.content_html.trim().is_empty() {
-            blyg_render::render_markdown(&r.content_md)
-        } else {
-            crate::studio::sanitize::sanitize_at(&r.content_html, &r.origin)
-        };
+        // Someone else's words become `innerHTML`: through `sanitize_at`
+        // either way, the Markdown rendered here as much as the HTML they
+        // sent (a relative link would otherwise point at this origin).
+        let html = crate::studio::sanitize::sanitize_at(
+            &if r.content_html.trim().is_empty() {
+                blyg_render::render_markdown(&r.content_md)
+            } else {
+                r.content_html.clone()
+            },
+            &r.origin,
+        );
         let label = |rel: Relation, partial: bool| match (rel, partial) {
             (Relation::Stubs, _) => "↩ replies to",
             (Relation::Forks, _) => "⑂ forked from",

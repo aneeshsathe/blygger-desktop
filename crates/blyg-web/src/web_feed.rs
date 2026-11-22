@@ -10,7 +10,8 @@
 //!   with the settings at start; a choice here is shown at once and sent
 //!   (`PATCH /api/settings {readerOrder}`), and a refused one goes back to
 //!   what the blyg keeps. Without the setting (an older blyg, the demo) it
-//!   is chronological, the order this page always had, and a choice stays
+//!   is the studio's default, pace-layered (`ReaderOrder::default`, as
+//!   native's), and a choice stays
 //!   in this tab.
 //! - The places are worked out again on the next draw after the rows
 //!   change (`rows_changed`), over every held row, with no cached pins
@@ -50,7 +51,7 @@ pub struct WebFeed {
 impl Default for WebFeed {
     fn default() -> Self {
         WebFeed {
-            feed: RefCell::new(Feed::new(ReaderOrder::Newest)),
+            feed: RefCell::new(Feed::new(ReaderOrder::default())),
             stale: Cell::new(true),
             kept_on_blyg: false,
         }

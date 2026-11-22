@@ -140,7 +140,7 @@ Mentions, Agentic feed (a placeholder, as upstream), Saved (the shelf; its
 came in, withdrawn posts too, newest first). The Feed is in the blyg's
 `readerOrder`: pace-layered or chronological, switched in the sources pane
 and saved to the blyg with `PATCH /api/settings`. A blyg without the
-setting gets the chronological Feed, and a switch lasts only for that
+setting gets the studio's default, pace-layered, and a switch lasts only for that
 tab. The order's rules are the app's `reading/feed_vm.rs`, compiled
 unchanged (`src/web_feed.rs`).
 
