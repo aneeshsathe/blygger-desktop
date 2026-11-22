@@ -105,8 +105,20 @@ impl Web {
             base: base.into(),
             tok: tok.into(),
         };
+        // As `live.js` `start`: the settings (and with them the Feed's
+        // `readerOrder`), then the lists.
+        w.b.w_set_settings(&settings);
         w.refresh();
         w
+    }
+
+    /// The Feed in the list's own order, chronological, as chosen in the
+    /// sources pane (shown at once; the PATCH it asks for isn't sent, so
+    /// the blyg's setting stays as it was).
+    fn chronological(&mut self) {
+        let r: Value =
+            serde_json::from_str(&self.b.wr_set_reader_order("newest")).expect("an answer");
+        assert!(r.get("error").is_none(), "{r}");
     }
 
     /// A whole refresh: the items, then the reading list and hoppers.
@@ -213,6 +225,9 @@ fn web_reading_and_posts_follow_native_order() {
     wait_until("the backfill", Duration::from_secs(60), || held(&me));
 
     let mut web = Web::start(&url_a, &tok_a);
+    // The list's order (native's `vm::order`), not the pace-layered places
+    // laid over it, which `studio69_tests.rs` checks against blyg-core's.
+    web.chronological();
     let native = native_reading(&me);
     let shown = web.reading();
     assert_eq!(shown, native, "Burrow web lists Reading as native Burrow");
