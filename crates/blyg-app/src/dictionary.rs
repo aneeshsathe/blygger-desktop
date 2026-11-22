@@ -117,9 +117,14 @@ impl MainView {
         let me = cx.entity().downgrade();
         crate::composer::set_on_learn(
             std::sync::Arc::new(move |word: String, cx: &mut App| {
-                if let Some(v) = me.upgrade() {
-                    v.update(cx, |v, cx| v.dictionary_learn(word, cx));
-                }
+                // Deferred: the spelling menu answers inside the main
+                // window's own update.
+                let me = me.clone();
+                cx.defer(move |cx| {
+                    if let Some(v) = me.upgrade() {
+                        v.update(cx, |v, cx| v.dictionary_learn(word, cx));
+                    }
+                });
             }),
             cx,
         );

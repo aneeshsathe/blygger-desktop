@@ -23,20 +23,9 @@ use crate::shelf::Entry;
 /// The capabilities' operation name for the summary.
 pub const SUMMARIZE_OPERATION: &str = "summarizeCatchUp";
 
-/// Whether a capabilities answer's `operations` (an array of ids; a map is
-/// read by its keys) list `op`. The one place this crate reads them for
-/// studio 0.69's features (wave D's `api::offers` is the same rule).
-pub fn lists(capabilities: &Value, op: &str) -> bool {
-    match capabilities.get("operations") {
-        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(op)),
-        Some(Value::Object(m)) => m.contains_key(op),
-        _ => false,
-    }
-}
-
 /// Whether a capabilities answer offers the catch-up summary.
 pub fn serves_summary(capabilities: &Value) -> bool {
-    lists(capabilities, SUMMARIZE_OPERATION)
+    crate::api::offers(capabilities, SUMMARIZE_OPERATION)
 }
 
 /// One post the summary read, in the §5.9 reference shape (your own posts

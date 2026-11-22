@@ -38,12 +38,12 @@ pub const SOURCE_WORDS_MAX: usize = 20_000;
 /// Whether a capabilities answer offers the dictionary to read (a
 /// read-only token still gets the accepted words).
 pub fn serves(capabilities: &Value) -> bool {
-    crate::helpers::lists(capabilities, GET_OPERATION)
+    crate::api::offers(capabilities, GET_OPERATION)
 }
 
 /// Whether it offers changing a source's words.
 pub fn serves_write(capabilities: &Value) -> bool {
-    crate::helpers::lists(capabilities, PUT_OPERATION)
+    crate::api::offers(capabilities, PUT_OPERATION)
 }
 
 /// Whether a failed send keeps the queued edits ([`Pending`]), as the

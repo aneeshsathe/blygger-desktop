@@ -43,12 +43,12 @@ pub const TITLE_MAX: usize = 40;
 
 /// Whether a `GET /api/capabilities` answer offers editions to read.
 pub fn serves(capabilities: &Value) -> bool {
-    crate::helpers::lists(capabilities, GET_OPERATION)
+    crate::api::offers(capabilities, GET_OPERATION)
 }
 
 /// Whether it offers the feed list (`GET /api/agentic`).
 pub fn serves_feeds(capabilities: &Value) -> bool {
-    crate::helpers::lists(capabilities, LIST_OPERATION)
+    crate::api::offers(capabilities, LIST_OPERATION)
 }
 
 /// A title, name, headline or model's most characters, as read.

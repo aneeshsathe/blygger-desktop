@@ -11,12 +11,12 @@ impl Api {
     /// Whether this studio offers editions (its capabilities list
     /// `getAgentic`). Where wave D's `api::offers(caps, op)` fits.
     pub fn serves_agentic(&self) -> Result<bool> {
-        self.offers_op(crate::agentic::GET_OPERATION)
+        self.offers_all(&[crate::agentic::GET_OPERATION])
     }
 
     /// `GET /api/agentic`. `Ok(None)`: not offered here.
     pub fn agentic_feeds(&self) -> Result<Option<Vec<Feed>>> {
-        if !self.offers_op(crate::agentic::LIST_OPERATION)? {
+        if !self.offers_all(&[crate::agentic::LIST_OPERATION])? {
             return Ok(None);
         }
         match Self::optional(self.call("GET", "/api/agentic", None))? {

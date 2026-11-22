@@ -21,12 +21,12 @@ pub enum PutDictionary {
 impl Api {
     /// Whether this studio offers the dictionary to read.
     pub fn serves_dictionary(&self) -> Result<bool> {
-        self.offers_op(crate::dictionary::GET_OPERATION)
+        self.offers_all(&[crate::dictionary::GET_OPERATION])
     }
 
     /// Whether it offers changing a source's words.
     pub fn serves_dictionary_write(&self) -> Result<bool> {
-        self.offers_op(crate::dictionary::PUT_OPERATION)
+        self.offers_all(&[crate::dictionary::PUT_OPERATION])
     }
 
     /// `GET /api/dictionary`. `Ok(None)`: not offered here.
