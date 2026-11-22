@@ -2323,3 +2323,26 @@ fn the_0_15_step_lands_on_a_hopper(cx: &mut TestAppContext) {
     );
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
 }
+
+/// 0.28.0: cross-posting automatically, per post, has a step in the
+/// Extensions tour, right after the cross-post step, on Posts.
+#[test]
+fn the_extensions_tour_teaches_automatic_cross_posting() {
+    let step = STEPS
+        .iter()
+        .find(|s| s.id == "auto-crosspost")
+        .expect("a step for automatic cross-posting");
+    assert_eq!(step.since, "0.28.0");
+    assert!(matches!(step.setup, steps::Setup::Posts));
+    let tour = TOURS
+        .iter()
+        .find(|t| t.id == "extensions")
+        .expect("the Extensions tour");
+    let at = |id: &str| tour.steps.iter().position(|s| *s == id);
+    assert_eq!(
+        at("auto-crosspost"),
+        at("cross-post").map(|i| i + 1),
+        "{:?}",
+        tour.steps
+    );
+}
