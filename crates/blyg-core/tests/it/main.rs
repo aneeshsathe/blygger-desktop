@@ -20,6 +20,7 @@ mod crate_graph;
 mod doc_paths;
 mod e2e;
 mod lint_exceptions;
+mod list_prune_scan;
 mod newer_contract;
 mod no_git;
 mod personal_data;

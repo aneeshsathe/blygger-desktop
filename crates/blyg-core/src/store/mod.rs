@@ -1307,7 +1307,35 @@ impl Store {
 
     // ---------------------------------------------------------- subscriptions
 
-    pub fn replace_subscriptions(&self, subs: &[Subscription]) -> Result<bool> {
+    /// Hold the subscription list the blyg served. `prune`: whether its
+    /// lists may remove what's held here. Unless that's allowed, the
+    /// subscriptions it lacks stay, after it. Returns whether the store
+    /// changed, and the list now held.
+    pub fn take_served_subscriptions(
+        &self,
+        subs: &[Subscription],
+        prune: Prune,
+    ) -> Result<(bool, Vec<Subscription>)> {
+        let subs = if prune == Prune::Allowed {
+            subs.to_vec()
+        } else {
+            let held = self.subscriptions();
+            crate::sync::newer::keep_held(&held, subs.to_vec(), |a, b| a.id == b.id)
+        };
+        let changed = self.write_subscriptions(&subs)?;
+        Ok((changed, subs))
+    }
+
+    /// A subscription made here that the blyg's list doesn't show yet.
+    pub fn add_subscription(&self, sub: &Subscription) -> Result<()> {
+        let mut subs = self.subscriptions();
+        subs.push(sub.clone());
+        self.write_subscriptions(&subs)?;
+        Ok(())
+    }
+
+    /// Write the table whole: every row not in `subs` goes.
+    fn write_subscriptions(&self, subs: &[Subscription]) -> Result<bool> {
         if self.subscriptions() == subs {
             return Ok(false);
         }
@@ -1352,7 +1380,7 @@ impl Store {
             if !f(&mut subs[pos]) {
                 subs.remove(pos);
             }
-            self.replace_subscriptions(&subs)?;
+            self.write_subscriptions(&subs)?;
         }
         Ok(())
     }

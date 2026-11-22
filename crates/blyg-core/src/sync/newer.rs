@@ -19,7 +19,9 @@
 //!   a removal that may come long after the session's first check (a walk
 //!   that spans pulls, a subscription list that drops one:
 //!   [`Engine::recheck_contract`]), so a studio upgraded mid-session is
-//!   seen first. Every removal a list drives asks it:
+//!   seen first. A store function that deletes list rows names the
+//!   decision, is private, or is on a reviewed list
+//!   (`tests/it/list_prune_scan.rs`). What a newer contract's lists leave:
 //!   - your items (`Store::merge_all`);
 //!   - reading rows after a whole walk (`walk::Read`'s `Step::Done`, and
 //!     `Store::prune_reading` beneath it);
@@ -30,8 +32,9 @@
 //!   - hoppers and memberships (`Store::replace_hoppers`);
 //!   - read marks another device seems to have cleared
 //!     (`Store::reconcile_read_state`);
-//!   - subscriptions, on every path that replaces the list
-//!     ([`Engine::hold_subscriptions`]), and contacts (by id, else handle:
+//!   - subscriptions (`Store::take_served_subscriptions`, the one way a
+//!     served list reaches the table; [`Engine::hold_subscriptions`] checks
+//!     the contract again first), and contacts (by id, else handle:
 //!     [`same_contact`]), kept here by [`keep_held`];
 //!   - the shelf, shown as the union of the blyg's and this side's, less
 //!     what this side took off since the blyg last agreed.
@@ -87,21 +90,22 @@ pub(crate) struct HeldSubscriptions {
 }
 
 impl Engine {
-    /// Hold the blyg's subscription list here. Every path that replaces it
-    /// with the blyg's (a pull, a refresh, a subscribe, a rename) comes
-    /// through here: one that would drop a subscription checks the
-    /// contract again first, and on a newer one keeps what the list lacks.
+    /// Hold the blyg's subscription list here (a pull, a refresh, a
+    /// subscribe, a rename): one that would drop a subscription checks the
+    /// contract again first, and the store keeps what the list lacks
+    /// unless its lists may prune.
     pub(crate) fn hold_subscriptions(&self, subs: Vec<Subscription>) -> Result<HeldSubscriptions> {
         let held = self.store.subscriptions();
         let drops = held.iter().any(|h| !subs.iter().any(|s| s.id == h.id));
-        let subs = if drops && self.recheck_contract() == Prune::Withheld {
-            keep_held(&held, subs, |a, b| a.id == b.id)
+        let prune = if drops {
+            self.recheck_contract()
         } else {
-            subs
+            self.store.lists_prune()
         };
+        let (changed, now) = self.store.take_served_subscriptions(&subs, prune)?;
         Ok(HeldSubscriptions {
-            differ: walk::subscriptions_differ(&held, &subs),
-            changed: self.store.replace_subscriptions(&subs)?,
+            differ: walk::subscriptions_differ(&held, &now),
+            changed,
         })
     }
 

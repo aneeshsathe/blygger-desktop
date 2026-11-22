@@ -1545,9 +1545,7 @@ impl Backend for LiveBackend {
                     title_follows_source: title.is_none(),
                     poll: Default::default(),
                 };
-                let mut all = self.e().store.subscriptions();
-                all.push(s.clone());
-                self.e().store.replace_subscriptions(&all)?;
+                self.e().store.add_subscription(&s)?;
                 s
             }
         };

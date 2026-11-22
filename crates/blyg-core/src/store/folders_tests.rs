@@ -118,7 +118,7 @@ fn deleting_a_folder_unfiles_its_subscriptions() {
 
 #[test]
 fn folders_survive_a_subscriptions_refresh() {
-    // `replace_subscriptions` rewrites the table on every pull; membership
+    // `take_served_subscriptions` rewrites the table on every pull; membership
     // is keyed by id, so it outlives that.
     let s = store();
     let f = s.create_folder("Friends").unwrap();
@@ -133,12 +133,14 @@ fn folders_survive_a_subscriptions_refresh() {
         title_follows_source: true,
         poll: Default::default(),
     };
-    s.replace_subscriptions(std::slice::from_ref(&sub)).unwrap();
+    s.take_served_subscriptions(std::slice::from_ref(&sub), crate::api::Prune::Allowed)
+        .unwrap();
     s.set_subscription_folder(&SubId::from("sub-rue"), Some(&f.id))
         .unwrap();
     let mut renamed = sub.clone();
     renamed.title = "Rue's notes".into();
-    s.replace_subscriptions(&[renamed]).unwrap();
+    s.take_served_subscriptions(&[renamed], crate::api::Prune::Allowed)
+        .unwrap();
     assert_eq!(s.subscription_folders().get("sub-rue"), Some(&f.id));
 }
 

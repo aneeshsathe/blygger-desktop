@@ -51,7 +51,7 @@ fn seeded(dir: &Path) -> (Store, std::path::PathBuf) {
     let path = dir.join("blygger.db");
     let store = Store::open(&path).unwrap();
     store
-        .replace_subscriptions(&synth::subscriptions())
+        .take_served_subscriptions(&synth::subscriptions(), blyg_core::api::Prune::Allowed)
         .unwrap();
     let rows = synth::reading(ROWS, 1);
     let kinds = synth::kinds();
