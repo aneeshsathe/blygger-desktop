@@ -2608,6 +2608,16 @@ impl Backend for LiveBackend {
         Ok(self.taught_record().words().to_vec())
     }
 
+    fn dictionary_pending(&self) -> Result<crate::dictionary::Pending> {
+        Ok(crate::dictionary::Pending::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::PENDING_META)
+                .as_deref(),
+            self.dictionary_blyg(),
+        ))
+    }
+
     fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
         let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
         let mut t = self.taught_record();

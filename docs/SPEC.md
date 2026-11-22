@@ -312,8 +312,9 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   and the sheet says it can't add words. Burrow records the words its Learn
   Spelling taught the system's list (store meta `dictionary.taught`, per
   blyg; `Backend::dictionary_taught`), and a read or write of the dictionary
-  unlearns those that have left the owner's words, here or in Studio
-  (`dictionary::left`, `SpellEngine::unlearn`, NSSpellChecker's
+  unlearns those that have left the owner's words, here or in Studio (a
+  word still queued to be added hasn't; one queued to be taken out has:
+  `dictionary::left`, `SpellEngine::unlearn`, NSSpellChecker's
   `unlearnWord:`). A word the system learned any other way is never
   unlearned. **Blyg › Dictionary…** lists your words (⏎ adds, ⌘⌫ or ×
   takes out) and names installed sets. Studio's spellcheck extension (its

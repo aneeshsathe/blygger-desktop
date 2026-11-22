@@ -314,20 +314,21 @@ fn queued_words_belong_to_the_blyg_they_were_learned_for() {
 #[test]
 fn only_words_burrow_taught_and_that_left_the_blyg_are_unlearned() {
     use blyg_core::Backend;
-    use blyg_core::dictionary::left;
+    use blyg_core::dictionary::{Pending, left};
     let d = sample();
+    let none = Pending::parse(None, BLYG_A);
     let taught = vec!["impyrt".to_string(), "harbourside".into()];
     assert_eq!(
-        left(&taught, &d),
+        left(&taught, &d, &none),
         ["harbourside"],
         "still in the blyg's: kept"
     );
     assert!(
-        left(&[], &d).is_empty(),
+        left(&[], &d, &none).is_empty(),
         "nothing taught, nothing taken out"
     );
     assert_eq!(
-        left(&["kedge".to_string()], &d),
+        left(&["kedge".to_string()], &d, &none),
         ["kedge"],
         "an installed set isn't the owner's words"
     );
@@ -335,6 +336,7 @@ fn only_words_burrow_taught_and_that_left_the_blyg_are_unlearned() {
     let dir = tempfile::tempdir().unwrap();
     let b = offline_at(dir.path(), BLYG_A);
     assert!(b.dictionary_taught().unwrap().is_empty());
+    assert!(b.dictionary_pending().unwrap().is_empty());
     b.dictionary_teach("harbourside", true).unwrap();
     b.dictionary_teach("impyrt", true).unwrap();
     b.dictionary_teach("impyrt", true).unwrap();
@@ -355,5 +357,34 @@ fn only_words_burrow_taught_and_that_left_the_blyg_are_unlearned() {
             .unwrap()
             .is_empty(),
         "another blyg's record is never this one's"
+    );
+}
+
+/// A taught word whose send was kept (offline, a 429, conflicts that kept
+/// coming) isn't in the blyg's words yet, but it hasn't left them: it's
+/// still on its way, so a read in between doesn't unlearn it. A taught
+/// word waiting to be taken out has left, as far as this computer goes.
+#[test]
+fn a_taught_word_still_on_its_way_is_not_unlearned() {
+    use blyg_core::Backend;
+    use blyg_core::dictionary::{Pending, left};
+    let d = sample();
+    let mut queued = Pending::parse(None, BLYG_A);
+    queued.push(Edit::Add("harbourside".into()));
+    queued.push(Edit::Remove("impyrt".into()));
+    let taught = vec!["harbourside".to_string(), "impyrt".into()];
+    assert_eq!(
+        left(&taught, &d, &queued),
+        ["impyrt"],
+        "the add waits; the removal counts as gone"
+    );
+
+    // The backend hands out this blyg's queue.
+    let dir = tempfile::tempdir().unwrap();
+    let b = offline_at(dir.path(), "http://127.0.0.1:9");
+    let _ = b.edit_dictionary(&Edit::Add("harbourside".into()));
+    assert_eq!(
+        b.dictionary_pending().unwrap().edits(),
+        &[Edit::Add("harbourside".into())]
     );
 }
