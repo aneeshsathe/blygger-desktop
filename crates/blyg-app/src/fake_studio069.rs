@@ -22,6 +22,7 @@ pub fn dictionary() -> Dictionary {
                 words: ["bosun", "gunwale", "halyard"].map(String::from).to_vec(),
             },
         ],
+        writable: true,
     }
 }
 

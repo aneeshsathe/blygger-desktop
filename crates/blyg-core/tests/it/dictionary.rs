@@ -10,6 +10,24 @@ use blyg_core::dictionary::{
 };
 use serde_json::json;
 
+const BLYG_A: &str = "https://blyg.example.com";
+const BLYG_B: &str = "https://notes.example.org";
+
+/// A `LiveBackend` on `dir` for the blyg at `url`, sync worker off. Every
+/// URL these tests open is unreachable: each call is offline.
+fn offline_at(dir: &std::path::Path, url: &str) -> blyg_core::LiveBackend {
+    blyg_core::LiveBackend::open_with(
+        dir,
+        url,
+        "unused-test-credential",
+        blyg_core::SyncOptions {
+            start_worker: false,
+            ..blyg_core::SyncOptions::default()
+        },
+    )
+    .unwrap()
+}
+
 fn sample() -> Dictionary {
     parse(&json!({
         "sources": [
@@ -179,7 +197,7 @@ fn words_learned_at_once_are_all_kept() {
         t.join().unwrap();
     }
     let store = Store::open(&dir.path().join("blygger.db")).unwrap();
-    let p = Pending::parse(store.meta(PENDING_META).as_deref());
+    let p = Pending::parse(store.meta(PENDING_META).as_deref(), "http://127.0.0.1:9");
     let mut kept: Vec<String> = p.edits().iter().map(Edit::word).collect();
     kept.sort();
     assert_eq!(kept, words);
@@ -192,7 +210,7 @@ fn words_learned_at_once_are_all_kept() {
 #[test]
 fn queued_edits_keep_the_last_for_each_word_and_round_trip() {
     use blyg_core::dictionary::Pending;
-    let mut p = Pending::parse(None);
+    let mut p = Pending::parse(None, BLYG_A);
     assert!(p.is_empty());
     p.push(Edit::Add("tidepool".into()));
     p.push(Edit::Add("gunwale".into()));
@@ -201,14 +219,27 @@ fn queued_edits_keep_the_last_for_each_word_and_round_trip() {
         p.edits(),
         &[Edit::Add("gunwale".into()), Edit::Remove("tidepool".into())]
     );
-    let back = Pending::parse(Some(&p.to_meta()));
+    let back = Pending::parse(Some(&p.to_meta()), BLYG_A);
     assert_eq!(back, p);
+    assert_eq!(
+        Pending::parse(Some(&p.to_meta()), "https://blyg.example.com/").edits(),
+        p.edits(),
+        "the same blyg, written another way"
+    );
+    assert!(
+        Pending::parse(Some(&p.to_meta()), BLYG_B).is_empty(),
+        "another blyg's words are never its"
+    );
     let held = vec!["tidepool".to_string(), "blyg".into()];
     assert_eq!(
         back.apply(&held),
         vec!["blyg".to_string(), "gunwale".into()]
     );
-    assert!(Pending::parse(Some("not json")).is_empty());
+    assert!(Pending::parse(Some("not json"), BLYG_A).is_empty());
+    assert!(
+        Pending::parse(Some(r#"[{"op":"add","word":"tidepool"}]"#), BLYG_A).is_empty(),
+        "a queue that names no blyg is no blyg's"
+    );
 }
 
 /// A real `LiveBackend` with the sync worker off, pointed at the discard
@@ -244,6 +275,85 @@ fn a_word_learned_offline_waits_on_this_computer() {
     assert!(b.dictionary().is_err());
     drop(b);
     let store = Store::open(&dir.path().join("blygger.db")).unwrap();
-    let p = Pending::parse(store.meta(PENDING_META).as_deref());
+    let p = Pending::parse(store.meta(PENDING_META).as_deref(), "http://127.0.0.1:9");
     assert_eq!(p.edits(), &[Edit::Add("tidepool".into())]);
+}
+
+/// A database opened for one blyg and later for another (an install from
+/// before the data dir named its blyg, or a changed `blyg-url`): the words
+/// queued for the first are never the second's. Its own word waits alone,
+/// and the first blyg's queue is gone rather than sent to the wrong one.
+#[test]
+fn queued_words_belong_to_the_blyg_they_were_learned_for() {
+    use blyg_core::Backend;
+    use blyg_core::dictionary::{PENDING_META, Pending};
+    use blyg_core::store::Store;
+    const A: &str = "http://127.0.0.1:9";
+    const B: &str = "http://localhost:9";
+    let dir = tempfile::tempdir().unwrap();
+    let a = offline_at(dir.path(), A);
+    let _ = a.edit_dictionary(&Edit::Add("tidepool".into()));
+    drop(a);
+    let b = offline_at(dir.path(), B);
+    let _ = b.edit_dictionary(&Edit::Add("gunwale".into()));
+    let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let meta = store.meta(PENDING_META);
+    assert_eq!(
+        Pending::parse(meta.as_deref(), B).edits(),
+        &[Edit::Add("gunwale".into())],
+        "only its own word"
+    );
+    assert!(Pending::parse(meta.as_deref(), A).is_empty());
+}
+
+/// Burrow keeps a record of the words its Learn Spelling added to this
+/// computer's spelling list, per blyg. A read of the dictionary unlearns
+/// those that have left the owner's words (taken out in Studio, say), and
+/// nothing else: a word this computer learned some other way is never
+/// Burrow's to take out.
+#[test]
+fn only_words_burrow_taught_and_that_left_the_blyg_are_unlearned() {
+    use blyg_core::Backend;
+    use blyg_core::dictionary::left;
+    let d = sample();
+    let taught = vec!["impyrt".to_string(), "harbourside".into()];
+    assert_eq!(
+        left(&taught, &d),
+        ["harbourside"],
+        "still in the blyg's: kept"
+    );
+    assert!(
+        left(&[], &d).is_empty(),
+        "nothing taught, nothing taken out"
+    );
+    assert_eq!(
+        left(&["kedge".to_string()], &d),
+        ["kedge"],
+        "an installed set isn't the owner's words"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let b = offline_at(dir.path(), BLYG_A);
+    assert!(b.dictionary_taught().unwrap().is_empty());
+    b.dictionary_teach("harbourside", true).unwrap();
+    b.dictionary_teach("impyrt", true).unwrap();
+    b.dictionary_teach("impyrt", true).unwrap();
+    let mut t = b.dictionary_taught().unwrap();
+    t.sort();
+    assert_eq!(t, ["harbourside", "impyrt"], "kept once");
+    b.dictionary_teach("harbourside", false).unwrap();
+    assert_eq!(b.dictionary_taught().unwrap(), ["impyrt"]);
+    drop(b);
+    assert_eq!(
+        offline_at(dir.path(), BLYG_A).dictionary_taught().unwrap(),
+        ["impyrt"],
+        "kept across a restart"
+    );
+    assert!(
+        offline_at(dir.path(), BLYG_B)
+            .dictionary_taught()
+            .unwrap()
+            .is_empty(),
+        "another blyg's record is never this one's"
+    );
 }

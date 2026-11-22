@@ -237,8 +237,10 @@ struct State {
     trail_seq: u64,
     // --- access-ai --- client access and the blyg's AI settings.
     access_ai: access_ai_seed::Seed,
-    // --- dictionary --- the blyg's dictionary (studio 0.69).
+    // --- dictionary --- the blyg's dictionary (studio 0.69), and the words
+    // Learn Spelling taught this computer.
     dictionary: blyg_core::dictionary::Dictionary,
+    dictionary_taught: Vec<String>,
     // --- site --- the public site's settings (`blyg_core::site`).
     site: blyg_core::site::SiteConfig,
     // --- contacts --- the address book and what the blyg sent.
@@ -441,6 +443,7 @@ impl FakeBackend {
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
                 dictionary: studio069::dictionary(),        // --- dictionary ---
+                dictionary_taught: Vec::new(),              // --- dictionary ---
                 site: fake_site(),                          // --- site ---
                 book: Default::default(),                   // --- contacts ---
                 upkeep: Default::default(),                 // --- upkeep ---
@@ -732,6 +735,14 @@ impl FakeBackend {
 
     pub fn is_offline(&self) -> bool {
         self.lock().offline
+    }
+
+    /// --- dictionary --- A sign-in that may read the dictionary but not
+    /// change it (`false`: the capabilities don't list
+    /// `putDictionarySource`).
+    #[cfg(test)]
+    pub fn set_dictionary_writable(&self, writable: bool) {
+        self.lock().dictionary.writable = writable;
     }
 
     /// Simulate the network dropping / coming back. Coming back flushes.
@@ -3242,6 +3253,10 @@ impl Backend for FakeBackend {
         }
         let mut st = self.lock();
         let d = &mut st.dictionary;
+        if !d.writable {
+            // A read-only sign-in: nothing sent.
+            return Ok(d.clone());
+        }
         let mine = blyg_core::dictionary::apply(d.owner_words(), edit);
         d.sources
             .retain(|s| s.source != blyg_core::dictionary::OWNER);
@@ -3254,6 +3269,19 @@ impl Backend for FakeBackend {
         );
         d.revision += 1;
         Ok(d.clone())
+    }
+
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(self.lock().dictionary_taught.clone())
+    }
+
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let mut st = self.lock();
+        st.dictionary_taught.retain(|w| w != word);
+        if taught {
+            st.dictionary_taught.push(word.to_string());
+        }
+        Ok(())
     }
 
     fn summarize_catch_up(

@@ -1505,6 +1505,19 @@ pub trait Backend: Send + Sync {
         ))
     }
 
+    /// Local: the words Burrow's Learn Spelling taught this computer's
+    /// spelling list for this blyg (`crate::dictionary::Taught`): the only
+    /// words Burrow ever unlearns there.
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    /// Local: record `word` as taught (`true`) or forget it.
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let _ = (word, taught);
+        Ok(())
+    }
+
     /// Remote: the blyg's summary of the conversation `entry` quotes
     /// (`POST /api/helpers/catch-up-summary`), written by its text helpers
     /// model once per set of versions.

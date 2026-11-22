@@ -67,6 +67,10 @@ pub struct Source {
 pub struct Dictionary {
     pub sources: Vec<Source>,
     pub revision: u64,
+    /// Whether this sign-in may change it (the capabilities list
+    /// [`PUT_OPERATION`]). A read-only sign-in's Learn Spelling stays on
+    /// this computer: nothing is sent or queued.
+    pub writable: bool,
 }
 
 impl Dictionary {
@@ -104,7 +108,13 @@ pub fn parse(v: &Value) -> Option<Dictionary> {
             })
         })
         .collect();
-    Some(Dictionary { sources, revision })
+    // The answer doesn't say; `Api::dictionary` sets it from the
+    // capabilities.
+    Some(Dictionary {
+        sources,
+        revision,
+        writable: true,
+    })
 }
 
 /// Why a word can't go in the dictionary, or `None` when it can (studio's
@@ -166,18 +176,43 @@ fn sorted(mut words: Vec<String>) -> Vec<String> {
 /// reached ([`Pending`], JSON).
 pub const PENDING_META: &str = "dictionary.pending";
 
+/// A meta value kept for one blyg: `{blyg, items}`. A database is one
+/// blyg's (`config::blygs::data_dir_for`), but one opened for another blyg
+/// (an install from before the data dir named its blyg, a changed
+/// `blyg-url`) must never hand the first blyg's words to the second.
+fn keyed_items(meta: Option<&str>, blyg: &str) -> Vec<Value> {
+    let Some(v) = meta.and_then(|m| serde_json::from_str::<Value>(m).ok()) else {
+        return Vec::new();
+    };
+    match v.get("blyg").and_then(Value::as_str) {
+        Some(b) if crate::config::blygs::same(b, blyg) => v
+            .get("items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        // Another blyg's, or naming none: not this one's.
+        _ => Vec::new(),
+    }
+}
+
+fn keyed_meta(blyg: &str, items: Vec<Value>) -> String {
+    json!({ "blyg": blyg, "items": items }).to_string()
+}
+
 /// Edits waiting for the blyg: Learn Spelling (or the Dictionary sheet)
-/// offline. Kept in the store's meta ([`PENDING_META`]) and sent, applied
-/// onto what the blyg holds then, by the next read of the dictionary.
+/// offline. Kept in the store's meta ([`PENDING_META`]) for the blyg they
+/// were made for, and sent, applied onto what it holds then, by the next
+/// read of its dictionary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Pending(Vec<Edit>);
+pub struct Pending {
+    blyg: String,
+    edits: Vec<Edit>,
+}
 
 impl Pending {
-    /// From the meta's value; missing or unreadable is an empty queue.
-    pub fn parse(meta: Option<&str>) -> Pending {
-        let Some(v) = meta.and_then(|m| serde_json::from_str::<Value>(m).ok()) else {
-            return Pending::default();
-        };
+    /// `blyg`'s queue from the meta's value; missing, unreadable or
+    /// another blyg's is an empty queue.
+    pub fn parse(meta: Option<&str>, blyg: &str) -> Pending {
         let edit = |e: &Value| -> Option<Edit> {
             let w = e.get("word")?.as_str()?.to_string();
             match e.get("op")?.as_str()? {
@@ -186,52 +221,116 @@ impl Pending {
                 _ => None,
             }
         };
-        Pending(
-            v.as_array()
-                .map(|a| a.iter().filter_map(edit).collect())
-                .unwrap_or_default(),
-        )
+        Pending {
+            blyg: blyg.to_string(),
+            edits: keyed_items(meta, blyg).iter().filter_map(edit).collect(),
+        }
     }
 
     /// The meta's value.
     pub fn to_meta(&self) -> String {
-        Value::Array(
-            self.0
-                .iter()
-                .map(|e| {
-                    let op = if matches!(e, Edit::Add(_)) {
-                        "add"
-                    } else {
-                        "remove"
-                    };
-                    json!({ "op": op, "word": e.word() })
-                })
-                .collect(),
-        )
-        .to_string()
+        let items = self
+            .edits
+            .iter()
+            .map(|e| {
+                let op = if matches!(e, Edit::Add(_)) {
+                    "add"
+                } else {
+                    "remove"
+                };
+                json!({ "op": op, "word": e.word() })
+            })
+            .collect();
+        keyed_meta(&self.blyg, items)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.edits.is_empty()
     }
 
     pub fn edits(&self) -> &[Edit] {
-        &self.0
+        &self.edits
     }
 
     /// One more; it replaces an earlier edit of the same word.
     pub fn push(&mut self, edit: Edit) {
         let w = edit.word();
-        self.0.retain(|e| e.word() != w);
-        self.0.push(edit);
+        self.edits.retain(|e| e.word() != w);
+        self.edits.push(edit);
     }
 
     /// `words` with every queued edit applied, in order.
     pub fn apply(&self, words: &[String]) -> Vec<String> {
-        self.0
+        self.edits
             .iter()
             .fold(sorted(words.to_vec()), |out, e| apply(&out, e))
     }
+
+    /// The words it adds.
+    pub fn added(&self) -> impl Iterator<Item = String> + '_ {
+        self.edits
+            .iter()
+            .filter(|e| matches!(e, Edit::Add(_)))
+            .map(Edit::word)
+    }
+}
+
+/// The store meta key recording the words Burrow's Learn Spelling added
+/// to this computer's spelling list ([`Taught`], JSON), per blyg.
+pub const TAUGHT_META: &str = "dictionary.taught";
+
+/// The words Burrow's Learn Spelling taught this computer's spelling list
+/// for a blyg. Only these are ever unlearned here (a word that left the
+/// owner's words: [`left`]); a word this computer learned any other way is
+/// never Burrow's to take out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Taught {
+    blyg: String,
+    words: Vec<String>,
+}
+
+impl Taught {
+    /// `blyg`'s record from the meta's value (another blyg's is empty).
+    pub fn parse(meta: Option<&str>, blyg: &str) -> Taught {
+        Taught {
+            blyg: blyg.to_string(),
+            words: keyed_items(meta, blyg)
+                .iter()
+                .filter_map(|w| w.as_str().map(str::to_string))
+                .collect(),
+        }
+    }
+
+    pub fn to_meta(&self) -> String {
+        keyed_meta(
+            &self.blyg,
+            self.words.iter().map(|w| Value::from(w.as_str())).collect(),
+        )
+    }
+
+    pub fn words(&self) -> &[String] {
+        &self.words
+    }
+
+    /// Record `word` as taught (`true`, once) or forget it.
+    pub fn set(&mut self, word: &str, taught: bool) {
+        let w = crate::text::nfc(word.trim()).into_owned();
+        self.words.retain(|x| *x != w);
+        if taught {
+            self.words.push(w);
+        }
+    }
+}
+
+/// The taught words that have left the owner's words: the ones to unlearn
+/// on this computer (and forget).
+pub fn left(taught: &[String], d: &Dictionary) -> Vec<String> {
+    let owner: HashSet<&str> = d.owner_words().iter().map(String::as_str).collect();
+    taught
+        .iter()
+        .filter(|w| !owner.contains(w.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// The `PUT /api/dictionary/{source}` body.

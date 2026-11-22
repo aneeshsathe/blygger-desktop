@@ -289,6 +289,18 @@ impl LiveBackend {
             let Some(mut d) = self.e().track(api.dictionary())? else {
                 return Ok(None);
             };
+            if !d.writable {
+                // A read-only sign-in: words queued before Burrow knew stay
+                // on this computer only, so they were never Burrow's to
+                // unlearn either.
+                let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+                let mut taught = self.taught_record();
+                for w in queued.added() {
+                    taught.set(&w, false);
+                }
+                store.set_meta(crate::dictionary::TAUGHT_META, &taught.to_meta())?;
+                return Ok(Some(d));
+            }
             for _ in 0..3 {
                 let words = queued.apply(d.owner_words());
                 if words.len() > SOURCE_WORDS_MAX {
@@ -312,11 +324,32 @@ impl LiveBackend {
         // An edit queued meanwhile (another thread) stays for the next send.
         let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
         if !matches!(&sent, Err(e) if crate::dictionary::keeps_queue(e))
-            && store.meta(PENDING_META).as_deref() == Some(queued.to_meta().as_str())
+            && crate::dictionary::Pending::parse(
+                store.meta(PENDING_META).as_deref(),
+                self.dictionary_blyg(),
+            ) == *queued
         {
             store.delete_meta(PENDING_META)?;
         }
         sent
+    }
+
+    /// --- dictionary --- This blyg's base URL: the queue and the taught
+    /// record are kept for it alone.
+    fn dictionary_blyg(&self) -> &str {
+        self.e().api.base_url()
+    }
+
+    /// --- dictionary --- The words Learn Spelling taught this computer
+    /// for this blyg (`dictionary::Taught`).
+    fn taught_record(&self) -> crate::dictionary::Taught {
+        crate::dictionary::Taught::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::TAUGHT_META)
+                .as_deref(),
+            self.dictionary_blyg(),
+        )
     }
 
     /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
@@ -2535,6 +2568,7 @@ impl Backend for LiveBackend {
                 .store
                 .meta(crate::dictionary::PENDING_META)
                 .as_deref(),
+            self.dictionary_blyg(),
         );
         if queued.is_empty() {
             return self.e().track(self.e().api.dictionary());
@@ -2553,17 +2587,40 @@ impl Backend for LiveBackend {
             return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
         }
         let store = &self.engine.store;
+        let api = &self.e().api;
+        // A read-only sign-in: nothing to send or queue (offline, Burrow
+        // can't tell yet, so it queues and the next read drops it).
+        if let Ok(false) = self.e().track(api.serves_dictionary_write()) {
+            return self
+                .e()
+                .track(api.dictionary())?
+                .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()));
+        }
         // One read-change-write of the queue at a time (two quick Learn
         // Spellings on their own threads would otherwise drop one).
         let queued = {
             let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
-            let mut queued = Pending::parse(store.meta(PENDING_META).as_deref());
+            let mut queued =
+                Pending::parse(store.meta(PENDING_META).as_deref(), self.dictionary_blyg());
             queued.push(edit.clone());
             store.set_meta(PENDING_META, &queued.to_meta())?;
             queued
         };
         self.send_dictionary(&queued)?
             .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))
+    }
+
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(self.taught_record().words().to_vec())
+    }
+
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = self.taught_record();
+        t.set(word, taught);
+        self.engine
+            .store
+            .set_meta(crate::dictionary::TAUGHT_META, &t.to_meta())
     }
 
     fn summarize_catch_up(

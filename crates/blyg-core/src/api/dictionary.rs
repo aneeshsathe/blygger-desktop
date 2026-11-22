@@ -29,15 +29,18 @@ impl Api {
         self.offers_all(&[crate::dictionary::PUT_OPERATION])
     }
 
-    /// `GET /api/dictionary`. `Ok(None)`: not offered here.
+    /// `GET /api/dictionary`. `Ok(None)`: not offered here. Its `writable`
+    /// says whether this sign-in may change it (the capabilities, cached).
     pub fn dictionary(&self) -> Result<Option<Dictionary>> {
         if !self.serves_dictionary()? {
             return Ok(None);
         }
-        match Self::optional(self.call("GET", "/api/dictionary", None))? {
-            Some(v) => parse(&v).map(Some).ok_or_else(unexpected),
-            None => Ok(None),
-        }
+        let Some(v) = Self::optional(self.call("GET", "/api/dictionary", None))? else {
+            return Ok(None);
+        };
+        let mut d = parse(&v).ok_or_else(unexpected)?;
+        d.writable = self.serves_dictionary_write()?;
+        Ok(Some(d))
     }
 
     /// `PUT /api/dictionary/{source} {words, expectedRevision}`: replace one
