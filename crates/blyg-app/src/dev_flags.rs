@@ -364,4 +364,148 @@ mod tests {
             DevFlags::parse(&|k| (k == "BLYGGER_TEST_SPELLING").then(|| OsString::from("linux")));
         assert!(bad.is_err_and(|e| e.contains("BLYGGER_TEST_SPELLING=linux")));
     }
+
+    // --- variables this build ignores ---
+
+    fn run(names: &[&str], debug: bool) -> Vec<Ignored> {
+        ignored(names.iter().map(|n| String::from(*n)), debug)
+    }
+
+    fn one(name: &str, why: Why) -> Vec<Ignored> {
+        vec![Ignored {
+            name: name.into(),
+            why,
+        }]
+    }
+
+    /// The real instance: `BLYGGER_TEST_SPELLING=windows` was read only by
+    /// tests, so the app showed Mac wording and nobody was told. A name only
+    /// the test suite reads is said in every build.
+    #[test]
+    fn a_name_only_tests_read_is_reported_in_every_build() {
+        for debug in [true, false] {
+            assert_eq!(
+                run(&["BLYGGER_UPDATE_DOCS"], debug),
+                one("BLYGGER_UPDATE_DOCS", Why::TestsOnly)
+            );
+        }
+    }
+
+    #[test]
+    fn a_debug_only_name_is_reported_in_a_release_build_only() {
+        assert_eq!(run(&["BLYGGER_UPDATE_URL"], true), vec![]);
+        assert_eq!(
+            run(&["BLYGGER_UPDATE_URL"], false),
+            one("BLYGGER_UPDATE_URL", Why::DebugOnly)
+        );
+    }
+
+    #[test]
+    fn a_misspelt_name_is_unknown_and_says_what_it_may_mean() {
+        for debug in [true, false] {
+            assert_eq!(
+                run(&["BLYGGER_FAKEE"], debug),
+                one(
+                    "BLYGGER_FAKEE",
+                    Why::Unknown {
+                        did_you_mean: Some("BLYGGER_FAKE")
+                    }
+                )
+            );
+        }
+        assert_eq!(
+            run(&["BLYGGER_NOTHING_LIKE_ANY_NAME"], true),
+            one(
+                "BLYGGER_NOTHING_LIKE_ANY_NAME",
+                Why::Unknown { did_you_mean: None }
+            )
+        );
+    }
+
+    #[test]
+    fn names_another_crate_or_a_script_reads_and_always_names_say_nothing() {
+        for debug in [true, false] {
+            assert_eq!(run(&["BLYGGER_CONFIG", "BLYGGER_BIN"], debug), vec![]);
+            assert_eq!(run(&["BLYGGER_FAKE", "BLYGGER_DEMO"], debug), vec![]);
+        }
+    }
+
+    #[test]
+    fn only_blygger_names_are_looked_at() {
+        let names = ["PATH", "BLYG_E2E_URL", "GPUI_DISABLE_DIRECT_COMPOSITION"];
+        for debug in [true, false] {
+            assert_eq!(run(&names, debug), vec![]);
+        }
+    }
+
+    #[test]
+    fn every_ignored_name_is_listed_once_in_name_order() {
+        let got = run(&["BLYGGER_ZZ", "BLYGGER_AA", "BLYGGER_UPDATE_DOCS"], true);
+        let names: Vec<&str> = got.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["BLYGGER_AA", "BLYGGER_UPDATE_DOCS", "BLYGGER_ZZ"]);
+    }
+
+    #[test]
+    fn the_refusal_names_every_variable_why_and_what_to_do() {
+        let list = run(&["BLYGGER_FAKEE", "BLYGGER_UPDATE_DOCS"], true);
+        let text = refusal(&list);
+        assert!(text.contains("BLYGGER_FAKEE"));
+        assert!(text.contains("did you mean BLYGGER_FAKE"));
+        assert!(text.contains("BLYGGER_UPDATE_DOCS: read only by the test suite"));
+        assert!(text.contains("nset"), "ends with what to do: {text}");
+    }
+
+    #[test]
+    fn the_table_names_each_variable_once() {
+        let mut seen = Vec::new();
+        for (name, _) in CLASSES {
+            assert!(name.starts_with("BLYGGER_"), "{name}");
+            assert!(!seen.contains(name), "{name} is classed twice");
+            seen.push(name);
+        }
+    }
+
+    /// The names between quotes in `src` that look like `BLYGGER_*`
+    /// variables.
+    fn quoted_names(src: &str) -> Vec<&str> {
+        src.split('"')
+            .skip(1)
+            .step_by(2)
+            .filter(|s| {
+                s.starts_with("BLYGGER_")
+                    && s.chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            })
+            .collect()
+    }
+
+    /// THE RULE: a new `BLYGGER_*` variable cannot be added without saying
+    /// who reads it. Every name `never_rename_tests.rs` pins, and every one
+    /// this file reads (above the table's marker comment, which the table
+    /// and what follows it sit under), has a class.
+    #[test]
+    fn every_blygger_name_has_a_class() {
+        let pinned = include_str!("never_rename_tests.rs")
+            .split("const NAMES")
+            .nth(1)
+            .and_then(|rest| rest.split("];").next())
+            .unwrap();
+        let read_here = include_str!("dev_flags.rs")
+            .split("\n// ---- classes of every name ----\n")
+            .next()
+            .unwrap();
+        let mut unclassed: Vec<&str> = quoted_names(pinned)
+            .into_iter()
+            .chain(quoted_names(read_here))
+            .filter(|n| !CLASSES.iter().any(|(c, _)| c == n))
+            .collect();
+        unclassed.sort_unstable();
+        unclassed.dedup();
+        assert!(
+            unclassed.is_empty(),
+            "add each to CLASSES in dev_flags.rs, with the class that says who reads it: {unclassed:?}"
+        );
+        assert!(!quoted_names(pinned).is_empty(), "found no pinned names");
+        assert!(!quoted_names(read_here).is_empty(), "found no names read");
+    }
 }
