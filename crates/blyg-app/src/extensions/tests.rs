@@ -1200,13 +1200,21 @@ mod macros {
             keys.bottom() <= sheet.bottom(),
             "the key row is cut off: {keys:?} in {sheet:?}"
         );
-        // ↑ from the first row: the last (Manage), scrolled into view.
+        // ↑ from the first row: the last (Manage), scrolled into view, above
+        // the key row (both read from one frame: the sheet slides in).
         cx.simulate_keystrokes("up");
         cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let keys = cx.debug_bounds("ext-pal-keys").expect("its key row");
+        let list = cx.debug_bounds("ext-pal-list").expect("the list");
         let last = cx
             .debug_bounds(Box::leak(format!("ext-pal-{}", n - 1).into_boxed_str()))
             .expect("the last row");
-        assert!(last.bottom() <= keys.top(), "{last:?} above {keys:?}");
+        assert!(
+            last.bottom() <= list.bottom() + gpui_kit::px(1.) && list.bottom() <= keys.top(),
+            "{last:?} in {list:?}, above {keys:?}"
+        );
         // 0 runs row 10 (Manage extensions…, the last of ten).
         cx.simulate_keystrokes("0");
         cx.run_until_parked();

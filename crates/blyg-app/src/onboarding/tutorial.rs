@@ -1284,6 +1284,11 @@ impl MainView {
                 self.tutorial_setup(Setup::Posts, window, cx);
                 self.ext_toggle_palette(window, cx);
             }
+            Setup::AutoCrossPost => {
+                self.tutorial_setup(Setup::Posts, window, cx);
+                self.tutorial_open(steps::VERSIONED, window, cx);
+                self.ext_tour_auto_sample(cx);
+            }
             Setup::Consent => {
                 self.tutorial_setup(Setup::Posts, window, cx);
                 self.ext_tour_consent(window, cx);
@@ -1480,8 +1485,10 @@ impl MainView {
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
-            // --- ux 0.28 --- the Post menu, as the step's key opens it.
-            "auto-crosspost" | "extensions" => self.ext_toggle_palette(window, cx),
+            // --- ux 0.28 --- ⇧⌘P, the auto cross-post step's key; the Post
+            // menu's Extensions palette for the extensions step.
+            "auto-crosspost" => self.toggle_palette(window, cx),
+            "extensions" => self.ext_toggle_palette(window, cx),
             // --- flow ---
             "palette" => self.toggle_palette(window, cx),
             "focus" => self.enter_focus(window, cx),

@@ -72,11 +72,11 @@ the studio's Settings › AI does:
 | Row | What it does |
 |---|---|
 | TK generation | The model that fills `[TK]` gaps on the blyg, and the **house style** added to every one of them. |
+| Text helpers | Studio 0.69: the model for small writing jobs on the blyg, such as Catch up's summary. |
+| Agentic feed | The **tab name** (studio 0.69) your assistant's editions go under, and a model and scoring prompt saved for the studio's own. |
 | Change notes | The model that drafts version notes, and **Draft automatically** (an empty note is drafted when you publish). |
 | Change classifier | A decision model (Clef, Jev) that labels each new version typo, minor or major, and whether the label **starts the note**. Off unless you choose one. |
 | Judge other blygs' changes | Studio 0.69: the classifier also labels new versions of posts you read that Background's rules leave open; a typo or minor label sends them to Background. An optional **instruction** has it read the version note too, and **Keep in view if the note understates it** keeps such a post in view, marked. |
-| Text helpers | Studio 0.69: the model for small writing jobs on the blyg, such as Catch up's summary. |
-| Agentic feed | The **tab name** (studio 0.69) your assistant's editions go under, and a model and scoring prompt saved for the studio's own. |
 
 ↑/↓ choose a row, ←/→ change its model (or flip its switch; Space too),
 "other…" types any model id, ⌘⏎ saves. The sheet lists each provider with

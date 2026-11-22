@@ -22,9 +22,14 @@ use crate::app::browser::automation::{self, MacroRun};
 /// How long the opening paragraph may be in `{{excerpt}}`.
 pub const EXCERPT_CHARS: usize = 280;
 
-/// The palette row's label: the macro's title and the site it posts to.
+/// The palette row's label: the macro's title and the site it posts to,
+/// unless the title names it already ("Cross-post to Bluesky…").
 pub fn row_label(m: &MacroEntry) -> String {
-    format!("{} ↗ {}", m.spec.title, m.site.title)
+    if m.spec.title.contains(&m.site.title) {
+        m.spec.title.clone()
+    } else {
+        format!("{} ↗ {}", m.spec.title, m.site.title)
+    }
 }
 
 /// The template's values for a published `item` at `permalink`.
@@ -145,6 +150,14 @@ impl MainView {
                 cx,
             );
         };
+        // --- onboarding --- the tour's sample sites stay unopened.
+        if self.ext_tour_on() {
+            return self.show_toast(
+                format!("{} would open in the browser pane", entry.site.title),
+                Some("Tour sample: nothing is loaded".into()),
+                cx,
+            );
+        }
         if self.browser.automation.running() {
             return self.show_toast(
                 "A macro is running in the browser pane",
@@ -180,6 +193,10 @@ impl MainView {
         let Some(host) = self.ext.host.clone() else {
             return false;
         };
+        // --- onboarding --- the tour's sample cross-post loads no website.
+        if self.ext_tour_refuses_run(&ext, &id, cx) {
+            return false;
+        }
         // The grant may have gone (Reload Config) since the palette opened.
         let Some(entry) = host.macro_entry(&ext, &id) else {
             self.show_toast(

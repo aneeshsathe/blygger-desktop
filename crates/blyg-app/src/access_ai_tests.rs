@@ -188,14 +188,32 @@ fn server_ai_changes_a_model_and_a_switch_and_saves(cx: &mut TestAppContext) {
             |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
         )
     });
+    // ↓ to `row` (rows the studio doesn't offer are passed over).
+    let down_to = |cx: &mut VisualTestContext, row: super::server_ai::Row| {
+        let at = super::server_ai::ROWS
+            .iter()
+            .position(|r| *r == row)
+            .unwrap();
+        for _ in 0..super::server_ai::ROWS.len() {
+            let sel = view.read_with(cx, |v, _| {
+                v.sheet
+                    .get::<crate::app::server_ai::ServerAiSheet>()
+                    .map(|s| s.sel)
+            });
+            if sel == Some(at) {
+                return;
+            }
+            keys(cx, "down");
+        }
+        panic!("never reached {row:?}");
+    };
     // TK: sonnet → the next text model (haiku).
     keys(cx, "right");
-    // Change notes' automatic drafting (row 3): off → on.
-    keys(cx, "down");
-    keys(cx, "down");
+    // Change notes' automatic drafting: off → on.
+    down_to(cx, super::server_ai::Row::AutoNotes);
     keys(cx, "space");
-    // The classifier (row 4): clef-flash → none.
-    keys(cx, "down");
+    // The classifier: clef-flash → none.
+    down_to(cx, super::server_ai::Row::Model(AiFunction::Classify));
     keys(cx, "left");
     view.read_with(cx, |v, _| {
         let Some(s) = v.sheet.get::<crate::app::server_ai::ServerAiSheet>() else {

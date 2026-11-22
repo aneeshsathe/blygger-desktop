@@ -124,8 +124,9 @@ pub fn edition(rows: &[ReadingItem], title: &str) -> Edition {
 /// The blyg's Catch up summary.
 pub fn catch_up_summary() -> CatchUpSummary {
     CatchUpSummary {
-        summary: "The thread starts with a question about tide tables, gets a correction about \
-                  spring tides, and ends with a shared chart everyone agrees on."
+        summary: "Rue asks whether quotes outlive links. Ada answers that a quote also freezes \
+                  the author's words; Lin says pins decide what may be frozen; and Rue ends \
+                  back at links, since pins don't rot."
             .into(),
         model: "claude-haiku-4-5".into(),
         at: "2026-11-21T08:00:00Z".into(),

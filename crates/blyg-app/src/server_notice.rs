@@ -25,6 +25,7 @@
 use gpui_kit::*;
 
 use super::MainView;
+use crate::platform_text::{Text, ui_text_per_platform};
 
 /// Where the notice's link goes: the server requirements, which link on to
 /// upstream's upgrade guide.
@@ -67,20 +68,29 @@ pub const HELD_TIP: &str = concat!("Waiting: your blyg needs studio ", blyg_core
 /// (`CoreEvent::ServerNewer`): sync goes on, and removes nothing here.
 pub const NEWER_TOAST: &str = "Your blyg runs a newer studio";
 
-/// [`NEWER_TOAST`]'s line, naming the contract the blyg served.
-pub fn newer_toast_sub(contract: &str) -> String {
-    crate::keymap::hint_owned(format!(
-        "This Burrow doesn't know its API yet (contract {contract}). It keeps syncing \
-         what it can, and won't remove anything on this Mac until it's updated. \
-         Check for updates: Check for Updates… in the Burrow menu."
-    ))
+/// [`NEWER_TOAST`]'s line: what Burrow does, and where a newer Burrow
+/// comes from (Windows has no updater, `update::disabled_reason`). No
+/// contract number: the user can't act on it (user testing, 0.28).
+const NEWER_TOAST_SUB: Text = ui_text_per_platform(
+    "Your blyg's studio is newer than this Burrow. Burrow keeps syncing what it can, and \
+     removes nothing on this Mac. To get the newest Burrow: Check for Updates… in the \
+     Burrow menu.",
+    "Your blyg's studio is newer than this Burrow. Burrow keeps syncing what it can, and \
+     removes nothing on this Mac. To get the newest Burrow, download it from the Releases \
+     page on GitHub.",
+);
+
+/// [`NEWER_TOAST`]'s line, as this platform says it.
+pub fn newer_toast_sub() -> &'static str {
+    NEWER_TOAST_SUB.get()
 }
 
 impl MainView {
     /// Sync found a blyg on a newer studio: said once a session, and kept
     /// up until clicked.
     pub(super) fn server_newer(&mut self, contract: &str, cx: &mut Context<Self>) {
-        self.show_toast(NEWER_TOAST, Some(newer_toast_sub(contract).into()), cx);
+        eprintln!("blygger: the blyg serves contract {contract}, newer than this Burrow knows");
+        self.show_toast(NEWER_TOAST, Some(newer_toast_sub().into()), cx);
         self.studio.guards.sticky_toast = Some(self.toast_seq);
     }
 

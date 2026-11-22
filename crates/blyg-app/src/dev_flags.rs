@@ -37,6 +37,12 @@ pub struct DevFlags {
     /// `BLYGGER_VERSION_AS=<version>` (debug builds): what's new counts this
     /// launch as that version.
     pub version_as: Option<String>,
+    /// `BLYGGER_TEST_SPELLING=windows|mac`: the platform whose wording the
+    /// app's text uses. Tests start every thread with it
+    /// (`platform_text::spelled_as` still picks one for a test); a debug
+    /// build shows it, so a scene on a Mac shows Windows' wording. Release
+    /// builds ignore it. Unset: this machine's.
+    pub spelling: Option<crate::platform_text::Platform>,
     pub update: Update,
     pub browser: Browser,
     pub snapshot: Snapshot,
@@ -145,10 +151,6 @@ pub struct TestEnv {
     pub e2e_switch_token: Option<String>,
     /// `BLYG_E2E_URL_B`: a second blyg at `a`'s host.
     pub e2e_url_b: Option<String>,
-    /// `BLYGGER_TEST_SPELLING=windows|mac`: the platform whose wording every
-    /// test thread starts with (`platform_text::spelled_as` still picks one
-    /// for a test). Unset: this machine's.
-    pub spelling: Option<crate::platform_text::Platform>,
     /// `BLYGGER_UPDATE_DOCS`: the generated-docs tests rewrite their file
     /// instead of comparing (`scripts/gen-docs.sh`).
     pub update_docs: bool,
@@ -186,6 +188,16 @@ impl DevFlags {
             reduce_motion: get("BLYGGER_REDUCE_MOTION").map(|v| v != "0"),
             theme: text(get, "BLYGGER_THEME"),
             version_as: text(get, "BLYGGER_VERSION_AS"),
+            spelling: text(get, "BLYGGER_TEST_SPELLING")
+                .map(|v| {
+                    use crate::platform_text::Platform;
+                    match v.to_ascii_lowercase().as_str() {
+                        "windows" => Ok(Platform::Windows),
+                        "mac" | "macos" => Ok(Platform::Mac),
+                        other => Err(format!("BLYGGER_TEST_SPELLING={other}: say windows or mac")),
+                    }
+                })
+                .transpose()?,
             update: Update {
                 off: is_set(get, "BLYGGER_NO_UPDATE"),
                 url: text(get, "BLYGGER_UPDATE_URL"),
@@ -253,14 +265,6 @@ impl TestEnv {
             e2e_switch_url: get("BLYG_E2E_SWITCH_URL"),
             e2e_switch_token: get("BLYG_E2E_SWITCH_TOKEN"),
             e2e_url_b: get("BLYG_E2E_URL_B"),
-            spelling: get("BLYGGER_TEST_SPELLING").map(|v| {
-                use crate::platform_text::Platform;
-                match v.to_ascii_lowercase().as_str() {
-                    "windows" => Platform::Windows,
-                    "mac" | "macos" => Platform::Mac,
-                    other => panic!("BLYGGER_TEST_SPELLING={other}: say windows or mac"),
-                }
-            }),
             update_docs: std::env::var_os("BLYGGER_UPDATE_DOCS").is_some(),
         }
     }
