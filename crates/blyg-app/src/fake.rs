@@ -740,6 +740,7 @@ impl FakeBackend {
     /// --- dictionary --- A sign-in that may read the dictionary but not
     /// change it (`false`: the capabilities don't list
     /// `putDictionarySource`).
+    #[cfg(test)]
     pub fn set_dictionary_writable(&self, writable: bool) {
         self.lock().dictionary.writable = writable;
     }

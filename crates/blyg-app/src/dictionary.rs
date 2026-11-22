@@ -65,7 +65,9 @@ fn settle(backend: &Arc<dyn Backend>, d: &Dictionary) -> Vec<String> {
 }
 
 /// A read of the dictionary, and the taught words it settles ([`settle`]).
-fn read_settled(backend: &Arc<dyn Backend>) -> blyg_core::Result<(Option<Dictionary>, Vec<String>)> {
+fn read_settled(
+    backend: &Arc<dyn Backend>,
+) -> blyg_core::Result<(Option<Dictionary>, Vec<String>)> {
     let d = backend.dictionary()?;
     let gone = d.as_ref().map(|d| settle(backend, d)).unwrap_or_default();
     Ok((d, gone))
@@ -517,15 +519,15 @@ impl MainView {
                     )
                     .when(writable, |row| {
                         row.child(
-                        div()
-                            .id(SharedString::from(format!("dictionary-remove-{i}")))
-                            .px(px(6.))
-                            .cursor_pointer()
-                            .text_color(if selected { p.sel_muted } else { p.muted })
-                            .child("×")
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.dictionary_remove(i, window, cx)
-                            })),
+                            div()
+                                .id(SharedString::from(format!("dictionary-remove-{i}")))
+                                .px(px(6.))
+                                .cursor_pointer()
+                                .text_color(if selected { p.sel_muted } else { p.muted })
+                                .child("×")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.dictionary_remove(i, window, cx)
+                                })),
                         )
                     }),
             );
@@ -545,11 +547,11 @@ impl MainView {
             body = body.child(muted("Saving…".into()));
         }
         let keys = if writable {
-            "⏎ adds · ↑↓ choose · ⌘⌫ takes out · esc closes"
+            crate::keymap::hint("⏎ adds · ↑↓ choose · ⌘⌫ takes out · esc closes").to_string()
         } else {
-            "↑↓ choose · esc closes"
+            "↑↓ choose · esc closes".to_string()
         };
-        body = body.child(muted(crate::keymap::hint(keys).to_string()));
+        body = body.child(muted(keys));
         (460., body.into_any_element())
     }
 }

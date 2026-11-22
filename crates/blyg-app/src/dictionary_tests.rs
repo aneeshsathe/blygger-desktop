@@ -173,9 +173,18 @@ fn taking_a_word_out_unlearns_only_what_burrow_taught(cx: &mut TestAppContext) {
         });
         cx.run_until_parked();
     }
-    assert!(!spell.check("harbourside").is_empty(), "Burrow's: flagged again");
-    assert!(fake.dictionary_taught().unwrap().is_empty(), "and forgotten");
-    assert!(spell.check("tidepool").is_empty(), "never Burrow's to unlearn");
+    assert!(
+        !spell.check("harbourside").is_empty(),
+        "Burrow's: flagged again"
+    );
+    assert!(
+        fake.dictionary_taught().unwrap().is_empty(),
+        "and forgotten"
+    );
+    assert!(
+        spell.check("tidepool").is_empty(),
+        "never Burrow's to unlearn"
+    );
 }
 
 /// A word Burrow taught that leaves the blyg's words elsewhere (Studio
@@ -212,7 +221,10 @@ fn a_read_only_sign_in_learns_on_this_computer_only(cx: &mut TestAppContext) {
     assert_eq!(toast(&view, cx), "", "nothing to say");
     let d = fake.dictionary().unwrap().unwrap();
     assert!(!d.writable);
-    assert!(!d.owner_words().iter().any(|w| w == "harbourside"), "not sent");
+    assert!(
+        !d.owner_words().iter().any(|w| w == "harbourside"),
+        "not sent"
+    );
     assert!(fake.dictionary_taught().unwrap().is_empty());
     assert!(spell.check("harbourside").is_empty(), "learned here");
     open_sheet(&view, cx);
