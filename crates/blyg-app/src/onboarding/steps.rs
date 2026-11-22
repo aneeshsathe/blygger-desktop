@@ -1826,7 +1826,7 @@ pub const STEPS: &[Step] = &[
         caption: ui_text(
             "Posted it somewhere else too? Post › Copies Elsewhere… keeps that list on \
                   your blyg, with no new version, and a cross-post adds its link for you; the \
-                  versions (⌘Y) show it, and readers see “Also posted at …”. (It shows once \
+                  versions (⌘Y) show it, and readers see “the author says it is also at …”. (It shows once \
                   your blyg's studio supports it.) Press ⌘Y.",
         ),
         keys: &[Key::ShowVersions],

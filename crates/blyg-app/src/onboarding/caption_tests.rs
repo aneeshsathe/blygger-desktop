@@ -244,7 +244,7 @@ fn every_label_a_step_quotes_is_shown_by_the_app() {
             for p in [Platform::Mac, Platform::Windows] {
                 let text = t.on(p);
                 for q in text.split('“').skip(1).filter_map(|r| r.split('”').next()) {
-                    // "Also posted at …": the label's fixed parts, around
+                    // "the author says it is also at …": the label's fixed parts, around
                     // what the app fills in.
                     let parts: Vec<&str> = q
                         .split('…')

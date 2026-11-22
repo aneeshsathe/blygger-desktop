@@ -479,7 +479,9 @@ it.
 ### Copies elsewhere
 
 When an author lists where else they posted something, Reading shows it under
-the post's header: **Also posted at** and each copy's host, as a plain link.
+the post's source line, on every stream card and in the full view: **the
+author says it is also at** and each copy's host, as a plain link (Studio's
+wording).
 It's the author's claim: Burrow doesn't fetch or check the copies, shows no
 counts from them, and never hides or merges a post from another network
 because of one. Only `https:` addresses are shown as links.
