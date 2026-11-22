@@ -98,7 +98,8 @@ const SPEC_ERRORS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-const FRAGMENT_DIRECTIVE: &str = "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code";
+const FRAGMENT_DIRECTIVE: &str =
+    "a fragment can't quote another item: make this a thread, or link it with [[id]]";
 
 /// The fixture's HTML (normalised) as protocol 0.4 r15 has it.
 fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {

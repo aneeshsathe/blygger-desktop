@@ -85,6 +85,22 @@ fn directive_line_in_a_fragment_is_a_publish_error() {
     assert_eq!(errs[0].line, 2);
 }
 
+/// (1), studio 0.67 (#161): the studio refuses a fragment's directive line
+/// at publish too now, in its body or in a generated block's output, and
+/// the reason is the studio's own words (`model.ts` `publishScoped`).
+#[test]
+fn a_fragment_directive_carries_the_studios_reason() {
+    assert_eq!(
+        UnresolvedReason::DirectiveInFragment.to_string(),
+        "a fragment can't quote another item: make this a thread, or link it with [[id]]"
+    );
+    // In a block scope's output, as in the body: the preview reports it.
+    let md = format!("Opening.\n\n[TK]write it[=]Mine.\n\n![[{A}]][/TK]");
+    let out = render(&md, Kind::Fragment);
+    assert_eq!(reasons(&out), vec![UnresolvedReason::DirectiveInFragment]);
+    assert_eq!(out.stats.unresolved[0].directive, format!("![[{A}]]"));
+}
+
 /// (2) The `@vN` reservation is the own-line form, with or without a label.
 #[test]
 fn reserved_version_is_the_own_line_form() {

@@ -2,6 +2,26 @@
   "comment": "Neutral fake store shared by gen_parity.mjs (as a fake D1) and the Rust FakeResolver. All content is invented.",
   "self_id": "01j9zq3k4m5n6p7q8r9s0t1vzz",
   "mount": "/blyg",
+  "contacts": [
+    {
+      "id": "c-lin",
+      "handle": "lin",
+      "name": "Lin Okafor",
+      "url": "https://lin.example.org/",
+      "ids_json": "[{\"id\":\"https://social.example.net/@lin\",\"provenance\":\"self\"},{\"id\":\"https://typed.example.net/lin\",\"provenance\":\"entered\"}]",
+      "created": "2026-11-01T00:00:00Z",
+      "updated": "2026-11-01T00:00:00Z"
+    },
+    {
+      "id": "c-lin-k",
+      "handle": "Lin-K",
+      "name": "Lin K",
+      "url": "https://k.example.org/",
+      "ids_json": "[]",
+      "created": "2026-11-01T00:00:00Z",
+      "updated": "2026-11-01T00:00:00Z"
+    }
+  ],
   "items": [
     {
       "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",

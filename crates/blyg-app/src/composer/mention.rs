@@ -418,6 +418,10 @@ pub fn insert(text: &str, at: usize, cursor: usize, c: &Candidate) -> (String, u
 }
 
 #[cfg(test)]
+#[path = "mention_tests.rs"]
+mod natural_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use blyg_core::profile::{BlogrollEntry, ProfileKind};

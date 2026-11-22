@@ -6,6 +6,7 @@ mod common;
 
 mod engine_parity;
 mod math_shape;
+mod mentions;
 mod parity;
 mod preview;
 mod spec102;

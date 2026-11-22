@@ -95,6 +95,15 @@ const input = {
   vectors: read("linkify_vectors_input.json"),
   media: read("media_input.json"),
   grammar: read("grammar_input.json"),
+  // The reason publish gives a fragment's directive line (studio 0.67, #161),
+  // in model.ts's own words: it lives inside publishScoped, which the harness
+  // can't call, so it is read from the source rather than copied.
+  fragmentDirectiveReason: (() => {
+    const model = readFileSync(join(workerDir, "src", "model.ts"), "utf8");
+    const m = /flatMap\(directiveLines\)[\s\S]*?reason: "([^"]+)"/.exec(model);
+    if (!m) throw new Error("model.ts: the fragment directive reason moved; update gen_parity.mjs");
+    return m[1];
+  })(),
 };
 // Miniflare keeps scratch state in ./.wrangler: run it from a temporary
 // directory so nothing lands in the caller's working tree.

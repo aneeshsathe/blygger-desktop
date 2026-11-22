@@ -166,3 +166,41 @@ fn inside_a_code_fence_it_stays_literal(cx: &mut TestAppContext) {
     assert!(!picker_open(&view, cx));
     assert!(editor_text(&view, cx).ends_with("```\n![["));
 }
+
+/// Studio 0.66 (#157): a quote already written is edited, not picked. Retyping
+/// the `[` of a line-leading `![[id]]` (a `]]` closes it later on the line)
+/// leaves the picker shut.
+#[test]
+fn a_written_quote_keeps_the_picker_shut() {
+    use super::transclusion_trigger as trig;
+    let typed = |new: &str, cursor: usize| {
+        let mut old = new.to_string();
+        old.remove(cursor - 1);
+        trig(&old, new, cursor)
+    };
+    assert_eq!(typed("![[abc]]", 3), None);
+    assert_eq!(typed("One.\n![[abc | a note]]\nTwo.", 8), None);
+    // Still typed: nothing closes it, or only a later `[[` does, or the next line.
+    assert_eq!(typed("![[", 3), Some(0..3));
+    assert_eq!(typed("![[ then [[abc]]", 3), Some(0..3));
+    assert_eq!(typed("![[\nx]]", 3), Some(0..3));
+}
+
+#[gpui_kit::test]
+fn retyping_a_written_quotes_bracket_opens_nothing(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    // `![abc]]` typed (one `[` short: no picker), then the caret back
+    // after `![` and the missing `[` typed there.
+    cx.simulate_input("![abc]]");
+    cx.run_until_parked();
+    assert!(!picker_open(&view, cx));
+    let at = before.len() + 2;
+    view.update_in(cx, |v, _, cx| {
+        v.editor.update(cx, |s, cx| s.set_selected_range(at..at, cx));
+    });
+    cx.simulate_input("[");
+    cx.run_until_parked();
+    assert!(!picker_open(&view, cx), "a finished quote is edited, not picked");
+    assert_eq!(editor_text(&view, cx), format!("{before}![[abc]]"));
+}

@@ -416,6 +416,10 @@ pub fn rows(
 }
 
 #[cfg(test)]
+#[path = "picker_written_tests.rs"]
+mod written_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{BracketPicker, Filters, PickKind, insert, link_trigger, query, row_text};
     use blyg_core::{PickSort, PickSource};
