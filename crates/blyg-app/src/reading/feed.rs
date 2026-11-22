@@ -62,11 +62,18 @@ pub struct Feed {
     positions: HashMap<Key, usize>,
     /// The blyg's setting was read this session.
     pub loaded: bool,
-    /// Bumped by each choice made here: a read of the blyg's order that
-    /// started before one doesn't undo it.
+    /// Bumped by each choice made here: a read of the blyg's order, or a
+    /// save's answer, that started before one doesn't undo it.
     pub chosen: u64,
+    /// The order last confirmed (read from the blyg, or a save it
+    /// answered): where a failed save goes back to.
+    confirmed: ReaderOrder,
     /// Bumped by each rebuild: only the latest one's places land.
     rebuilds: u64,
+    /// The places of the current order have landed (or there are none to
+    /// wait for). Until they do, the Feed is held: nothing listed, rather
+    /// than newest first and then a jump.
+    ready: bool,
 }
 
 /// The changelogs cached on this computer, by origin and remote id.
@@ -95,7 +102,62 @@ impl Feed {
     pub fn new(order: ReaderOrder) -> Self {
         Feed {
             order,
+            confirmed: order,
             ..Default::default()
+        }
+    }
+
+    /// Whether the Feed waits for its first places (pace-layered, none
+    /// landed yet for this order).
+    pub fn held(&self) -> bool {
+        self.order == ReaderOrder::PaceLayered && !self.ready
+    }
+
+    /// A rebuild starts: its ticket.
+    pub fn start_rebuild(&mut self) -> u64 {
+        self.rebuilds += 1;
+        self.rebuilds
+    }
+
+    /// A rebuild's places, landing only if it's the latest rebuild and the
+    /// Feed is still pace-layered.
+    pub fn land(&mut self, ticket: u64, placed: HashMap<Key, usize>) -> bool {
+        if ticket != self.rebuilds || self.order != ReaderOrder::PaceLayered {
+            return false;
+        }
+        self.positions = placed;
+        self.ready = true;
+        true
+    }
+
+    /// The order turned chronological: no places to keep or wait for.
+    fn clear_places(&mut self) {
+        self.positions.clear();
+        self.ready = false;
+    }
+
+    /// The user chose `order` here: shown at once; the ticket its save's
+    /// answer carries.
+    pub fn choose(&mut self, order: ReaderOrder) -> u64 {
+        self.chosen += 1;
+        self.order = order;
+        self.chosen
+    }
+
+    /// A save's answer (`kept`: what the blyg or this computer kept; `None`
+    /// when it failed) for the choice `at`: the order to show, or `None`
+    /// when a later choice was made since (its own answer decides). A
+    /// failed save goes back to the order last confirmed.
+    pub fn answer(&mut self, at: u64, kept: Option<ReaderOrder>) -> Option<ReaderOrder> {
+        if at != self.chosen {
+            return None;
+        }
+        match kept {
+            Some(k) => {
+                self.confirmed = k;
+                Some(k)
+            }
+            None => Some(self.confirmed),
         }
     }
 
@@ -111,6 +173,7 @@ impl Feed {
                 changelogs,
             ),
         };
+        self.ready = true;
     }
 
     /// Where `key` is in the pace-layered Feed.
@@ -185,18 +248,12 @@ impl MainView {
     /// text); the cached changelogs are read and the replay runs in the
     /// background, and the places land if no later rebuild started.
     pub(crate) fn feed_rebuild(&mut self, cx: &mut Context<Self>) {
-        let r = &mut self.reading;
-        r.feed.rebuilds += 1;
-        if r.feed.order == ReaderOrder::Newest {
-            r.feed.positions.clear();
+        let ticket = self.reading.feed.start_rebuild();
+        if self.reading.feed.order == ReaderOrder::Newest {
+            self.reading.feed.clear_places();
             return;
         }
-        let ticket = r.feed.rebuilds;
-        let facts: Vec<RowFacts> = r
-            .rows
-            .iter()
-            .map(|row| RowFacts::of(row, is_l0(row, &r.subs)))
-            .collect();
+        let facts = self.feed_facts();
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move {
             let logs = backend.cached_changelogs();
@@ -205,16 +262,33 @@ impl MainView {
         cx.spawn(async move |this, cx| {
             let placed = task.await;
             let _ = this.update(cx, |v, cx| {
-                let f = &mut v.reading.feed;
-                if f.rebuilds != ticket || f.order != ReaderOrder::PaceLayered {
-                    return;
+                if v.reading.feed.land(ticket, placed) {
+                    v.reading.refilter();
+                    cx.notify();
                 }
-                f.positions = placed;
-                v.reading.refilter();
-                cx.notify();
             });
         })
         .detach();
+    }
+
+    /// What the Feed's order reads of each held row (no text), an RSS
+    /// row (the studio's l0) lending no quotes.
+    pub(crate) fn feed_facts(&self) -> Vec<RowFacts> {
+        let r = &self.reading;
+        r.rows
+            .iter()
+            .map(|row| RowFacts::of(row, is_l0(row, &r.subs)))
+            .collect()
+    }
+
+    /// Show `order` (the places worked out again for it).
+    fn show_reader_order(&mut self, order: ReaderOrder, cx: &mut Context<Self>) {
+        if self.reading.feed.order != order {
+            self.reading.feed.order = order;
+            self.feed_rebuild(cx);
+            self.reading.refilter();
+        }
+        cx.notify();
     }
 
     /// Read the blyg's `readerOrder` once a session (and when Settings
@@ -237,13 +311,12 @@ impl MainView {
                 let now = v.reading.feed.order;
                 if v.reading.feed.chosen != chosen {
                     if now != order {
-                        v.save_reader_order(now, cx);
+                        let at = v.reading.feed.chosen;
+                        v.save_reader_order(now, at, cx);
                     }
-                } else if now != order {
-                    v.reading.feed.order = order;
-                    v.feed_rebuild(cx);
-                    v.reading.refilter();
-                    cx.notify();
+                } else {
+                    v.reading.feed.confirmed = order;
+                    v.show_reader_order(order, cx);
                 }
             });
         })
@@ -253,49 +326,32 @@ impl MainView {
     /// Choose the Feed's order: at once here, then saved (the blyg's
     /// setting, that key alone, when it has it).
     pub(crate) fn set_reader_order(&mut self, order: ReaderOrder, cx: &mut Context<Self>) {
-        let was = self.reading.feed.order;
-        if was == order {
+        if self.reading.feed.order == order {
             return;
         }
-        self.reading.feed.chosen += 1;
-        self.reading.feed.order = order;
+        let at = self.reading.feed.choose(order);
         self.feed_rebuild(cx);
         self.reading.refilter();
         cx.notify();
-        self.save_reader_order_from(order, was, cx);
+        self.save_reader_order(order, at, cx);
     }
 
-    /// Save `order` (already shown): the Feed shows what the blyg kept,
-    /// or the order it had before when the save fails.
-    fn save_reader_order(&mut self, order: ReaderOrder, cx: &mut Context<Self>) {
-        let was = self.reading.feed.order;
-        self.save_reader_order_from(order, was, cx);
-    }
-
-    fn save_reader_order_from(
-        &mut self,
-        order: ReaderOrder,
-        was: ReaderOrder,
-        cx: &mut Context<Self>,
-    ) {
+    /// Save `order` (already shown) for the choice `at`: the Feed shows
+    /// what was kept, or the order last confirmed when the save fails;
+    /// an answer overtaken by a later choice changes nothing.
+    fn save_reader_order(&mut self, order: ReaderOrder, at: u64, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.save_reader_order(order) });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
-                let shown = match &r {
-                    Ok(kept) => *kept,
-                    Err(_) => was,
+                let Some(shown) = v.reading.feed.answer(at, r.as_ref().ok().copied()) else {
+                    return;
                 };
                 if let Err(e) = &r {
                     v.show_toast(format!("Couldn't change the order: {e}"), None, cx);
                 }
-                if v.reading.feed.order != shown {
-                    v.reading.feed.order = shown;
-                    v.feed_rebuild(cx);
-                    v.reading.refilter();
-                }
-                cx.notify();
+                v.show_reader_order(shown, cx);
             });
         })
         .detach();

@@ -589,7 +589,8 @@ impl State {
         if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
             hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
         }
-        // --- reader order --- the Feed's order (pace-layered or not), or Raw's.
+        // --- reader order --- the Feed's order (pace-layered or not), or Raw's;
+        // held (nothing listed) until its first places arrive.
         feed::arrange(
             &self.rows,
             &mut self.shown,
@@ -597,6 +598,9 @@ impl State {
             &self.source,
             &self.feed,
         );
+        if self.feed_waiting() {
+            self.shown.clear();
+        }
         // --- trails --- a trail lists its held stops, in its order.
         if let (stream_vm::ReadMode::Reader, sources_vm::Source::Trail(t)) =
             (&self.mode, &self.source)
@@ -651,6 +655,12 @@ impl State {
     /// haven't changed since the last one).
     pub fn narrow_next(&mut self) {
         self.narrow = true;
+    }
+
+    /// --- reader order --- What's on screen follows the Feed, which waits
+    /// for its first places: the list is held, with no "nothing here" note.
+    pub fn feed_waiting(&self) -> bool {
+        self.feed.held() && feed::follows_feed(self.mode, &self.source)
     }
 
     /// The rows the list shows (all of them without a search).
