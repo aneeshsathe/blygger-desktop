@@ -10,6 +10,6 @@ section: Development
   that isn't listed or a gate that asks for a bare string, and checks each
   read gate's operations against the scopes in `openapi-current.json`: one
   that needs more than `owner:read` isn't listed to a read-only token, so
-  the feature would vanish for it. Two gates that do so today (Background on
-  `setReadingPlacement`, the synced shelf on `putShelf`) are recorded there
-  as known and not yet changed.
+  the feature would vanish for it. The skills' sentences these checks replace
+  are gone (`skills/capability-gating`, `skills/spec-client-build`,
+  `skills/upstream-sync`).
