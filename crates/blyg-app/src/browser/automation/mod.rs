@@ -573,7 +573,10 @@ impl MainView {
             s => s,
         };
         // --- auto cross-post --- the next chosen site, or why the rest stopped.
-        let sub = match (self.auto_crosspost_after_run(&out, was_listed, window, cx), sub) {
+        let sub = match (
+            self.auto_crosspost_after_run(&out, was_listed, window, cx),
+            sub,
+        ) {
             (Some(rest), Some(s)) => Some(format!("{s} · {rest}")),
             (Some(rest), None) => Some(rest),
             (None, s) => s,

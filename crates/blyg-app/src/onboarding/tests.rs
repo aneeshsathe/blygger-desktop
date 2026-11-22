@@ -941,7 +941,9 @@ fn do_step(e: &mut Env, id: &str) {
         }
         "cross-post" => e.cx.simulate_keystrokes("escape"),
         // The Post menu's item (the palette has ⇧⌘P now).
-        "extensions" => e.cx.dispatch_action(crate::app::extensions::ShowExtensions),
+        "auto-crosspost" | "extensions" => {
+            e.cx.dispatch_action(crate::app::extensions::ShowExtensions)
+        }
         // Manage extensions… is the palette's last row.
         "manage" => e.cx.simulate_keystrokes("up enter"),
         "consent" => {

@@ -1094,7 +1094,9 @@ mod macros {
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
         cx.run_until_parked();
         cx.simulate_keystrokes("enter");
-        wait(&view, cx, "the draft deleted", |_| fake.item(&draft).is_none());
+        wait(&view, cx, "the draft deleted", |_| {
+            fake.item(&draft).is_none()
+        });
         cx.run_until_parked();
         view.update_in(cx, |v, _, cx| {
             assert!(v.auto_crosspost_chosen(&draft, cx).is_empty())
