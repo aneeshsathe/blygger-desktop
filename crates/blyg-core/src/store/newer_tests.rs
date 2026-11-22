@@ -10,6 +10,35 @@ use crate::api::Prune;
 use crate::api::wire::WireItem;
 use crate::model::*;
 
+fn contact(id: &str, handle: &str) -> crate::contacts::Contact {
+    crate::contacts::Contact {
+        handle: handle.into(),
+        name: None,
+        origin: "https://lin.example.org".into(),
+        id: id.into(),
+        ids: vec![],
+    }
+}
+
+/// The contact book has one writer for a served list, and it takes the
+/// decision: on a newer contract what the book lacks stays here. A contact
+/// deleted here goes whatever the contract.
+#[test]
+fn a_served_contact_book_removes_only_when_allowed() {
+    let s = Store::open_in_memory().unwrap();
+    let handles = |s: &Store| -> Vec<String> { s.contacts().into_iter().map(|c| c.handle).collect() };
+    s.take_served_contacts(vec![contact("c1", "lin"), contact("c2", "ade")], Prune::Allowed)
+        .unwrap();
+    s.take_served_contacts(vec![contact("c1", "lin")], Prune::Withheld)
+        .unwrap();
+    assert_eq!(handles(&s), ["lin", "ade"]);
+    s.take_served_contacts(vec![contact("c1", "lin")], Prune::Allowed)
+        .unwrap();
+    assert_eq!(handles(&s), ["lin"]);
+    s.drop_contact("c1").unwrap();
+    assert!(s.contacts().is_empty());
+}
+
 fn wire(id: &str, md: &str) -> WireItem {
     WireItem {
         id: id.into(),
