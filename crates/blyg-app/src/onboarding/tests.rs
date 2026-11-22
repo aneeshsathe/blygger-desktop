@@ -1818,6 +1818,19 @@ fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
             .unwrap_or_default()
     });
     assert_eq!(auto.len(), 3, "{auto:?}");
+    // The palette opens on them (typed for you), not on Post's commands.
+    let first = e.view.read_with(e.cx, |v, _| {
+        v.cmd_palette
+            .open
+            .as_ref()
+            .and_then(|o| o.shown.first().map(|&i| o.entries[i].label.clone()))
+    });
+    assert!(
+        first
+            .as_deref()
+            .is_some_and(|l| l.starts_with("Cross-post automatically to")),
+        "{first:?}"
+    );
     assert_eq!(
         auto.iter().filter(|l| l.ends_with(": on")).count(),
         1,
