@@ -689,6 +689,28 @@ fn background_rules_show_their_state_and_say_what_changed(cx: &mut TestAppContex
     );
 }
 
+/// A sign-in that can read Background but not change it (no
+/// `setReadingPlacement`): the rules show, greyed, say why, and don't turn.
+#[gpui_kit::test]
+fn background_rules_are_locked_for_a_sign_in_that_cant_place(cx: &mut TestAppContext) {
+    use blyg_core::background::BURST;
+    let (view, _, cx) = setup(cx);
+    open_settings_page(cx);
+    view.update(cx, |v, cx| {
+        v.reading.background.placing = false;
+        v.save_background_rule(BURST, false, cx);
+        v.toggle_background_rule(BURST, cx);
+    });
+    cx.run_until_parked();
+    assert!(rule_on(&view, cx, BURST), "not turned");
+    view.update(cx, |v, _| v.reading.background.placing = false);
+    frame(cx);
+    assert!(
+        cx.debug_bounds("bg-rules-locked").is_some(),
+        "says why they're greyed"
+    );
+}
+
 /// Finding 2: `p` folds and unfolds the parts of the selected stream card
 /// and of the open thread, the key is shown beside "+N parts", and a part's
 /// number opens it.

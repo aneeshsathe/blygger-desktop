@@ -250,6 +250,38 @@ fn a_studio_upgraded_mid_session_removes_nothing() {
             .any(|e| matches!(e, CoreEvent::ServerNewer(_))),
         "and told"
     );
+
+    // Between safety nets (the change counters say what moved): each list
+    // that would drop something reads the contract first, your items,
+    // hoppers and thumbs too.
+    let env = env_at("6.0.0");
+    env.mock
+        .state()
+        .signals
+        .insert(("S1".into(), "R1".into()), 1);
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    let thumb = |b: &LiveBackend| {
+        b.reading()
+            .into_iter()
+            .find(|r| r.remote_id == "R1")
+            .and_then(|r| r.thumb)
+    };
+    assert_eq!(thumb(&b), Some(1));
+    env.mock.state().contract_version = Some("7.0.0".into());
+    drop_everything(&env);
+    env.mock.state().signals.clear();
+    b.sync_now().unwrap();
+    let (items, subs, reading, hoppers, _) = held(&b);
+    assert_eq!(
+        (items, subs, reading, hoppers),
+        (1, 1, 2, 1),
+        "kept between safety nets"
+    );
+    assert_eq!(thumb(&b), Some(1), "the thumb kept");
 }
 
 /// Unsubscribing is your removal: its rows leave here at once, whatever

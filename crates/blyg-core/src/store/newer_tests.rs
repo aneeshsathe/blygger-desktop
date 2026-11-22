@@ -117,6 +117,51 @@ fn a_store_removes_nothing_until_the_contract_is_checked() {
     s.merge_reading(&[ri("A", None)], true, &kinds()).unwrap();
     assert!(!s.prune_reading_except(&HashSet::new()).unwrap());
     assert_eq!(s.reading().len(), 1);
+    // Not checked isn't newer: nothing says "until Burrow is updated".
+    assert!(!s.newer_contract());
+    s.set_lists_prune(Prune::Withheld);
+    assert!(s.newer_contract(), "a check that found a newer contract");
+    s.set_lists_prune(Prune::Allowed);
+    assert!(!s.newer_contract());
+}
+
+/// A check from an earlier pull is stale: a removal it would allow is held
+/// back (`take_held_back`) until the contract is read again, so a studio
+/// upgraded since removes nothing. What drops nothing isn't held back.
+#[test]
+fn a_stale_check_holds_removals_back_until_the_contract_is_read_again() {
+    let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(Prune::Allowed);
+    s.merge_all(&[wire("S1", "one"), wire("S2", "two")])
+        .unwrap();
+    s.merge_reading(&[ri("A", Some(1)), ri("B", None)], true, &kinds())
+        .unwrap();
+    s.contract_stale();
+
+    // Nothing would drop: nothing held back.
+    s.merge_all(&[wire("S1", "one"), wire("S2", "two")])
+        .unwrap();
+    assert!(!s.take_held_back());
+
+    // Your items.
+    s.merge_all(&[wire("S1", "one")]).unwrap();
+    assert!(s.local_id_for_server("S2").is_some(), "S2 held back");
+    assert!(s.take_held_back());
+    // Thumbs.
+    s.replace_thumbs(&[]).unwrap();
+    let a = s.reading().into_iter().find(|r| r.remote_id == "A").unwrap();
+    assert_eq!(a.thumb, Some(1), "A's thumb held back");
+    assert!(s.take_held_back());
+    assert!(!s.take_held_back(), "taken once");
+
+    // Read again (`set_lists_prune`): the same lists remove.
+    s.set_lists_prune(Prune::Allowed);
+    s.merge_all(&[wire("S1", "one")]).unwrap();
+    assert!(s.local_id_for_server("S2").is_none());
+    s.replace_thumbs(&[]).unwrap();
+    let a = s.reading().into_iter().find(|r| r.remote_id == "A").unwrap();
+    assert_eq!(a.thumb, None);
+    assert!(!s.take_held_back());
 }
 
 /// An RSS post whose guid changed is re-keyed only on a list Burrow can

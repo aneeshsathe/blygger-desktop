@@ -206,6 +206,25 @@ fn a_newer_contracts_hoppers_remove_nothing() {
     assert!(s.hoppers().is_empty());
 }
 
+/// A check from an earlier pull is stale: a read that lacks a hopper holds
+/// its removal back until the contract is read again; one that drops
+/// nothing isn't held back.
+#[test]
+fn a_stale_checks_hopper_removal_is_held_back() {
+    let s = seeded();
+    let h1 = || fetched(hopper("H1", "Slow", 1), &[("s1", "A")]);
+    s.replace_hoppers(&[h1()]).unwrap();
+    s.contract_stale();
+    s.replace_hoppers(&[h1()]).unwrap();
+    assert!(!s.take_held_back(), "nothing dropped");
+    s.replace_hoppers(&[]).unwrap();
+    assert_eq!(s.hoppers().len(), 1, "H1 held back");
+    assert!(s.take_held_back());
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s.replace_hoppers(&[]).unwrap();
+    assert!(s.hoppers().is_empty());
+}
+
 #[test]
 fn deleting_a_hopper_lets_go_of_the_posts_only() {
     let s = seeded();

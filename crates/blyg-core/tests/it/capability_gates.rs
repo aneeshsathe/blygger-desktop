@@ -171,6 +171,75 @@ fn a_studio_without_the_lens_has_no_background() {
     assert!(b.background_set().is_none());
 }
 
+fn lens_reads(env: &Env) -> usize {
+    env.mock.state().count("GET /api/reading?background")
+}
+
+/// A studio before 0.61 that ignores the filter answers its plain reading
+/// list. That's judged on the first page, and remembered for that studio's
+/// contract: later sessions don't ask again until the contract changes.
+#[test]
+fn a_studio_that_ignores_the_lens_filter_is_asked_once_per_contract() {
+    let plain = serde_json::json!({
+        "imported": { "subscriptionId": "S1", "remoteId": "R1" }
+    });
+    let env = env_at("6.1.0", &[]);
+    env.mock.state().background_lens = Some(vec![plain]);
+    let opts = || SyncOptions {
+        start_worker: false,
+        ..fast()
+    };
+    let b = env.open(opts());
+    b.sync_now().unwrap();
+    assert!(!b.background_served(), "plain rows aren't the lens");
+    assert_eq!(lens_reads(&env), 1, "one page judged");
+    drop(b);
+
+    let b = env.open(opts());
+    b.sync_now().unwrap();
+    assert!(!b.background_served());
+    assert_eq!(lens_reads(&env), 1, "not asked again for this contract");
+    drop(b);
+
+    env.mock.state().contract_version = Some("6.2.0".into());
+    let b = env.open(opts());
+    b.sync_now().unwrap();
+    assert_eq!(lens_reads(&env), 2, "a new contract is asked again");
+}
+
+/// An empty answer is a lens with nothing in it: a studio with Background
+/// and nothing there yet (the common case on a new blyg) keeps Background.
+/// An older studio that ignored the filter answers empty only when it holds
+/// no reading posts, where nothing can be shown wrongly.
+#[test]
+fn an_empty_lens_is_a_lens() {
+    let env = env_at("6.1.0", &[]);
+    env.mock.state().background_lens = Some(vec![]);
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    assert!(b.background_served());
+}
+
+/// Whether the blyg has changelog display is read once a pull, not on each
+/// call (`Api::new_pull` forgets it).
+#[test]
+fn changelog_display_is_read_once_a_pull() {
+    let env = env_at("6.1.0", &[]);
+    env.mock.state().settings = Some(serde_json::json!({ "changelogDisplay": "history" }));
+    env.mock.state().unchecked.push("/api/settings".into());
+    let api = Api::new(&env.mock.url, TOKEN);
+    let reads = || env.mock.state().count("GET /api/settings");
+    assert!(api.serves_changelog().unwrap());
+    assert!(api.serves_changelog().unwrap());
+    assert_eq!(reads(), 1);
+    api.new_pull();
+    assert!(api.serves_changelog().unwrap());
+    assert_eq!(reads(), 2);
+}
+
 /// `wholeBlyg` on `POST /api/subscriptions` has no operation of its own.
 /// Only the floor contract (5.0) is known to refuse it; anything else is
 /// sent it, and a studio whose strict body refuses it (400) is asked again

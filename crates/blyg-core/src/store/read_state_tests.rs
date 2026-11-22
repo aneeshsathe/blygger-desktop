@@ -337,6 +337,28 @@ fn a_newer_contracts_unread_clears_nothing_here() {
     assert_eq!(row(&s, "s1", "A").read_version, Some(2), "still read");
 }
 
+/// A check from an earlier pull is stale: a clear it would take is held
+/// back until the contract is read again.
+#[test]
+fn a_stale_checks_unread_clear_is_held_back() {
+    let s = seeded();
+    s.mark_many_read(&pairs(&[("s1", "A")]), false).unwrap();
+    s.reconcile_read_state(&server(&[("s1", "A", Some(2))]), true)
+        .unwrap();
+    s.contract_stale();
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan.cleared, 0);
+    assert_eq!(row(&s, "s1", "A").read_version, Some(2), "held back");
+    assert!(s.take_held_back());
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan.cleared, 1, "read again: taken");
+}
+
 #[test]
 fn a_read_the_server_lacks_is_queued_with_when_it_happened() {
     let s = seeded();
