@@ -2436,6 +2436,61 @@ impl Backend for LiveBackend {
         self.command(id, &sid, |rev| self.e().api.draft_note_history(&sid, rev))
     }
     // --- end changelog display ---
+
+    // --- studio 0.69 ---
+    fn agentic_feeds(&self) -> Result<Option<Vec<crate::agentic::Feed>>> {
+        self.e().track(self.e().api.agentic_feeds())
+    }
+
+    fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
+        self.e().track(self.e().api.agentic_edition(feed))
+    }
+
+    fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
+        self.e().track(self.e().api.dictionary())
+    }
+
+    fn edit_dictionary(
+        &self,
+        edit: &crate::dictionary::Edit,
+    ) -> Result<crate::dictionary::Dictionary> {
+        use crate::api::dictionary::PutDictionary;
+        use crate::dictionary::{OWNER, SOURCE_WORDS_MAX, apply, word_problem};
+        if let Some(p) = word_problem(&edit.word()) {
+            return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
+        }
+        let api = &self.e().api;
+        let mut d = self
+            .e()
+            .track(api.dictionary())?
+            .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))?;
+        // A conflict is another client's write: merge onto it and go again.
+        for _ in 0..3 {
+            let words = apply(d.owner_words(), edit);
+            if words.len() > SOURCE_WORDS_MAX {
+                return Err(CoreError::Other(format!(
+                    "your dictionary holds at most {SOURCE_WORDS_MAX} words of your own"
+                )));
+            }
+            match self
+                .e()
+                .track(api.put_dictionary_source(OWNER, &words, d.revision))?
+            {
+                PutDictionary::Stored(now) => return Ok(now),
+                PutDictionary::Conflict(Some(now)) => d = now,
+                PutDictionary::Conflict(None) => break,
+            }
+        }
+        Err(CoreError::RevisionConflict)
+    }
+
+    fn summarize_catch_up(
+        &self,
+        entry: &crate::shelf::Entry,
+    ) -> Result<Option<crate::helpers::CatchUpSummary>> {
+        self.e().track(self.e().api.summarize_catch_up(entry))
+    }
+    // --- end studio 0.69 ---
 }
 
 impl LiveBackend {

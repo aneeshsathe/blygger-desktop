@@ -1462,4 +1462,51 @@ pub trait Backend: Send + Sync {
         ))
     }
     // --- end changelog display ---
+    // --- studio 0.69 --- (contract 6.2.0) the Agentic feed's editions
+    // (`crate::agentic`), the shared dictionary (`crate::dictionary`) and
+    // Catch up's summary on the blyg (`crate::helpers`). Each `Ok(None)`
+    // is "not offered here" (the capabilities don't list it): a genuine
+    // answer, so these have defaults.
+
+    /// Remote: the agentic feeds and their names (`GET /api/agentic`).
+    fn agentic_feeds(&self) -> Result<Option<Vec<crate::agentic::Feed>>> {
+        Ok(None)
+    }
+
+    /// Remote: a feed's edition, each reference resolved (`GET
+    /// /api/agentic/{feed}`). Burrow never writes one.
+    fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
+        let _ = feed;
+        Ok(None)
+    }
+
+    /// Remote: the blyg's dictionary (`GET /api/dictionary`).
+    fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
+        Ok(None)
+    }
+
+    /// Remote: add a word to the owner's words, or take one out: read,
+    /// change, write back from that revision, and on a conflict merge onto
+    /// what's there now. The dictionary as stored back.
+    fn edit_dictionary(
+        &self,
+        edit: &crate::dictionary::Edit,
+    ) -> Result<crate::dictionary::Dictionary> {
+        let _ = edit;
+        Err(CoreError::Other(
+            "your blyg doesn't keep a dictionary".into(),
+        ))
+    }
+
+    /// Remote: the blyg's summary of the conversation `entry` quotes
+    /// (`POST /api/helpers/catch-up-summary`), written by its text helpers
+    /// model once per set of versions.
+    fn summarize_catch_up(
+        &self,
+        entry: &crate::shelf::Entry,
+    ) -> Result<Option<crate::helpers::CatchUpSummary>> {
+        let _ = entry;
+        Ok(None)
+    }
+    // --- end studio 0.69 ---
 }

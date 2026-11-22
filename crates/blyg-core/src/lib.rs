@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod access_ai; // --- access-ai ---
+pub mod agentic; // --- agentic feed --- (studio 0.69, contract 6.2.0)
 pub mod api;
 pub mod backend;
 pub mod background; // --- background --- (studio 0.61, contract 5.10.0)
@@ -13,9 +14,11 @@ pub mod change_size; // --- background --- isNearSame (studio 0.68)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod config;
 pub mod contacts; // --- contacts --- (studio 0.56)
+pub mod dictionary; // --- dictionary --- (studio 0.69, contract 6.2.0)
 pub mod discover; // --- discover --- (studio 0.60, desktop only)
 pub mod floor;
 pub mod grammar;
+pub mod helpers; // --- helpers --- catch-up summary (studio 0.69)
 pub mod ids; // SubId, RemoteId: a reading post's two ids, typed apart
 pub mod lineage; // --- lineage counts ---
 pub mod live;

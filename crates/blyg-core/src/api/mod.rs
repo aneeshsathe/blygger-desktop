@@ -21,13 +21,16 @@
 //! contract's `details.issues`, `details.errors` and `details.tried`).
 
 pub mod access_ai; // --- access-ai --- (client access, AI on the blyg)
+pub mod agentic; // --- agentic feed --- (studio 0.69, contract 6.2.0)
 pub mod auth;
 pub mod background_api; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse --- (studio 0.49)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod conditional; // conditional reads (studio 0.65, contract 5.14.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
+pub mod dictionary; // --- dictionary --- (studio 0.69, contract 6.2.0)
 pub mod discover; // --- discover --- (studio 0.60, contract 5.9.0)
+pub mod helpers; // --- helpers --- (studio 0.69, contract 6.2.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;

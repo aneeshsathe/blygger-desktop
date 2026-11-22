@@ -72,11 +72,13 @@ fn an_assistants_edition_is_read_with_its_entries_resolved() {
 
     // The assistant's edition.
     let t = tag("agentic");
-    let (_, sid) = published(&me, Kind::Fragment, &format!("{t} a post for the edition"), None);
-    let current = me
-        .agentic_edition(DEFAULT_FEED)
-        .unwrap()
-        .expect("served");
+    let (_, sid) = published(
+        &me,
+        Kind::Fragment,
+        &format!("{t} a post for the edition"),
+        None,
+    );
+    let current = me.agentic_edition(DEFAULT_FEED).unwrap().expect("served");
     let (st, put) = owner(
         "PUT",
         &e.url,
@@ -102,7 +104,10 @@ fn an_assistants_edition_is_read_with_its_entries_resolved() {
     let ed = me.agentic_edition(DEFAULT_FEED).unwrap().unwrap();
     assert_eq!(ed.revision, current.revision + 1);
     let layout = ed.layout.as_ref().expect("laid out");
-    assert_eq!(layout.title.as_deref(), Some(format!("{t} edition").as_str()));
+    assert_eq!(
+        layout.title.as_deref(),
+        Some(format!("{t} edition").as_str())
+    );
     assert_eq!(layout.lede.as_deref(), Some("An invented lede."));
     assert_eq!(layout.agent.name, "e2e-assistant");
     assert_eq!(layout.agent.model.as_deref(), Some("invented-model"));
@@ -124,7 +129,9 @@ fn an_assistants_edition_is_read_with_its_entries_resolved() {
         "PUT",
         &e.url,
         "/api/agentic/default",
-        Some(json!({ "expectedRevision": current.revision, "edition": { "agent": { "name": "x" }, "scores": [{ "sub": "~own", "remoteId": sid, "score": 1 }] } })),
+        Some(
+            json!({ "expectedRevision": current.revision, "edition": { "agent": { "name": "x" }, "scores": [{ "sub": "~own", "remoteId": sid, "score": 1 }] } }),
+        ),
     );
     assert_eq!(st, 409);
 }
@@ -177,7 +184,7 @@ fn the_dictionary_is_shared_both_ways() {
     // A stale revision: a conflict carrying the current dictionary.
     let api = Api::new(&e.url, e.cred.clone());
     match api
-        .put_dictionary_source(OWNER, &[mine.clone()], start.revision)
+        .put_dictionary_source(OWNER, std::slice::from_ref(&mine), start.revision)
         .unwrap()
     {
         PutDictionary::Conflict(Some(current)) => {
@@ -276,7 +283,12 @@ fn judging_settings_and_the_helpers_model_are_written_alone() {
     assert_eq!(raw["bgInstruction"], "Trust a note that says typo.");
     assert_eq!(raw["bgFlagDisagreement"], false);
     assert_eq!(raw["aiModelHelpers"], "");
-    for k in ["siteTitle", "aiModelClassify", "backgroundRules", "agenticTitle"] {
+    for k in [
+        "siteTitle",
+        "aiModelClassify",
+        "backgroundRules",
+        "agenticTitle",
+    ] {
         assert_eq!(raw[k], before[k], "{k} moved");
     }
     let read = me.server_ai_settings().unwrap();

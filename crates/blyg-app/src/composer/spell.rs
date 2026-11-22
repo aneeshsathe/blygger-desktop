@@ -25,6 +25,19 @@ pub trait SpellEngine: Send + Sync + 'static {
     fn ignore(&self, word: &str);
 }
 
+/// --- dictionary --- `ranges` without the words the blyg's dictionary
+/// accepts (`blyg_core::dictionary::Accepted`).
+pub fn drop_accepted(
+    text: &str,
+    mut ranges: Vec<Range<usize>>,
+    accepted: &blyg_core::dictionary::Accepted,
+) -> Vec<Range<usize>> {
+    if !accepted.is_empty() {
+        ranges.retain(|r| text.get(r.clone()).is_none_or(|w| !accepted.accepts(w)));
+    }
+    ranges
+}
+
 /// A copy of `text` with everything that isn't prose blanked to spaces,
 /// byte for byte (newlines kept), so offsets into it are offsets into `text`.
 /// Blanked: front matter, fenced code, code spans, link targets and

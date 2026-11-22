@@ -24,7 +24,10 @@ fn a_summary_reads_with_its_model_sources_and_cache_mark() {
         "cached": true
     });
     let s = parse_summary(&v).expect("a summary");
-    assert_eq!(s.summary, "Ada asked about tides; Ben answered with tables.");
+    assert_eq!(
+        s.summary,
+        "Ada asked about tides; Ben answered with tables."
+    );
     assert_eq!(s.model, "invented-model-1");
     assert_eq!(s.at, "2026-11-21T07:00:00.000Z");
     assert!(s.cached);
@@ -50,9 +53,9 @@ fn a_summary_is_asked_by_the_entry_it_starts_from() {
     );
     assert_eq!(SUMMARIZE_OPERATION, "summarizeCatchUp");
     assert!(serves_summary(
-        &json!({ "operations": ["listHelpers", "catchUp", "summarizeCatchUp"] })
+        &json!({ "operations": ["getShelf", "summarizeCatchUp"] })
     ));
-    assert!(!serves_summary(&json!({ "operations": ["catchUp"] })));
+    assert!(!serves_summary(&json!({ "operations": ["getShelf"] })));
 }
 
 /// The new settings read as the studio sends them and are written alone: a

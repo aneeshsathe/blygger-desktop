@@ -654,6 +654,14 @@ impl MainView {
                         ),
             ),
             (
+                Key::AgenticTab,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Agentic,
+                        ),
+            ),
+            (
                 Key::Discover,
                 matches!(
                     self.reading.sheet,
@@ -1448,6 +1456,12 @@ impl MainView {
             "raw-tab" => self.select_source(
                 crate::app::reading::sources_vm::Source::Smart(
                     crate::app::reading::sources_vm::Smart::Raw,
+                ),
+                cx,
+            ),
+            "agentic-edition" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Agentic,
                 ),
                 cx,
             ),

@@ -327,6 +327,7 @@ impl MainView {
         if self.reading.source != source {
             self.reading.source = source;
             self.load_reading_mentions(cx); // --- contacts ---
+            self.agentic_refresh(false, cx); // --- agentic feed ---
             self.reading.sticky.clear();
             self.reading.refilter();
             let keep = self
@@ -1323,6 +1324,8 @@ impl MainView {
                     || "Trail".into(),
                     |t| format!("{} {}", crate::app::trails::GLYPH, t.name),
                 ),
+            // --- agentic feed --- as the blyg names it.
+            Source::Smart(Smart::Agentic) => super::agentic::tab_label(&self.reading.agentic),
             s => sources_vm::source_label(
                 s,
                 &self.reading.folders,
@@ -1467,7 +1470,13 @@ impl MainView {
                 row(SharedString::from(format!("src-smart-{i}")))
                     .debug_selector(move || format!("src-smart-{}", smart.label()))
                     .child(icon(smart_icon(smart)))
-                    .child(div().flex_1().min_w_0().truncate().child(smart.label()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(self.smart_label(smart)),
+                    )
                     .child(count(if smart == Smart::All { 0 } else { unread }))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.reading.focus, cx);

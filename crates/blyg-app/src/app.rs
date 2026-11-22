@@ -571,6 +571,7 @@ impl MainView {
         this.ext_init(window, cx); // --- extensions ---
         this.nearby_init(cx); // --- nearby ---
         this.site_init(cx); // --- site ---
+        this.dictionary_refresh(true, cx); // --- dictionary ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);

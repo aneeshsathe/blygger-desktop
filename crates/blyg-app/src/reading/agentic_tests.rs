@@ -92,7 +92,10 @@ fn a_post_not_on_this_computer_says_so() {
     let c = card(first(&e), None);
     assert_eq!(c.headline, "Elsewhere");
     assert!(!c.held);
-    assert_eq!(c.byline, "Not on this computer yet · it arrives with the next sync");
+    assert_eq!(
+        c.byline,
+        "Not on this computer yet · it arrives with the next sync"
+    );
     let e = edition_of(vec![placed(json!({}))]);
     assert_eq!(card(first(&e), None).headline, "untitled");
 }
@@ -123,7 +126,11 @@ fn the_tab_lists_the_editions_posts_and_wears_its_name() {
         placed(json!({ "remoteId": "r1" })),
         placed(json!({ "sub": "~own", "remoteId": "mine" })),
     ])));
-    let keys: Vec<String> = a.keys().iter().map(|k| format!("{}/{}", k.0, k.1)).collect();
+    let keys: Vec<String> = a
+        .keys()
+        .iter()
+        .map(|k| format!("{}/{}", k.0, k.1))
+        .collect();
     assert_eq!(keys, ["sub-a/r2", "sub-a/r1", "~own/mine"]);
     a.set_title(Some("Daily digest".into()));
     assert_eq!(tab_label(&a), "Daily digest");

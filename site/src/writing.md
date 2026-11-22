@@ -389,7 +389,10 @@ quote it. It's never put in for you.
   words: a red wavy underline, and right-click for suggestions, Learn Spelling
   and Ignore. Code, links, quotes and TK markers are skipped, and checking
   runs in the background after you pause, so typing stays instant.
-  `spellcheck = false` turns it off.
+  `spellcheck = false` turns it off. On blygger-studio 0.69 it also accepts
+  your blyg's dictionary, shared with Studio: Learn Spelling adds the word
+  there too, and **Blyg › Dictionary…** lists your words, adds and takes
+  them out.
 
 | | |
 |---|---|

@@ -24,6 +24,9 @@ pub mod profile_seed;
 // --- access-ai ---
 #[path = "fake_access_ai.rs"]
 pub mod access_ai_seed;
+// --- studio 0.69 --- the Agentic feed's edition, the dictionary, Catch up's summary
+#[path = "fake_studio069.rs"]
+pub mod studio069;
 // --- contacts ---
 #[path = "fake_contacts.rs"]
 pub mod contacts_seed;
@@ -234,6 +237,8 @@ struct State {
     trail_seq: u64,
     // --- access-ai --- client access and the blyg's AI settings.
     access_ai: access_ai_seed::Seed,
+    // --- dictionary --- the blyg's dictionary (studio 0.69).
+    dictionary: blyg_core::dictionary::Dictionary,
     // --- site --- the public site's settings (`blyg_core::site`).
     site: blyg_core::site::SiteConfig,
     // --- contacts --- the address book and what the blyg sent.
@@ -435,6 +440,7 @@ impl FakeBackend {
                 trails: Vec::new(),                       // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
+                dictionary: studio069::dictionary(),        // --- dictionary ---
                 site: fake_site(),                          // --- site ---
                 book: Default::default(),                   // --- contacts ---
                 upkeep: Default::default(),                 // --- upkeep ---
@@ -3193,6 +3199,64 @@ impl Backend for FakeBackend {
         Ok(self.lock().access_ai.models.clone())
     }
 
+    // --- studio 0.69 ---
+    fn agentic_feeds(&self) -> Result<Option<Vec<blyg_core::agentic::Feed>>> {
+        self.remote_guard()?;
+        let title = self.lock().access_ai.ai.agentic_title.clone();
+        Ok(Some(vec![blyg_core::agentic::Feed {
+            id: blyg_core::agentic::DEFAULT_FEED.into(),
+            title: blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default()),
+            revision: 7,
+            updated_at: Some("2026-11-21T07:30:00Z".into()),
+        }]))
+    }
+
+    fn agentic_edition(&self, feed: &str) -> Result<Option<blyg_core::agentic::Edition>> {
+        self.remote_guard()?;
+        if feed != blyg_core::agentic::DEFAULT_FEED {
+            return Ok(None);
+        }
+        let title = self.lock().access_ai.ai.agentic_title.clone();
+        let title = blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default());
+        Ok(Some(studio069::edition(&self.reading(), &title)))
+    }
+
+    fn dictionary(&self) -> Result<Option<blyg_core::dictionary::Dictionary>> {
+        self.remote_guard()?;
+        Ok(Some(self.lock().dictionary.clone()))
+    }
+
+    fn edit_dictionary(
+        &self,
+        edit: &blyg_core::dictionary::Edit,
+    ) -> Result<blyg_core::dictionary::Dictionary> {
+        simulate_latency(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let d = &mut st.dictionary;
+        let mine = blyg_core::dictionary::apply(d.owner_words(), edit);
+        d.sources
+            .retain(|s| s.source != blyg_core::dictionary::OWNER);
+        d.sources.insert(
+            0,
+            blyg_core::dictionary::Source {
+                source: blyg_core::dictionary::OWNER.into(),
+                words: mine,
+            },
+        );
+        d.revision += 1;
+        Ok(d.clone())
+    }
+
+    fn summarize_catch_up(
+        &self,
+        _entry: &blyg_core::shelf::Entry,
+    ) -> Result<Option<blyg_core::helpers::CatchUpSummary>> {
+        simulate_latency(self.timing.publish);
+        self.remote_guard()?;
+        Ok(Some(studio069::catch_up_summary()))
+    }
+
     fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
         self.remote_guard()?;
         Ok(self.lock().access_ai.ai.clone())
@@ -3216,6 +3280,15 @@ impl Backend for FakeBackend {
         };
         keep(&mut ai.style_prompt, &s.style_prompt);
         keep(&mut ai.feed_prompt, &s.feed_prompt);
+        // --- studio 0.69 ---
+        keep(&mut ai.agentic_title, &s.agentic_title);
+        keep(&mut ai.bg_instruction, &s.bg_instruction);
+        if s.bg_model_imported.is_some() {
+            ai.bg_model_imported = s.bg_model_imported;
+        }
+        if s.bg_flag_disagreement.is_some() {
+            ai.bg_flag_disagreement = s.bg_flag_disagreement;
+        }
         if s.auto_change_notes.is_some() {
             ai.auto_change_notes = s.auto_change_notes;
         }

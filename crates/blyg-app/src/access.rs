@@ -565,6 +565,7 @@ impl MainView {
             }
             (Scene::AaToken, 2) => self.access_create(window, cx),
             (Scene::AaAi, 0) => self.open_server_ai(window, cx),
+            (Scene::AaDictionary, 0) => self.open_dictionary(window, cx), // --- dictionary ---
             (Scene::AaPublish, 0) => {
                 self.open(&LocalId("01J9PX1".into()), window, cx);
                 self.demo_type(" Then the rain came.", window, cx);

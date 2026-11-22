@@ -6,7 +6,10 @@
 //! open the post in the reader (the reader's own open: a post not held is
 //! fetched on that click, never before), w adds the side branches ("whole
 //! conversation"), s asks the AI for a summary at the top (reading-only,
-//! labelled "AI summary"; esc cancels it), esc closes. Model:
+//! labelled "AI summary"; esc cancels it), esc closes. The summary is the
+//! blyg's when it offers one (studio 0.69's `summarizeCatchUp`, written by
+//! its text helpers model and kept there; [`blyg_summary_entry`]), else
+//! Burrow's own AI's. Model:
 //! `blyg_core::catchup`; prompt: `blyg_ai::prompts::catch_up_summary`.
 
 use std::rc::Rc;
@@ -100,6 +103,27 @@ fn day_words(at: Option<i64>) -> Option<String> {
             .format("%-d %b %Y")
             .to_string(),
     )
+}
+
+/// A new summary job's number (a late answer to an older one is dropped).
+fn next_job() -> u64 {
+    static JOBS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    JOBS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
+/// The entry to ask the blyg's summary for: the starting post, when it's
+/// held here (yours as `~own`). The blyg's summary reads the quotes baked
+/// into that one post, so it isn't asked with "whole conversation" on (the
+/// side branches are Burrow's own).
+pub fn blyg_summary_entry(
+    whole: bool,
+    start: Option<&blyg_core::ReadingItem>,
+) -> Option<blyg_core::shelf::Entry> {
+    let r = start.filter(|_| !whole)?;
+    Some(blyg_core::shelf::Entry::new(
+        r.subscription_id.clone(),
+        r.remote_id.clone(),
+    ))
 }
 
 impl MainView {
@@ -284,9 +308,57 @@ impl MainView {
         }
     }
 
-    /// s: summarize the conversation with the configured AI provider, off
-    /// the UI thread. Reading-only: shown in the sheet, never in a post.
+    /// s: summarize the conversation: ask the blyg first when its summary
+    /// covers it ([`blyg_summary_entry`]), and Burrow's own AI when the blyg
+    /// doesn't offer one or can't write it. Reading-only: shown in the
+    /// sheet, never in a post.
     pub(crate) fn catch_up_summarize(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(s) = self.catch_up_mut() else { return };
+        if matches!(s.summary, Summary::Running { .. }) {
+            return;
+        }
+        let start = s.convo.entries.iter().find(|e| e.start);
+        let Some(entry) = blyg_summary_entry(s.whole, start.and_then(|e| e.held.as_ref())) else {
+            return self.catch_up_summarize_here(window, cx);
+        };
+        let job = next_job();
+        s.summary = Summary::Running {
+            job,
+            text: String::new(),
+        };
+        cx.notify();
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move { backend.summarize_catch_up(&entry) });
+        cx.spawn_in(window, async move |this, cx| {
+            let r = task.await;
+            let _ = this.update_in(cx, |v, window, cx| {
+                let Some(s) = v.catch_up_mut() else { return };
+                if !matches!(s.summary, Summary::Running { job: j, .. } if j == job) {
+                    return; // cancelled, or asked again
+                }
+                match r {
+                    Ok(Some(sum)) => {
+                        s.summary = Summary::Done {
+                            text: sum.summary,
+                            model: format!("{} · on your blyg", sum.model),
+                        };
+                        cx.notify();
+                    }
+                    // Not offered, nothing it can summarize, or no model:
+                    // Burrow's own AI.
+                    _ => {
+                        s.summary = Summary::Off;
+                        v.catch_up_summarize_here(window, cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The summary from Burrow's own AI (the configured provider), off the
+    /// UI thread.
+    fn catch_up_summarize_here(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(s) = self.catch_up_mut() else { return };
         if matches!(s.summary, Summary::Running { .. }) {
             return;
@@ -307,8 +379,7 @@ impl MainView {
                 return;
             }
         };
-        static JOBS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let job = JOBS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let job = next_job();
         let cancel = CancelFlag::new();
         if let Some(s) = self.catch_up_mut() {
             s.summary = Summary::Running {

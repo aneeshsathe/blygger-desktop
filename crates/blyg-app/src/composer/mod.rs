@@ -25,6 +25,12 @@ pub struct SpellService {
     pub engine: Option<Arc<dyn SpellEngine>>,
     pub enabled: bool,
     pub cache: Cache,
+    /// --- dictionary --- the blyg's dictionary (studio 0.69): its words
+    /// are never underlined. Empty until read, or on a blyg without one.
+    pub accepted: blyg_core::dictionary::Accepted,
+    /// Where a learned word goes besides the system's list (the main
+    /// window sends it to the blyg's dictionary).
+    pub on_learn: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 impl Global for SpellService {}
@@ -36,7 +42,35 @@ pub fn init(engine: Option<Arc<dyn SpellEngine>>, enabled: bool, cx: &mut App) {
         engine,
         enabled,
         cache: Cache::default(),
+        accepted: Default::default(),
+        on_learn: None,
     });
+}
+
+/// --- dictionary --- The blyg's dictionary as last read: every editor
+/// stops underlining its words at its next check.
+pub fn set_accepted(accepted: blyg_core::dictionary::Accepted, cx: &mut App) {
+    if !cx.has_global::<SpellService>() {
+        init(None, false, cx);
+    }
+    cx.global_mut::<SpellService>().accepted = accepted;
+}
+
+/// Where a learned word goes besides the system's list.
+pub fn set_on_learn(f: Arc<dyn Fn(String) + Send + Sync>, cx: &mut App) {
+    if !cx.has_global::<SpellService>() {
+        init(None, false, cx);
+    }
+    cx.global_mut::<SpellService>().on_learn = Some(f);
+}
+
+/// "Learn Spelling": accepted at once here, and sent on (to the blyg).
+fn learned(word: &str, cx: &mut App) {
+    let s = cx.global_mut::<SpellService>();
+    s.accepted.add(word);
+    if let Some(f) = s.on_learn.clone() {
+        f(word.to_string());
+    }
 }
 
 /// The system engine for this platform.

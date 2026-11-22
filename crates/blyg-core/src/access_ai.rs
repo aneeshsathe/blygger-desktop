@@ -244,14 +244,18 @@ pub enum AiFunction {
     Classify,
     /// `aiModelFeed`: Smart Feed scoring (saved, not used yet upstream).
     Feed,
+    /// `aiModelHelpers` (studio 0.69): text helpers such as Catch up's
+    /// summary; empty uses the change-notes model.
+    Helpers,
 }
 
 impl AiFunction {
-    pub const ALL: [AiFunction; 4] = [
+    pub const ALL: [AiFunction; 5] = [
         AiFunction::Tk,
         AiFunction::Changelog,
         AiFunction::Classify,
         AiFunction::Feed,
+        AiFunction::Helpers,
     ];
 
     pub fn label(self) -> &'static str {
@@ -260,6 +264,7 @@ impl AiFunction {
             AiFunction::Changelog => "Change notes",
             AiFunction::Classify => "Change classifier",
             AiFunction::Feed => "Feed scoring",
+            AiFunction::Helpers => "Text helpers",
         }
     }
 
@@ -270,6 +275,7 @@ impl AiFunction {
             AiFunction::Changelog => "aiModelChangelog",
             AiFunction::Classify => "aiModelClassify",
             AiFunction::Feed => "aiModelFeed",
+            AiFunction::Helpers => "aiModelHelpers",
         }
     }
 }
@@ -283,6 +289,8 @@ pub struct ServerAiSettings {
     pub model_changelog: Option<String>,
     pub model_classify: Option<String>,
     pub model_feed: Option<String>,
+    /// `aiModelHelpers` (studio 0.69).
+    pub model_helpers: Option<String>,
     /// `aiStylePrompt`: added to every `[TK]` generation on the blyg.
     pub style_prompt: Option<String>,
     /// `feedPrompt`: the Smart Feed's rubric (not used yet upstream).
@@ -291,6 +299,34 @@ pub struct ServerAiSettings {
     pub auto_change_notes: Option<bool>,
     /// `changeCategoryInNote`: lead the note with the classifier's word.
     pub change_category_in_note: Option<bool>,
+    // --- studio 0.69 ---
+    /// `agenticTitle`: the Agentic feed tab's name (empty: "Agentic feed").
+    pub agentic_title: Option<String>,
+    /// `bgModelImported`: other blygs' new versions are judged by the change
+    /// classifier, and a typo or minor label sends them to Background.
+    pub bg_model_imported: Option<bool>,
+    /// `bgInstruction`: while written, the classifier also reads each
+    /// version's changelog note with it.
+    pub bg_instruction: Option<String>,
+    /// `bgFlagDisagreement`: a note claiming a small change against a large
+    /// measured one keeps the entry in view, marked (on by default).
+    pub bg_flag_disagreement: Option<bool>,
+}
+
+/// What the AI sheet may show of the classifier's judging of other blygs'
+/// changes, as Studio's Settings › Background shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Judging {
+    /// The studio has the setting (0.69 or later).
+    pub offered: bool,
+    /// A change classifier is chosen: the toggle can be turned on.
+    pub can_judge: bool,
+    /// Judging is on (with a classifier): the instruction shows.
+    pub instruction: bool,
+    /// An instruction is written too: the keep-in-view switch shows.
+    pub flag: bool,
+    /// The keep-in-view switch's value (on unless the studio says off).
+    pub flag_on: bool,
 }
 
 impl ServerAiSettings {
@@ -300,6 +336,7 @@ impl ServerAiSettings {
             AiFunction::Changelog => self.model_changelog.as_deref(),
             AiFunction::Classify => self.model_classify.as_deref(),
             AiFunction::Feed => self.model_feed.as_deref(),
+            AiFunction::Helpers => self.model_helpers.as_deref(),
         }
     }
 
@@ -309,6 +346,7 @@ impl ServerAiSettings {
             AiFunction::Changelog => &mut self.model_changelog,
             AiFunction::Classify => &mut self.model_classify,
             AiFunction::Feed => &mut self.model_feed,
+            AiFunction::Helpers => &mut self.model_helpers,
         }
     }
 
@@ -321,10 +359,15 @@ impl ServerAiSettings {
             model_changelog: s("aiModelChangelog"),
             model_classify: s("aiModelClassify"),
             model_feed: s("aiModelFeed"),
+            model_helpers: s("aiModelHelpers"),
             style_prompt: s("aiStylePrompt"),
             feed_prompt: s("feedPrompt"),
             auto_change_notes: b("autoChangeNotes"),
             change_category_in_note: b("changeCategoryInNote"),
+            agentic_title: s("agenticTitle"),
+            bg_model_imported: b("bgModelImported"),
+            bg_instruction: s("bgInstruction"),
+            bg_flag_disagreement: b("bgFlagDisagreement"),
         }
     }
 
@@ -348,7 +391,34 @@ impl ServerAiSettings {
         if let Some(v) = self.change_category_in_note {
             m.insert("changeCategoryInNote".into(), v.into());
         }
+        if let Some(v) = &self.agentic_title {
+            m.insert("agenticTitle".into(), v.trim().into());
+        }
+        if let Some(v) = self.bg_model_imported {
+            m.insert("bgModelImported".into(), v.into());
+        }
+        if let Some(v) = &self.bg_instruction {
+            m.insert("bgInstruction".into(), v.trim().into());
+        }
+        if let Some(v) = self.bg_flag_disagreement {
+            m.insert("bgFlagDisagreement".into(), v.into());
+        }
         serde_json::Value::Object(m)
+    }
+
+    /// What the sheet may show of judging other blygs' changes.
+    pub fn judging(&self) -> Judging {
+        let set = |m: &Option<String>| m.as_deref().is_some_and(|m| !m.trim().is_empty());
+        let offered = self.bg_model_imported.is_some();
+        let can_judge = offered && set(&self.model_classify);
+        let instruction = can_judge && self.bg_model_imported == Some(true);
+        Judging {
+            offered,
+            can_judge,
+            instruction,
+            flag: instruction && set(&self.bg_instruction),
+            flag_on: self.bg_flag_disagreement != Some(false),
+        }
     }
 
     /// What the publish sheet may offer.

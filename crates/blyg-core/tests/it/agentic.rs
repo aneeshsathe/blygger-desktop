@@ -86,13 +86,19 @@ fn an_edition_reads_with_its_sections_entries_and_words() {
     assert_eq!(lead.present, Present::Full);
     // The version the entry holds now, from its resolved reading entry.
     assert_eq!(lead.held_version, Some(3));
-    assert!(lead.changed_since(), "the assistant read v2; it's at v3 now");
+    assert!(
+        lead.changed_since(),
+        "the assistant read v2; it's at v3 now"
+    );
     let also = &l.sections[1].entries;
     assert_eq!(also[0].present, Present::Excerpt, "the default");
     assert_eq!(also[0].group.as_deref(), Some("harbour"));
     assert_eq!(also[1].present, Present::Title);
     assert_eq!(also[3].present, Present::Folded);
-    assert!(!also[0].changed_since(), "no version judged: never 'changed'");
+    assert!(
+        !also[0].changed_since(),
+        "no version judged: never 'changed'"
+    );
 }
 
 #[test]
@@ -130,7 +136,8 @@ fn entries_group_under_their_first_and_folded_ones_join_the_one_above() {
 
 #[test]
 fn a_never_written_edition_has_no_layout() {
-    let v = json!({ "revision": 0, "updatedAt": null, "mode": null, "layout": null, "draft": null });
+    let v =
+        json!({ "revision": 0, "updatedAt": null, "mode": null, "layout": null, "draft": null });
     let e = parse_edition(&v).expect("still an edition");
     assert_eq!(e.revision, 0);
     assert!(e.layout.is_none());
@@ -174,5 +181,8 @@ fn offered_only_when_the_capabilities_list_get_agentic() {
     ));
     assert!(serves(&json!({ "operations": { "getAgentic": {} } })));
     assert!(!serves(&json!({ "operations": ["getShelf"] })));
-    assert!(!serves(&json!({ "contractVersion": "6.2.0" })), "never by version");
+    assert!(
+        !serves(&json!({ "contractVersion": "6.2.0" })),
+        "never by version"
+    );
 }
