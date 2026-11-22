@@ -47,6 +47,43 @@ fn src_rev(id: &str) -> u64 {
     v["revision"].as_u64().expect("a revision")
 }
 
+/// A thread's parts as the studio's own list says them: its
+/// `ReadingEntry.parts` on `GET /api/reading` (every page, each checked
+/// against the contract) as `(sub, id, label)`, empty when it lists none;
+/// `None` when the list doesn't hold the thread.
+fn studio_parts(base: &str, sub: &str, id: &str) -> Option<Vec<(String, String, String)>> {
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut path = String::from("/api/reading?limit=50");
+        if let Some(c) = &cursor {
+            path.push_str(&format!("&cursor={}", query_escape(c)));
+        }
+        let page = conforms("GET", base, &path);
+        let entry = page["items"].as_array().unwrap().iter().find(|e| {
+            if sub == OWN_SUBSCRIPTION {
+                e["own"]["id"] == id
+            } else {
+                e["imported"]["subscriptionId"] == sub && e["imported"]["remoteId"] == id
+            }
+        });
+        if let Some(e) = entry {
+            let s = |v: &Value| v.as_str().unwrap_or_default().to_string();
+            // The ReadingEntry's parts: absent while the burst rule is off.
+            return Some(
+                e["parts"]
+                    .as_array()
+                    .map(|ps| {
+                        ps.iter()
+                            .map(|p| (s(&p["sub"]), s(&p["id"]), s(&p["label"])))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+        }
+        cursor = Some(page["page"]["nextCursor"].as_str()?.to_string());
+    }
+}
+
 /// The rules this studio offers; `None` (skip) on a studio before 0.64.
 fn offers_burst(me: &LiveBackend) -> Option<BackgroundRules> {
     if !me.background_served() {
@@ -138,6 +175,19 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         ],
         "+2 parts, in the order they were made"
     );
+    // The studio's list says the same of the thread: the same parts in the
+    // same order, each labelled as Burrow labels it (link-label.ts, ported
+    // as pick::link_label).
+    let said = studio_parts(&e.url, &sid, &thread).expect("the thread is listed");
+    let want: Vec<(String, String, String)> = [&p1, &p2]
+        .into_iter()
+        .map(|p| {
+            let r = row_of(&rows, &sid, p);
+            let label = blyg_core::pick::link_label(&r.content_html, r.kind);
+            (sid.clone(), p.to_string(), label)
+        })
+        .collect();
+    assert_eq!(said, want, "ReadingEntry.parts: sub, id, label");
 
     // The burst rule off: one key written, the others as stored (wordless
     // turned off first, so "as stored" isn't just the default).
@@ -159,6 +209,11 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
     assert!(
         !burst_parts(&annotated(&me)).contains_key(&thread_key),
         "no parts while the rule is off"
+    );
+    assert_eq!(
+        studio_parts(&e.url, &sid, &thread),
+        Some(vec![]),
+        "nor does the studio's list (its ReadingEntry has no \"parts\")"
     );
 
     // On again: the reasons were kept, so they fold again.
@@ -196,6 +251,16 @@ fn your_own_burst_lists_its_parts() {
     let rows = annotated(&me);
     assert!(row_of(&rows, OWN_SUBSCRIPTION, &p1).is_background());
     assert!(!row_of(&rows, OWN_SUBSCRIPTION, &thread).is_background());
+    // The studio's list keys them the same: ReadingEntry.parts' sub is "~own".
+    let said = studio_parts(&e2e().url, OWN_SUBSCRIPTION, &thread).expect("listed");
+    let keys: Vec<(&str, &str)> = said.iter().map(|p| (p.0.as_str(), p.1.as_str())).collect();
+    assert_eq!(
+        keys,
+        [
+            (OWN_SUBSCRIPTION, p1.as_str()),
+            (OWN_SUBSCRIPTION, p2.as_str())
+        ]
+    );
 }
 
 /// A post of only quotes is "no words of its own" (`wordless`); a version

@@ -53,6 +53,8 @@ reason = "Burrow doesn't ask for catch-up's cards because its own Catch up (blyg
 reason = "catch-up's answer (operation catchUp), which Burrow doesn't ask for: its own Catch up lays out the conversation (blyg_core::catchup)"
 items = [
   "property:CatchUp.cards",
+  "property:CatchUp.cards[].depth",
+  "property:CatchUp.cards[].html",
   "property:CatchUp.ordered",
   "enum:CatchUp.ordered=depth",
   "enum:CatchUp.ordered=time",
@@ -72,6 +74,10 @@ items = [
   "property:listHelpers/200.helpers[].ui",
   "enum:listHelpers/200.helpers[].kind=mechanical",
 ]
+
+[[exempt]]
+item = "property:AgenticEdition.edition"
+reason = "Burrow doesn't read an edition's `edition` (the assistant's AgenticEditionInput, echoed back for its next PUT) because it draws `layout`, the same edition with each reference resolved and the unresolvable ones left out (blyg_core::agentic::parse_edition), and never writes an edition (putAgentic is the assistant's); Studio's tab draws `layout` too"
 
 [[exempt]]
 item = "property:*.studioTheme"
