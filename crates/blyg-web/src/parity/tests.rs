@@ -78,7 +78,7 @@ fn mark_all_read_marks_the_source_and_batches_the_marks() {
     let ask = v(b.mark_all_ask(NOW));
     // a1 (unread) and a2 (read at v2, now v3); b1 is read.
     assert_eq!(ask["n"], 2);
-    assert_eq!(ask["label"], "All");
+    assert_eq!(ask["label"], "Feed");
     let out = v(b.mark_all_read(NOW));
     assert_eq!(out["n"], 2);
     let batches = out["batches"].as_array().unwrap();

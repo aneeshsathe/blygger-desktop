@@ -74,7 +74,7 @@ fn a_source_and_a_lens_filter_the_stream() {
     b.wr_set_source("smart:all");
     b.wr_set_lens("thread");
     assert_eq!(keys(&b), ["b|b1"]);
-    assert_eq!(b.wr_source_label(), "All · threads");
+    assert_eq!(b.wr_source_label(), "Feed · threads");
     b.wr_set_source("hopper:h1");
     let view = v(b.reading_view(NOW, "", false));
     assert_eq!(view["total"], 0);
@@ -105,10 +105,13 @@ fn the_sources_pane_lists_feeds_mentions_hoppers_and_subscriptions() {
             "Today",
             "Thumbed",
             "Thumbed down",
-            "All",
-            "Shelf", // --- shelf sync ---
-            "Background",
+            // Studio 0.68's tabs, in its order (Mentions after the Feed).
+            "Feed",
             "Mentions",
+            "Agentic feed",
+            "Saved", // --- shelf sync ---
+            "Background",
+            "Raw",
             "Hoppers",
             "Keep",
             "Subscriptions",

@@ -1056,3 +1056,6 @@ mod live_tests;
 
 #[cfg(test)]
 mod order_tests; // the one list order, and your posts in Reading
+
+#[cfg(test)]
+mod studio69_tests;
