@@ -13,7 +13,10 @@ use crate::model::*;
 use crate::syndication::{SyndicationEntry, SyndicationOp, op_key};
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 fn e(url: &str, v: u32) -> SyndicationEntry {

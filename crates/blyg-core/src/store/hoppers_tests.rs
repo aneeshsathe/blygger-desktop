@@ -9,7 +9,10 @@ use super::{FetchedHopper, OpKind, Store, hopper_key};
 use crate::model::*;
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 fn ri(sub: &str, rid: &str) -> ReadingItem {

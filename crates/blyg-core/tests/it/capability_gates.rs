@@ -16,12 +16,50 @@ fn env_at(contract: &str, ops: &[&str]) -> Env {
     env
 }
 
+/// Summaries follow `summarizeChangelog`, a draft-scope operation the
+/// studio lists only to a token that may draft.
 #[test]
-fn changelog_follows_summarize_changelog() {
+fn changelog_summaries_follow_summarize_changelog() {
     let env = env_at("next", &["summarizeChangelog"]);
-    assert!(Api::new(&env.mock.url, TOKEN).serves_changelog().unwrap());
+    assert!(
+        Api::new(&env.mock.url, TOKEN)
+            .serves_changelog_summary()
+            .unwrap()
+    );
     let env = env_at("6.1.0", &[]);
-    assert!(!Api::new(&env.mock.url, TOKEN).serves_changelog().unwrap());
+    assert!(
+        !Api::new(&env.mock.url, TOKEN)
+            .serves_changelog_summary()
+            .unwrap()
+    );
+}
+
+/// The changelog display keys (and the note draft's `history` flag) follow
+/// what a read of the settings shows, so a token without the draft scope
+/// still sees and keeps the blyg's display settings.
+#[test]
+fn changelog_display_follows_the_settings_a_read_shows() {
+    let env = env_at("6.1.0", &[]);
+    {
+        let mut st = env.mock.state();
+        st.settings = Some(serde_json::json!({
+            "changelogDisplay": "history", "readerChangelogDisplay": "summary"
+        }));
+        st.unchecked.push("/api/settings".into());
+    }
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(!api.serves_changelog_summary().unwrap(), "no draft scope");
+    assert!(api.serves_changelog().unwrap());
+    let s = api.changelog_settings().unwrap().expect("display settings");
+    api.put_changelog_settings(&s).expect("saved");
+
+    // A studio before 0.58: no keys, nothing served or sent.
+    let env = env_at("5.0.0", &[]);
+    let api = Api::new(&env.mock.url, TOKEN);
+    assert!(!api.serves_changelog().unwrap());
+    assert_eq!(api.changelog_settings().unwrap(), None);
+    assert!(api.put_changelog_settings(&s).is_err());
+    assert!(env.mock.state().settings_puts.is_empty());
 }
 
 #[test]

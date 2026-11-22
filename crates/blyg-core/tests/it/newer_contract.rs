@@ -171,3 +171,94 @@ fn connecting_to_a_newer_contract_works() {
     let env = env_at("7.0.0");
     assert_eq!(api::verify_connection(&env.mock.url, TOKEN), Ok(1));
 }
+
+/// A second subscription, S2, on the blyg.
+fn add_s2(env: &Env) {
+    env.mock.state().subs.push(json!({
+        "id": "S2", "kind": "blyg", "origin": "https://other.example/",
+        "feed_url": "https://other.example/feed.xml", "title": "Other",
+        "status": "active", "in_blogroll": false
+    }));
+}
+
+fn sub_ids(b: &LiveBackend) -> Vec<String> {
+    let mut ids: Vec<String> = b
+        .subscriptions()
+        .into_iter()
+        .map(|s| s.id.to_string())
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// Every path that replaces the subscription list (a refresh, a rename, a
+/// subscribe, as well as a pull) keeps what a newer studio's list lacks.
+#[test]
+fn a_newer_contracts_subscription_list_removes_nothing_on_any_path() {
+    let env = env_at("7.0.0");
+    add_s2(&env);
+    let b = open(&env);
+    b.sync_now().unwrap();
+    assert_eq!(sub_ids(&b), ["S1", "S2"]);
+    env.mock.state().subs.retain(|s| s["id"] != "S2");
+
+    b.refresh_subscriptions().unwrap();
+    assert_eq!(sub_ids(&b), ["S1", "S2"], "a refresh kept S2");
+    b.rename_subscription(&"S1".into(), Some("Them, renamed"))
+        .unwrap();
+    assert!(sub_ids(&b).contains(&"S2".to_string()), "a rename kept S2");
+    let new = b.subscribe("https://new.example/", None).unwrap();
+    let ids = sub_ids(&b);
+    assert!(ids.contains(&"S2".to_string()), "a subscribe kept S2: {ids:?}");
+    assert!(ids.contains(&new.id.to_string()), "and added {}", new.id);
+}
+
+/// The same refresh on a known contract takes the blyg's word.
+#[test]
+fn a_known_contracts_refresh_removes_a_dropped_subscription() {
+    let env = env_at("6.0.0");
+    add_s2(&env);
+    let b = open(&env);
+    b.sync_now().unwrap();
+    env.mock.state().subs.retain(|s| s["id"] != "S2");
+    b.refresh_subscriptions().unwrap();
+    assert_eq!(sub_ids(&b), ["S1"]);
+}
+
+/// A studio upgraded to a newer contract while Burrow runs: it's seen
+/// before anything is removed on its lists' word.
+#[test]
+fn a_studio_upgraded_mid_session_removes_nothing() {
+    let env = env_at("6.0.0");
+    let b = open(&env);
+    b.sync_now().unwrap();
+    b.refresh_contacts().unwrap();
+    assert_eq!(held(&b), (1, 1, 2, 1, 1));
+    env.mock.state().contract_version = Some("7.0.0".into());
+    drop_everything(&env);
+    b.sync_now().unwrap();
+    let (items, subs, reading, hoppers, _) = held(&b);
+    assert_eq!((items, subs, reading, hoppers), (1, 1, 2, 1), "kept");
+    assert!(
+        env.events()
+            .iter()
+            .any(|e| matches!(e, CoreEvent::ServerNewer(_))),
+        "and told"
+    );
+}
+
+/// Unsubscribing is your removal: its rows leave here at once, whatever
+/// the contract (on a newer one, no list would take them).
+#[test]
+fn unsubscribing_on_a_newer_contract_takes_its_rows_here() {
+    let env = env_at("7.0.0");
+    let b = open(&env);
+    b.sync_now().unwrap();
+    assert_eq!(b.reading().len(), 2);
+    b.unsubscribe(&"S1".into()).unwrap();
+    assert!(b.subscriptions().is_empty());
+    assert!(
+        b.reading().iter().all(|r| r.subscription_id != "S1"),
+        "S1's rows went with it"
+    );
+}

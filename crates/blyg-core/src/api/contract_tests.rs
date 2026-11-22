@@ -49,3 +49,38 @@ fn a_version_that_isnt_a_number_is_newer() {
     assert_eq!(contract(Some("next")), Contract::Newer("next".into()));
     assert_eq!(contract(Some("v7")), Contract::Newer("v7".into()));
 }
+
+/// Only a 400 about `wholeBlyg` itself is answered by asking again without
+/// it. The studio's strict body (0.49, contract 5.0) says, through its
+/// `schemaError`: `request: Unrecognized key: "wholeBlyg"`, with the issue
+/// in `details.issues`; the test mock says ``body: unknown field `wholeBlyg` ``.
+#[test]
+fn only_a_refusal_naming_whole_blyg_is_retried_without_it() {
+    let rejected = |message: &str, details: &[&str]| CoreError::Rejected {
+        status: 400,
+        message: message.into(),
+        details: details.iter().map(|d| d.to_string()).collect(),
+    };
+    for e in [
+        rejected("request: Unrecognized key: \"wholeBlyg\"", &[]),
+        rejected(
+            "invalid input",
+            &["request: Unrecognized key: \"wholeBlyg\""],
+        ),
+        rejected("body: unknown field `wholeBlyg`", &[]),
+    ] {
+        assert!(names_whole_blyg(&e), "{e:?}");
+    }
+    for e in [
+        rejected("url: Invalid input: expected string", &[]),
+        rejected("could not resolve this URL", &["tried 2 addresses"]),
+        CoreError::Rejected {
+            status: 422,
+            message: "wholeBlyg needs a hopper".into(),
+            details: vec![],
+        },
+        CoreError::NotFound,
+    ] {
+        assert!(!names_whole_blyg(&e), "{e:?}");
+    }
+}

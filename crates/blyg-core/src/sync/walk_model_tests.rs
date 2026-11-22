@@ -21,7 +21,11 @@
 //!   of the next foreground pull.
 //!
 //! - (g) on a contract newer than this Burrow knows (`Prune::Withheld`),
-//!   nothing is ever removed, whatever the server dropped.
+//!   nothing is ever removed, whatever the server dropped, even when the
+//!   studio moved to it part-way through a walk: the walk's end checks the
+//!   contract again, as `Engine::read_reading` does. That the store itself
+//!   refuses a newer contract's removals is proven against a real store in
+//!   `store/newer_tests.rs` and end to end in `tests/it/newer_contract.rs`.
 //!
 //! and once the server goes quiet:
 //! - (a) the client accepts the server's `reading` revision and holds
@@ -77,6 +81,8 @@ struct Server {
     subs: u64,
     page_size: usize,
     next_id: u32,
+    /// What the studio's contract lets its lists remove, now.
+    contract: Prune,
 }
 
 impl Server {
@@ -148,7 +154,8 @@ struct Client {
     whole_at: Option<i64>,
     subs: u64,
     budget: u32,
-    /// What the studio's contract lets its lists remove here.
+    /// What the studio's contract lets its lists remove here, as last
+    /// checked (each safety-net pull, and at a walk's end).
     prune: Prune,
 }
 
@@ -202,6 +209,10 @@ enum Ev {
     Restore {
         keep: u8,
     },
+    /// The studio moved to another contract.
+    Contract {
+        prune: Prune,
+    },
     Pull {
         background: bool,
         /// A list change before this request.
@@ -226,6 +237,7 @@ impl Sim {
             subs: 1,
             page_size,
             next_id: 0,
+            contract: prune,
         };
         for &(sub, age_s) in rows {
             s.next_id += 1;
@@ -318,6 +330,7 @@ impl Sim {
                 s.rev = 1;
                 s.generation += 1;
             }
+            Ev::Contract { prune } => s.contract = *prune,
             Ev::Pull { .. } => unreachable!("a pull isn't a server change"),
         }
     }
@@ -355,6 +368,10 @@ impl Sim {
         }
         let rev = Some(self.s.revs());
         let full = c.full_at.is_none_or(|t| now - t >= c.full_every);
+        // The safety net checks the contract again (`Engine::pull_locked`).
+        if full {
+            c.prune = self.s.contract;
+        }
         let subs_changed = c.subs != self.s.subs;
         c.subs = self.s.subs;
         let gap_open = !background || c.reading_at.is_none_or(|t| now - t >= GAP);
@@ -436,6 +453,12 @@ impl Sim {
                         break;
                     }
                     Step::Done { whole, prune } => {
+                        // A walk's end checks the contract again before it
+                        // prunes (`Engine::read_reading`).
+                        let prune = prune && {
+                            self.c.prune = self.s.contract;
+                            self.c.prune == Prune::Allowed
+                        };
                         if prune {
                             let keys = &r.walk.keys;
                             let before: Vec<Key> = self.c.local.keys().cloned().collect();
@@ -489,7 +512,7 @@ impl Sim {
             self.c.budget
         );
         // (g) a newer contract's lists remove nothing.
-        if self.c.prune == Prune::Withheld {
+        if self.s.contract == Prune::Withheld {
             assert!(
                 log.removed.is_empty(),
                 "(g) removed {:?} on a newer contract's word",
@@ -768,4 +791,46 @@ fn model_a_newer_contracts_empty_list_removes_nothing() {
     let log = sim.pull(false, None);
     assert_eq!(log.done, Some(true), "a whole walk reached the end");
     assert_eq!(sim.c.local.len(), 3, "and removed nothing");
+}
+
+/// (g), part-way: a walk begun on a known contract, held between pulls,
+/// while the studio moves to a newer one and drops rows. The walk's end
+/// checks the contract again and removes nothing.
+#[test]
+fn model_a_contract_newer_by_a_walks_end_removes_nothing() {
+    let rows = [(0, 10), (1, 20), (2, 30), (3, 40)];
+    let mut sim = Sim::new(&rows, 1, 1, Prune::Allowed);
+    // A first whole walk, across pulls, brings all four.
+    let mut n = 0;
+    while sim.pull(false, None).done != Some(true) {
+        sim.wait();
+        n += 1;
+        assert!(n < 30, "the first walk ends");
+    }
+    assert_eq!(sim.c.local.len(), 4);
+    // The safety net's next walk begins under the known contract and is
+    // held between pulls (one page a pull)...
+    sim.now += MAX;
+    let log = sim.pull(true, None);
+    assert!(log.full, "{log:?}");
+    assert!(sim.c.walk.is_some(), "a walk held: {log:?}");
+    assert_eq!(sim.c.prune, Prune::Allowed);
+    // ...when the studio moves to a newer contract and drops two rows.
+    sim.apply(&Ev::Contract {
+        prune: Prune::Withheld,
+    });
+    sim.apply(&Ev::Delete { at: 0 });
+    sim.apply(&Ev::Delete { at: 0 });
+    let mut n = 0;
+    loop {
+        sim.wait();
+        let log = sim.pull(true, None);
+        if log.done == Some(true) {
+            break;
+        }
+        n += 1;
+        assert!(n < 30, "the walk ends");
+    }
+    assert_eq!(sim.c.prune, Prune::Withheld, "the walk's end saw it");
+    assert_eq!(sim.c.local.len(), 4, "and removed nothing");
 }

@@ -102,3 +102,52 @@ fn thumbs_stay_when_a_newer_contracts_signals_lack_them() {
     assert_eq!(thumbs["A"], Some(1), "A's kept");
     assert_eq!(thumbs["B"], Some(-1));
 }
+
+/// A store removes nothing on a list's word until a sync has checked the
+/// blyg's contract (`Engine::check_server` allows it).
+#[test]
+fn a_store_removes_nothing_until_the_contract_is_checked() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    assert_eq!(s.lists_prune(), Prune::Withheld);
+    assert_eq!(
+        Store::open_in_memory().unwrap().lists_prune(),
+        Prune::Withheld
+    );
+    s.merge_reading(&[ri("A", None)], true, &kinds()).unwrap();
+    assert!(!s.prune_reading_except(&HashSet::new()).unwrap());
+    assert_eq!(s.reading().len(), 1);
+}
+
+/// An RSS post whose guid changed is re-keyed only on a list Burrow can
+/// read: on a newer contract's word the old row (its thumb, its place on
+/// the shelf and in hoppers) stays, beside the new one.
+#[test]
+fn a_newer_contracts_new_guid_doesnt_re_key_a_held_row() {
+    let page = Some("https://a.example/p".to_string());
+    let with_page = |rid: &str, thumb: Option<i8>| ReadingItem {
+        page: page.clone(),
+        ..ri(rid, thumb)
+    };
+    let listed = |rid: &str| HashSet::from([(SubId::from("s1"), RemoteId::from(rid))]);
+    for (prune, held) in [(Prune::Withheld, vec!["A", "B"]), (Prune::Allowed, vec!["B"])] {
+        let s = Store::open_in_memory().unwrap();
+        s.set_lists_prune(Prune::Allowed);
+        s.merge_reading_page(&[with_page("A", Some(1))], &listed("A"), &kinds())
+            .unwrap();
+        s.set_lists_prune(prune);
+        s.merge_reading_page(&[with_page("B", None)], &listed("B"), &kinds())
+            .unwrap();
+        let mut rows: Vec<(String, Option<i8>)> = s
+            .reading()
+            .into_iter()
+            .map(|r| (r.remote_id.to_string(), r.thumb))
+            .collect();
+        rows.sort();
+        let ids: Vec<&str> = rows.iter().map(|(r, _)| r.as_str()).collect();
+        assert_eq!(ids, held, "{prune:?}");
+        if prune == Prune::Withheld {
+            assert_eq!(rows[0], ("A".into(), Some(1)), "A keeps its thumb");
+        }
+    }
+}
