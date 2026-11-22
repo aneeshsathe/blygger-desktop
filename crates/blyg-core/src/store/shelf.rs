@@ -405,9 +405,11 @@ fn note_taken_off(tx: &Transaction, entry: Option<&Entry>, off: bool) -> Result<
         return Ok(());
     };
     let served: Option<String> = tx
-        .query_row("SELECT value FROM meta WHERE key = ?1", [SERVED_META], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [SERVED_META],
+            |r| r.get(0),
+        )
         .optional()?;
     if served.as_deref() != Some("1") {
         return Ok(());

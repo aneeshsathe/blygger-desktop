@@ -422,7 +422,9 @@ impl LiveBackend {
     /// version history.
     fn refresh(&self, id: &LocalId, sid: &str) -> Option<WireItem> {
         let w = self.e().api.get_item_full(sid).ok()?;
-        self.e().lay_list(|| self.e().store.apply_server(id, &w), |_, _| ()).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())
+            .ok()?;
         Some(w)
     }
 
@@ -567,12 +569,16 @@ impl LiveBackend {
                 continue;
             };
             let _ = match self.e().store.local_id_for_server(&part.id) {
-                Some(local) => self.e().lay_list(|| self.e().store.apply_server(&local, &pw), |_, _| ()),
+                Some(local) => self
+                    .e()
+                    .lay_list(|| self.e().store.apply_server(&local, &pw), |_, _| ()),
                 None => self.e().store.insert_from_server(&pw).map(|_| ()),
             };
         }
         let w = w?;
-        self.e().lay_list(|| self.e().store.replace_from_server(id, w), |_, _| ()).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, w), |_, _| ())
+            .ok()?;
         Some(w.content_md.clone())
     }
 
@@ -1419,7 +1425,8 @@ impl Backend for LiveBackend {
         match self.e().track(self.e().api.get_item_full(&sid.0)) {
             Ok(w) => {
                 let _net = self.e().net_lock();
-                self.e().lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())?;
+                self.e()
+                    .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())?;
                 Ok(w.versions.unwrap_or_default())
             }
             Err(CoreError::Offline) => {
@@ -1447,7 +1454,8 @@ impl Backend for LiveBackend {
         let _net = self.e().net_lock();
         self.command(id, &sid, |rev| self.e().api.restore(&sid, rev, version))?;
         let w = self.e().track(self.e().api.get_item_full(&sid))?;
-        self.e().lay_list(|| self.e().store.replace_from_server(id, &w), |_, _| ())?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, &w), |_, _| ())?;
         self.e().emit(CoreEvent::ItemsChanged);
         self.e().emit_status();
         Ok(())

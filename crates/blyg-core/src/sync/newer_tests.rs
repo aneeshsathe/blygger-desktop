@@ -6,9 +6,7 @@
 
 use crate::api::auth::Credential;
 use crate::api::{Api, Prune};
-use crate::shelf::{
-    BASE_META, Entry, Remote, SERVED_META, SyncState, TAKEN_OFF_META, WRITES_META,
-};
+use crate::shelf::{BASE_META, Entry, Remote, SERVED_META, SyncState, TAKEN_OFF_META, WRITES_META};
 use crate::store::{OpKind, Store};
 use crate::sync::{Engine, SyncOptions};
 
@@ -30,7 +28,10 @@ fn removals_before_saved_was_served_dont_remove_it_elsewhere() {
     assert_eq!(e.store.meta(TAKEN_OFF_META), None, "not served: no record");
     // A record from an earlier spell of Saved sync, with no base since.
     e.store
-        .set_meta(TAKEN_OFF_META, &serde_json::to_string(&[c.clone()]).unwrap())
+        .set_meta(
+            TAKEN_OFF_META,
+            &serde_json::to_string(std::slice::from_ref(&c)).unwrap(),
+        )
         .unwrap();
     e.set_shelf_served(true);
     assert_eq!(e.store.meta(TAKEN_OFF_META), None, "first served: cleared");
@@ -65,7 +66,11 @@ fn a_stale_check_reads_the_contract_before_saved_drops_an_entry() {
         let _ = e.sync_shelf_with(server.clone());
         let shelf = e.store.shelf_wire();
         assert!(shelf.contains(&b), "writes={writes}: B kept: {shelf:?}");
-        assert_eq!(e.store.meta(BASE_META), Some(base.clone()), "nothing agreed");
+        assert_eq!(
+            e.store.meta(BASE_META),
+            Some(base.clone()),
+            "nothing agreed"
+        );
     }
 }
 
