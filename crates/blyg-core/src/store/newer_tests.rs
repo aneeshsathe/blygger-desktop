@@ -86,6 +86,45 @@ fn kinds() -> HashMap<SubId, SubscriptionKind> {
     [("s1".into(), SubscriptionKind::Blyg)].into()
 }
 
+fn version(n: u32) -> Version {
+    Version {
+        version: n,
+        published_at: format!("2030-01-0{n}T00:00:00Z"),
+        note: None,
+        pinned: false,
+        endcap: false,
+    }
+}
+
+/// An item's versions are read as a list (`GET /api/items/:id/versions`):
+/// on a newer contract, or before any check, a shorter or empty one adds
+/// and replaces but deletes no version held here.
+#[test]
+fn an_items_versions_drop_nothing_unless_allowed() {
+    let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(Prune::Allowed);
+    s.merge_all(&[wire("S1", "one")]).unwrap();
+    let id = s.local_id_for_server("S1").unwrap();
+    let with = |vs: &[u32]| WireItem {
+        versions: Some(vs.iter().map(|&n| version(n)).collect()),
+        ..wire("S1", "one")
+    };
+    let held = |s: &Store| -> Vec<u32> { s.versions(&id).iter().map(|v| v.version).collect() };
+    s.apply_server(&id, &with(&[1, 2])).unwrap();
+    assert_eq!(held(&s), [1, 2]);
+    s.set_lists_prune(Prune::Withheld);
+    s.apply_server(&id, &with(&[])).unwrap();
+    assert_eq!(held(&s), [1, 2], "an empty list deletes nothing");
+    s.replace_from_server(&id, &with(&[2, 3])).unwrap();
+    assert_eq!(held(&s), [1, 2, 3], "added, none deleted");
+    s.forget_contract();
+    s.apply_server(&id, &with(&[3])).unwrap();
+    assert_eq!(held(&s), [1, 2, 3], "not checked: none deleted");
+    s.set_lists_prune(Prune::Allowed);
+    s.apply_server(&id, &with(&[3])).unwrap();
+    assert_eq!(held(&s), [3], "a known contract replaces");
+}
+
 #[test]
 fn your_items_stay_when_a_newer_contracts_list_lacks_them() {
     let s = Store::open_in_memory().unwrap();
