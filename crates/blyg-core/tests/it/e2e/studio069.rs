@@ -295,3 +295,36 @@ fn judging_settings_and_the_helpers_model_are_written_alone() {
     assert_eq!(read.bg_model_imported, Some(true));
     assert_eq!(read.bg_flag_disagreement, Some(false));
 }
+
+/// Learn Spelling with the blyg down: the word is refused as offline and
+/// kept on this computer; the next read of the dictionary, with the blyg
+/// back, sends it (merged onto what's there) and another client sees it.
+/// Takes the Worker down, as `offline_queues_then_flushes_after_restart`.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_word_learned_offline_reaches_the_blyg_on_the_next_read() {
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let me = manual(dir.path());
+    if me.dictionary().expect("read the dictionary").is_none() {
+        eprintln!("skipped: this studio doesn't advertise getDictionary/putDictionarySource");
+        return;
+    }
+    let word = tag("offlineword");
+    ctl(&["stop", "a"]);
+    let learned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        me.edit_dictionary(&Edit::Add(word.clone()))
+    }));
+    ctl(&["start", "a", e.url.rsplit(':').next().unwrap()]);
+    let learned = learned.unwrap_or_else(|p| std::panic::resume_unwind(p));
+    assert!(matches!(learned, Err(CoreError::Offline)), "{learned:?}");
+
+    let d = me.dictionary().unwrap().expect("offered");
+    assert!(d.owner_words().iter().any(|w| w == &word), "sent on the read");
+    let other_dir = tempfile::tempdir().unwrap();
+    let other = manual(other_dir.path());
+    let seen = other.dictionary().unwrap().expect("offered");
+    assert!(seen.owner_words().iter().any(|w| w == &word), "on the blyg");
+    let d = me.edit_dictionary(&Edit::Remove(word.clone())).unwrap();
+    assert!(!d.owner_words().iter().any(|w| w == &word));
+}

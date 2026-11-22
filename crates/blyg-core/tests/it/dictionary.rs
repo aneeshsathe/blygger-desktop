@@ -111,3 +111,63 @@ fn offered_only_when_the_capabilities_list_both_operations() {
     assert!(!serves(&json!({ "operations": ["getDictionary"] })));
     assert!(!serves(&json!({ "contractVersion": "6.2.0" })));
 }
+
+/// Learn Spelling offline: the edit waits in the store's meta
+/// (`dictionary.pending`). A later edit of the same word replaces an
+/// earlier one, and the queue applies onto whatever the blyg holds when it
+/// is sent. Junk in the meta is an empty queue.
+#[test]
+fn queued_edits_keep_the_last_for_each_word_and_round_trip() {
+    use blyg_core::dictionary::Pending;
+    let mut p = Pending::parse(None);
+    assert!(p.is_empty());
+    p.push(Edit::Add("tidepool".into()));
+    p.push(Edit::Add("gunwale".into()));
+    p.push(Edit::Remove("tidepool".into()));
+    assert_eq!(
+        p.edits(),
+        &[Edit::Add("gunwale".into()), Edit::Remove("tidepool".into())]
+    );
+    let back = Pending::parse(Some(&p.to_meta()));
+    assert_eq!(back, p);
+    let held = vec!["tidepool".to_string(), "blyg".into()];
+    assert_eq!(back.apply(&held), vec!["blyg".to_string(), "gunwale".into()]);
+    assert!(Pending::parse(Some("not json")).is_empty());
+}
+
+/// A real `LiveBackend` with the sync worker off, pointed at the discard
+/// port: a word learned offline is refused as offline but kept on this
+/// computer, across a restart, and a read that can't reach the blyg keeps
+/// it too. A word the blyg would refuse is never queued.
+/// e2e/studio069.rs sends a queued word to a real studio.
+#[test]
+fn a_word_learned_offline_waits_on_this_computer() {
+    use blyg_core::dictionary::{PENDING_META, Pending};
+    use blyg_core::store::Store;
+    use blyg_core::{Backend, CoreError, LiveBackend, SyncOptions};
+    let dir = tempfile::tempdir().unwrap();
+    let open = || {
+        LiveBackend::open_with(
+            dir.path(),
+            "http://127.0.0.1:9",
+            "unused-test-credential",
+            SyncOptions {
+                start_worker: false,
+                ..SyncOptions::default()
+            },
+        )
+        .unwrap()
+    };
+    let b = open();
+    let r = b.edit_dictionary(&Edit::Add("tidepool".into()));
+    assert!(matches!(r, Err(CoreError::Offline)), "{r:?}");
+    assert!(b.edit_dictionary(&Edit::Add("two words".into())).is_err());
+    assert!(b.dictionary().is_err(), "the read can't reach the blyg");
+    drop(b);
+    let b = open();
+    assert!(b.dictionary().is_err());
+    drop(b);
+    let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let p = Pending::parse(store.meta(PENDING_META).as_deref());
+    assert_eq!(p.edits(), &[Edit::Add("tidepool".into())]);
+}
