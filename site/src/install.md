@@ -190,6 +190,13 @@ WebView2 download page.
   sign-ins survive a relaunch and stay apart from the preview. It has no
   content blocking yet (🛡 is greyed out), and "Open posts on the author's
   site" is Mac only.
+- **Esc.** Esc closes the open sheet, palette, Menu or browser pane, as on
+  the Mac, even when you last clicked inside a web page (the browser pane or
+  the preview). A click anywhere else in the window takes the keyboard back
+  from the page. A video in full screen keeps Esc to leave full screen.
+- **Cross-posting.** cross-post works on Windows too. [On Windows, step by
+  step](extensions.md#on-windows-step-by-step) walks through turning it on,
+  signing in to Bluesky, Farcaster or Substack Notes, and posting.
 - **Updates.** The Windows build doesn't update itself yet. Download new
   versions from the Releases page; your posts, settings and sign-ins aren't in
   the folder, so they carry over.

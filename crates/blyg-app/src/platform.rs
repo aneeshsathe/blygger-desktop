@@ -63,6 +63,15 @@ pub fn menu_button(p: crate::theme::Palette, cx: &gpui_kit::App) -> Option<gpui_
     }
 }
 
+/// What the platform's own chrome needs at startup: on Windows, Esc for the
+/// Menu panel (`windows_menu::init`). Nothing elsewhere.
+pub fn init(cx: &mut gpui_kit::App) {
+    #[cfg(target_os = "windows")]
+    crate::windows_menu::init(cx);
+    #[cfg(not(target_os = "windows"))]
+    let _ = cx;
+}
+
 /// The open Windows menu, if any.
 pub fn menu_panel(
     p: crate::theme::Palette,

@@ -44,6 +44,14 @@ pub enum BrowserEvent {
     NewWindow(String),
     /// The WebContent process died (memory pressure, a crash).
     Crashed,
+    /// --- esc --- Esc while the page had the keyboard, outside full screen
+    /// (Windows: WebView2 keeps keys from the app while it is focused, see
+    /// `webview2_host::on_escape`). The page sees the key too.
+    #[cfg_attr(
+        not(any(target_os = "windows", test)),
+        expect(dead_code, reason = "only the Windows WebView2 hook sends it")
+    )]
+    Escape,
 }
 
 /// What the page is doing, read on demand.
@@ -1091,7 +1099,7 @@ mod wry_browser_windows {
         let controller = view.controller();
         let mut token = 0i64;
         let (n1, n2, n3) = (navs.clone(), navs.clone(), navs.clone());
-        let (load_tx, done_tx, dead_tx) = (tx.clone(), tx.clone(), tx);
+        let (load_tx, done_tx, dead_tx, esc_tx) = (tx.clone(), tx.clone(), tx.clone(), tx);
         let (f1, f2) = (focused.clone(), focused.clone());
         // SAFETY: main thread; live core view and controller; the handlers
         // only touch the `Rc`s they own and send on channels.
@@ -1172,6 +1180,17 @@ mod wry_browser_windows {
                 &mut token,
             )?;
         }
+        // --- esc --- A video or game in full screen keeps Esc to leave it.
+        let esc_core = core.clone();
+        crate::webview2_host::on_escape(&controller, false, move || {
+            let mut full = BOOL::default();
+            // SAFETY: main thread; the core view outlives its controller's
+            // handlers.
+            let _ = unsafe { esc_core.ContainsFullScreenElement(&mut full) };
+            if !full.as_bool() {
+                let _ = esc_tx.try_send(BrowserEvent::Escape);
+            }
+        })?;
         Ok(())
     }
 

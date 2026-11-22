@@ -39,6 +39,57 @@ It never adds frontmatter to a note (any frontmatter it finds is left as it
 is), and it never deletes a note. If a note changed on disk after you opened
 it, your save is refused, so it never overwrites the other change.
 
+### On Windows, step by step
+
+This is the whole path on Windows, from nothing to a first cross-post. The
+sections after it explain each part in more detail, with the Mac keys. On
+Windows every ⌘ is **Ctrl**, and the menus are under the **Menu** button at
+the top left of the window.
+
+1. **Turn cross-post on.** Open **Menu › Post › Extensions…**, then choose
+   **Manage extensions…** at the bottom of the list. Find **cross-post** and
+   click **Turn on**.
+2. **Choose the sites.** A sheet lists what cross-post asks for: reading your
+   posts, showing its sheets, and one line for each site it can post to
+   (Substack Notes, Bluesky, Farcaster). Untick the sites you don't use, then
+   click **Allow**. You can change this later with **Allow…** on the same
+   card, or by editing the `extension-allow` lines shown below.
+3. **Sign in to each site once.** Press **Ctrl+Shift+P**, type the site's
+   name and pick **Open Bluesky**, **Open Farcaster** or **Open Substack
+   Notes**. The site opens in the browser pane on the right. Sign in there as
+   you would in any browser. The pane keeps the sign-in after Burrow quits,
+   in its own WebView2 profile, so you do this once per site.
+4. **Open the post.** Click **Posts**, then the published post you want to
+   share. A draft can't be cross-posted, because the copy links back to the
+   post on your blyg.
+5. **Start the cross-post.** Press **Ctrl+Shift+P** and pick **Cross-post to
+   Bluesky…** (or Farcaster, or Substack Notes). The first sheet shows the
+   note: the post's opening paragraph and its link. Edit it if you like,
+   then press **Ctrl+Enter** or click **continue** at the bottom of the
+   sheet.
+6. **Check the composer, then post.** Burrow opens the site's composer in
+   the pane and puts the note in it. The second sheet asks **Post this to
+   the site?** Look at the page beside it. Press **Enter** or click **post**
+   to send it (Burrow clicks the site's Post button, or Cast on Farcaster).
+   Press **Esc** or click **cancel** to stop with nothing posted. If the
+   site's composer didn't take the text, Burrow says so, leaves the text on
+   your clipboard, and you paste it with **Ctrl+V** and click Post yourself.
+
+A few things to know on Windows:
+
+- **Esc** closes either sheet, and nothing is posted. Between the sheets,
+  while the page loads, Esc folds the pane instead, even if you've clicked
+  into the page. The run keeps going while the pane is folded, and
+  **Ctrl+Shift+B** or the status bar's **show pane** brings it back.
+- If a site has signed you out, the run stops with "Sign in to … in this
+  pane" (on Farcaster, it stops because the composer never opens). Nothing is
+  posted. Do step 3 again and start over.
+- If a run stops with a problem, nothing was posted. The details are in
+  `%LOCALAPPDATA%\Blygger\extensions\cross-post\macro.log`, which lists
+  what the page had (never your text or the page's). See
+  [Before you rely on it](#before-you-rely-on-it).
+- Burrow waits at least 60 seconds between two cross-posts to the same site.
+
 ### Turning it on
 
 The easy way: **Settings › Notes folders › Add folder…**, then pick one or

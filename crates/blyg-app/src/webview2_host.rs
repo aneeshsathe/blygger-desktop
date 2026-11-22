@@ -146,3 +146,51 @@ impl<V: 'static, P: Default + 'static> Deferred<V, P> {
         f(&mut self.0.borrow_mut())
     }
 }
+
+/// Esc pressed while a WebView2 has the keyboard. WebView2 keeps keys from
+/// GPUI's window while it is focused, so the app's own Esc (closing a sheet,
+/// a palette, the pane) would never fire; on macOS a key the page doesn't
+/// use goes on to GPUI by itself. `on_escape` runs for each Esc press (not
+/// for auto-repeat). With `swallow`, the page doesn't see the key: the
+/// preview's page is Burrow's own and has no use for it. The pane leaves it
+/// to the page as well, so a site's own pop-up closes too.
+pub fn on_escape(
+    controller: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller,
+    swallow: bool,
+    mut on_escape: impl FnMut() + 'static,
+) -> windows_core::Result<()> {
+    use webview2_com::AcceleratorKeyPressedEventHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        COREWEBVIEW2_PHYSICAL_KEY_STATUS,
+    };
+    const VK_ESCAPE: u32 = 0x1B;
+    let mut token = 0i64;
+    // SAFETY: main thread and a live controller; the handler only reads the
+    // event's arguments and calls `on_escape`, which sends on a channel.
+    unsafe {
+        controller.add_AcceleratorKeyPressed(
+            &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else {
+                    return Ok(());
+                };
+                let (mut kind, mut key) = (COREWEBVIEW2_KEY_EVENT_KIND::default(), 0u32);
+                let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                args.KeyEventKind(&mut kind)?;
+                args.VirtualKey(&mut key)?;
+                args.PhysicalKeyStatus(&mut status)?;
+                if kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                    && key == VK_ESCAPE
+                    && !status.WasKeyDown.as_bool()
+                {
+                    on_escape();
+                    if swallow {
+                        args.SetHandled(true)?;
+                    }
+                }
+                Ok(())
+            })),
+            &mut token,
+        )
+    }
+}

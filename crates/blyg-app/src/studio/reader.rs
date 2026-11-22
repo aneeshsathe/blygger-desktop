@@ -95,6 +95,11 @@ pub struct Reader {
 }
 
 impl Reader {
+    /// --- esc --- See `Studio::hand_back_keyboard`.
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.focus_parent());
+    }
+
     pub(super) fn reclaim_keyboard(&self) {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
     }
@@ -763,6 +768,7 @@ impl MainView {
             SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
             // --- stub quotes --- the editor preview's alone.
             SurfaceEvent::StubSelection(_) => {}
+            SurfaceEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
         }
     }
 

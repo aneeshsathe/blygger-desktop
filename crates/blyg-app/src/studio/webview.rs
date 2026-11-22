@@ -58,6 +58,16 @@ pub enum SurfaceEvent {
     /// inside one quote box, or `None` (outside any, across two, on a
     /// box's provenance line, nothing selected). See [`StubPick`].
     StubSelection(Option<StubPick>),
+    // --- esc ---
+    /// Esc while the page had the keyboard (Windows: WebView2 keeps keys
+    /// from the app while it is focused, see `webview2_host::on_escape`).
+    /// The keyboard goes back to the app and Esc is handled there, as if it
+    /// had been pressed in the app.
+    #[cfg_attr(
+        not(any(target_os = "windows", test)),
+        expect(dead_code, reason = "only the Windows WebView2 hook sends it")
+    )]
+    Escape,
 }
 
 /// --- stub quotes --- A selection inside one quote box of the editor
@@ -920,7 +930,7 @@ mod wry_surface_windows {
 
     impl WrySurface {
         fn new(parent: &impl HasWindowHandle, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
-            let (ipc_tx, nav_tx, new_tx) = (tx.clone(), tx.clone(), tx);
+            let (ipc_tx, nav_tx, new_tx, esc_tx) = (tx.clone(), tx.clone(), tx.clone(), tx);
             let own_load = Rc::new(Cell::new(true));
             let nav_own = own_load.clone();
             let view = WebViewBuilder::new()
@@ -960,6 +970,12 @@ mod wry_surface_windows {
                          WebView2 Runtime, which Windows 11 includes."
                     )
                 })?;
+            // --- esc --- (the page is ours and has no use for the key)
+            if let Err(e) = crate::webview2_host::on_escape(&view.controller(), true, move || {
+                let _ = esc_tx.try_send(SurfaceEvent::Escape);
+            }) {
+                eprintln!("blygger: the preview won't pass Esc on ({e})");
+            }
             Ok(WrySurface { view, own_load })
         }
     }

@@ -29,6 +29,20 @@ fn set_open(open: bool, window: &mut Window, cx: &mut App) {
     window.refresh();
 }
 
+/// Esc closes the open menu, before anything else sees the key (the search
+/// field would otherwise take it). Once, at startup (`platform::init`).
+pub fn init(cx: &mut App) {
+    cx.intercept_keystrokes(|ev, window, cx| {
+        let k = &ev.keystroke;
+        let bare = !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift);
+        if bare && k.key == "escape" && is_open(cx) {
+            set_open(false, window, cx);
+            cx.stop_propagation();
+        }
+    })
+    .detach();
+}
+
 /// The "Menu" button, over the left end of the title strip.
 pub fn button(p: Palette, cx: &App) -> AnyElement {
     let open = is_open(cx);
