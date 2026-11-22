@@ -240,6 +240,14 @@ impl Opened {
         let v = shown.get(self.ix?)?;
         (!v.current).then_some(v)
     }
+
+    /// The current version is pinned too (one entry in the pill, marked
+    /// current): Fork forks it without stepping anywhere.
+    pub fn current_is_pinned(&self) -> bool {
+        self.shown
+            .ready()
+            .is_some_and(|s| s.iter().any(|v| v.current && v.pinned))
+    }
 }
 
 /// Your own post's history (⌘Y).
