@@ -1173,9 +1173,10 @@ impl Burrow {
     }
 
     /// The blyg's mount from the page's path (`api::mount_of`), for
-    /// `live.js` to check `net.js`'s copy of the rule against.
-    pub fn mount_of(pathname: &str) -> String {
-        api::mount_of(pathname).to_string()
+    /// `live.js` to check `net.js`'s copy of the rule against; `undefined`
+    /// for a mount that isn't plain segments.
+    pub fn mount_of(pathname: &str) -> Option<String> {
+        api::mount_of(pathname).map(str::to_string)
     }
 
     /// The blyg's public base from `GET /api/settings` (`siteUrl`), else

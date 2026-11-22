@@ -19,7 +19,7 @@ import { MOUNT, SITE, apiPath, call, dropEarly, HELD } from './net.js';
 export { MOUNT, SITE, apiPath, call };
 
 // The sign-in link follows the mount too.
-for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
+if (MOUNT !== null) for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
   a.href = `${MOUNT}/studio/login?return_to=${encodeURIComponent(`${MOUNT}/burrow/`)}`;
 }
 
@@ -28,7 +28,7 @@ export async function detect() {
   if (!/^https?:$/.test(location.protocol)) return { mode: 'demo' };
   // net.js worked the mount out before the WebAssembly was here; the Rust
   // has the rule (src/api.rs `mount_of`). Never guess another /api.
-  if (Burrow.mount_of(location.pathname) !== MOUNT) {
+  if (MOUNT === null || Burrow.mount_of(location.pathname) !== MOUNT) {
     return { mode: 'unsupported', why: 'Burrow can’t tell where this blyg’s API is from this page’s address.' };
   }
   const r = await call('GET', '/api/capabilities');

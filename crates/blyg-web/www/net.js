@@ -20,19 +20,27 @@ const API = '/api/';
     host root. Paths here (and from the Rust) are mount-relative `/api/…`;
     there is no host-root /api on a path-mounted blyg (studio 0.65). The
     rule is src/api.rs `mount_of`, copied because this runs before the
-    WebAssembly; live.js checks the two agree. */
+    WebAssembly; live.js checks the two agree. A mount is empty or plain
+    segments (no empty or dot segment, no backslash, nothing
+    percent-encoded): `//evil.example` would make the sign-in link and SITE
+    another host. Anything else is `null`, and the page is unsupported. */
+const MOUNT_RE = /^(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~-]+)*$/;
 function mountOf(p) {
   const i = p.lastIndexOf('/burrow/');
-  return i >= 0 ? p.slice(0, i) : '';
+  const m = i >= 0 ? p.slice(0, i) : '';
+  return MOUNT_RE.test(m) ? m : null;
 }
 export const MOUNT = mountOf(location.pathname);
 /** The blyg's own address (origin and mount): the base its links are built
     on when its settings name no siteUrl. */
-export const SITE = location.origin + MOUNT;
+export const SITE = location.origin + (MOUNT ?? '');
 
-/** Whether `path` is a same-origin owner-API path (and nothing else). */
+/** Whether `path` is a same-origin owner-API path (and nothing else): no
+    dot segments or backslashes, encoded or not, in the path (an encoded
+    origin in the query is ordinary), and none at all without a mount. */
 export function apiPath(path) {
-  return typeof path === 'string' && path.startsWith(API) && !/\/\.\.?(\/|$)|\\|\/\/|^[a-z]+:/i.test(path);
+  return MOUNT !== null && typeof path === 'string' && path.startsWith(API) && !/\/\.\.?(\/|$)|\\|\/\/|^[a-z]+:/i.test(path) &&
+    !/%2e|%2f|%5c/i.test(path.split('?')[0]);
 }
 
 async function send(method, path, body, etag) {

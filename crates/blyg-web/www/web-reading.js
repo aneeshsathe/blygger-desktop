@@ -381,11 +381,11 @@ const SCREENS = {
       ${g.rows.map((m) => `<div class="wr-row wr-mention${m.hidden ? ' hidden' : ''}">
         ${m.new ? '<span class="wr-dot" aria-label="new"></span>' : ''}
         <div class="wr-l"><b>${esc(m.who)}</b> ${esc(m.relation)} <small>${esc(m.origin)} · ${esc(m.when)}${m.status ? ` · ${esc(m.status)}` : ''}${m.hidden ? ' · hidden' : ''}</small></div>
-        <a class="wr-btn" href="${esc(m.source)}" target="_blank" rel="noopener noreferrer">Open</a>
+        ${m.source ? `<a class="wr-btn" href="${esc(m.source)}" target="_blank" rel="noopener noreferrer">Open</a>` : ''}
         <button type="button" class="wr-btn" data-hide="${esc(m.id)}" data-on="${!m.hidden}">${m.hidden ? 'Show' : 'Hide'}</button></div>`).join('')}</div>`).join('');
     const out = v.outbound.map((o) => `<div class="wr-row${o.failed ? ' bad' : ''}"><div class="wr-l"><b>${esc(o.title)}</b> → ${esc(o.host)}
         <small>${esc(o.status)} · ${esc(o.when)}${o.error ? ` · ${esc(o.error)}` : ''}</small></div>
-        <a class="wr-btn" href="${esc(o.target)}" target="_blank" rel="noopener noreferrer">Open</a></div>`).join('');
+        ${o.target ? `<a class="wr-btn" href="${esc(o.target)}" target="_blank" rel="noopener noreferrer">Open</a>` : ''}</div>`).join('');
     return `<label class="wr-toggle"><input type="checkbox" data-accept ${v.accept ? 'checked' : ''} ${v.accept == null ? 'disabled' : ''}>
         Accept Webmentions <small>Other sites can tell your blyg they replied to, quoted or linked a post.</small></label>
       <div class="wr-h">Responses to your posts</div>

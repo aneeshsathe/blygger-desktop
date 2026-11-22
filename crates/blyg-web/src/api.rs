@@ -242,19 +242,40 @@ fn newer_contract(v: &str) -> Mode {
 /// `/burrow/` (`/notes/burrow/` → `/notes`), empty at the host root and
 /// on any page not served as Burrow. `www/net.js` has the same rule (it
 /// runs before the WebAssembly), and `live.js` checks the two agree.
-pub fn mount_of(pathname: &str) -> &str {
-    pathname.rfind("/burrow/").map_or("", |i| &pathname[..i])
+///
+/// `None` unless the mount is empty or `/segment…` of plain segments
+/// ([`plain_mount`]): a page at `//evil.example/burrow/` would otherwise
+/// send the sign-in link and the blyg's address to another host. The page
+/// is then unsupported.
+pub fn mount_of(pathname: &str) -> Option<&str> {
+    let m = pathname.rfind("/burrow/").map_or("", |i| &pathname[..i]);
+    plain_mount(m).then_some(m)
+}
+
+/// Empty, or `/segment` repeated, each segment non-empty, neither `.` nor
+/// `..`, of letters, digits and `-._~` only (no backslash, no `%`, no `:`).
+fn plain_mount(m: &str) -> bool {
+    m.is_empty()
+        || m.strip_prefix('/').is_some_and(|rest| {
+            rest.split('/').all(|s| {
+                !s.is_empty()
+                    && s != "."
+                    && s != ".."
+                    && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+            })
+        })
 }
 
 /// Where the page asks for the mount-relative `path` (`/api/…`): under the
-/// mount, never the host root.
-pub fn api_url(pathname: &str, path: &str) -> String {
-    format!("{}{path}", mount_of(pathname))
+/// mount, never the host root. `None` without a mount ([`mount_of`]).
+pub fn api_url(pathname: &str, path: &str) -> Option<String> {
+    mount_of(pathname).map(|m| format!("{m}{path}"))
 }
 
 /// The blyg's own address: `origin` and the mount, without a final `/`.
-pub fn site_base(origin: &str, pathname: &str) -> String {
-    format!("{}{}", origin.trim_end_matches('/'), mount_of(pathname))
+/// `None` without a mount ([`mount_of`]).
+pub fn site_base(origin: &str, pathname: &str) -> Option<String> {
+    mount_of(pathname).map(|m| format!("{}{m}", origin.trim_end_matches('/')))
 }
 
 /// Percent-encode one path segment (blyg-core's `enc`).

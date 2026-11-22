@@ -432,7 +432,8 @@ struct MentionOut {
     when: String,
     new: bool,
     hidden: bool,
-    source: String,
+    /// http(s) with a host, or none ([`http_link`]).
+    source: Option<String>,
     status: String,
 }
 
@@ -447,7 +448,8 @@ struct MentionGroup {
 #[derive(Serialize)]
 struct OutboundRow {
     title: String,
-    target: String,
+    /// http(s) with a host, or none ([`http_link`]).
+    target: Option<String>,
     host: String,
     status: String,
     error: Option<String>,
@@ -463,6 +465,15 @@ struct HopperOut {
     description: String,
     url: Option<String>,
     held: usize,
+}
+
+/// `url` as a link the page may draw: http(s) with a host, else none.
+/// The templates `esc` what they're given, which stops a breakout but not
+/// a `javascript:` or `data:` address, so none reaches them.
+fn http_link(url: &str) -> Option<String> {
+    let u = url::Url::parse(url.trim()).ok()?;
+    (matches!(u.scheme(), "http" | "https") && u.host_str().is_some_and(|h| !h.is_empty()))
+        .then(|| url.trim().to_string())
 }
 
 impl Burrow {
@@ -1312,7 +1323,7 @@ impl Burrow {
                             when: r.when,
                             new: r.new,
                             hidden: r.hidden,
-                            source: r.source,
+                            source: http_link(&r.source),
                             status: match status.as_str() {
                                 "verified" => String::new(),
                                 "pending" => "not checked yet".into(),
@@ -1354,7 +1365,7 @@ impl Burrow {
                     failed: o.status == "failed",
                     error: o.last_error.clone().filter(|e| !e.trim().is_empty()),
                     when: vm::relative_time(&o.created, now),
-                    target: o.target,
+                    target: http_link(&o.target),
                 }
             })
             .collect();
@@ -1835,7 +1846,7 @@ impl Burrow {
                     version: p.version,
                     title: title.clone(),
                     html,
-                    url: p.url.clone(),
+                    url: http_link(&p.url).unwrap_or_default(),
                     followed,
                 };
                 self.wr.peek = Some(view.clone());

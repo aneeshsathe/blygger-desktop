@@ -3,8 +3,11 @@
 //!
 //! An allowlist ([`ammonia`], on html5ever): ordinary text markup, links,
 //! images, tables and figures, plus the classes and `data-*` attributes the
-//! protocol and the embeds use (`blyg-transclusion`, `data-blyg-*`,
-//! `blyg-tk-gen`, `blyg-yt`, `data-ytid`). Everything else goes: scripts,
+//! renderer emits ([`CLASSES`], `language-*`, `data-blyg-*`, `data-ytid`).
+//! No other class or `data-*` name survives: the pages this is shown on
+//! listen for their own (the web app's `data-goto`, `data-wr-*`; native's
+//! `.blyg-qorigin`, `[data-line]`) and style their own as buttons, and a
+//! post mustn't reach them. Everything else goes: scripts,
 //! styles, event handlers, `javascript:` and other odd URLs, forms, objects,
 //! embeds, SVG, and every `<iframe>` that isn't a youtube-nocookie embed.
 //! A `<math>` formula is redrawn from its TeX annotation, never passed
@@ -40,6 +43,39 @@ pub fn is_youtube_embed(src: &str) -> bool {
     })
 }
 
+/// The classes the renderer puts in a post (blyg-render, which matches the
+/// studio's; its parity fixtures hold them), and the reader's attachments
+/// box. A code block's `language-*` is kept too.
+pub const CLASSES: &[&str] = &[
+    "blyg-attachments",
+    "blyg-link-unresolved",
+    "blyg-partial",
+    "blyg-tangle-label",
+    "blyg-tangle-link",
+    "blyg-tangle-new",
+    "blyg-tk-gen",
+    "blyg-transclusion",
+    "blyg-yt",
+    "blyg-yt-poster",
+    "h-card",
+    "math-error",
+    "math-source",
+    "nested",
+    "p-name",
+    "provenance",
+    "u-url",
+    "unresolved",
+];
+
+/// `value`'s classes the renderer emits, or `None` when none is.
+fn known_classes(value: &str) -> Option<Cow<'_, str>> {
+    let kept: Vec<&str> = value
+        .split_ascii_whitespace()
+        .filter(|c| CLASSES.contains(c) || c.strip_prefix("language-").is_some_and(|l| !l.is_empty()))
+        .collect();
+    (!kept.is_empty()).then(|| kept.join(" ").into())
+}
+
 fn builder() -> &'static Builder<'static> {
     static B: OnceLock<Builder<'static>> = OnceLock::new();
     B.get_or_init(allowlist)
@@ -60,8 +96,8 @@ fn allowlist() -> Builder<'static> {
                 .collect(),
             )
             .rm_tags(["map", "area"])
-            .add_generic_attributes(["class", "dir"])
-            .add_generic_attribute_prefixes(["data-"])
+            .add_generic_attributes(["class", "dir", "data-ytid"])
+            .add_generic_attribute_prefixes(["data-blyg-"])
             .add_tag_attributes("img", ["loading", "decoding", "referrerpolicy"])
             .add_tag_attributes(
                 "iframe",
@@ -90,6 +126,7 @@ fn allowlist() -> Builder<'static> {
                         .then(|| value.into())
                         .filter(|_| !v.starts_with("data:image/svg")),
                     (_, "src" | "href" | "cite") if v.starts_with("data:") => None,
+                    (_, "class") => known_classes(value),
                     _ => Some(Cow::Borrowed(value)),
                 }
             });
