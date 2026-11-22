@@ -5291,27 +5291,32 @@ fn studio_background(base: &str) -> HashSet<(SubId, RemoteId)> {
     }
 }
 
-/// Puts a Background rule back on when dropped.
-struct RuleBackOn<'a>(&'a LiveBackend, &'static str);
+/// Puts a Background rule back to the value it had (`.2`) when dropped.
+struct RuleBack<'a>(&'a LiveBackend, &'static str, bool);
 
-impl Drop for RuleBackOn<'_> {
+impl Drop for RuleBack<'_> {
     fn drop(&mut self) {
-        let _ = self.0.save_background_rule(self.1, true);
+        let _ = self.0.save_background_rule(self.1, self.2);
     }
 }
 
 /// Turn studio 0.68's `superseded` rule off until the guard drops (an item
 /// followed by a newer one from its blyg within 15 minutes, as every post a
-/// test publishes is), so a test sees only the rules it's about. `None` on
-/// a studio without the rule.
-fn superseded_off(me: &LiveBackend) -> Option<RuleBackOn<'_>> {
+/// test publishes is), so a test sees only the rules it's about; the guard
+/// puts back the value it had. `None` on a studio without the rule.
+///
+/// It changes a setting of the whole blyg `a`, which every e2e test shares:
+/// safe only because the suite runs one test at a time
+/// (`--test-threads=1`, as `scripts/e2e-local.sh` runs it).
+fn superseded_off(me: &LiveBackend) -> Option<RuleBack<'_>> {
     use blyg_core::background::SUPERSEDED;
     // A pull notes whether the studio has Background at all.
     me.sync_now().unwrap();
     let rules = me.background_rules().unwrap()?;
     rules.offers(SUPERSEDED).then(|| {
+        let was = rules.on(SUPERSEDED);
         me.save_background_rule(SUPERSEDED, false).unwrap();
-        RuleBackOn(me, SUPERSEDED)
+        RuleBack(me, SUPERSEDED, was)
     })
 }
 

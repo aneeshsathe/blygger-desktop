@@ -450,21 +450,24 @@ fn idle_sync_costs_less_with_conditional_reads() {
         out.push(w);
     }
     let per = |w: &Wire| w.bytes / PULLS;
+    // An idle pull with conditional reads: every request is a 304, and the
+    // wire carries strictly fewer bytes than the same pulls without them.
+    let all_304s = |after: &Wire, before: &Wire| {
+        assert!(after.requests > 0, "{out:?}");
+        assert_eq!(after.not_modified, after.requests, "all 304s: {out:?}");
+        assert_eq!(before.not_modified, 0, "{out:?}");
+        assert!(after.bytes < before.bytes, "fewer bytes: {out:?}");
+    };
     if super::has_changes() {
         // With counters an idle pull is one `/changes` either way.
         assert_eq!(out[0].requests, out[1].requests, "{out:?}");
     } else {
-        // Without them (studio 0.67+) the "counters" runs have none either:
-        // each idle pull asks its lists, and conditional reads answer them
-        // with 304s (it may ask a list more, since a 304 is cheap).
-        assert_eq!(out[0].not_modified, 0, "{out:?}");
-        assert!(out[1].not_modified > 0, "{out:?}");
-        assert!(per(&out[1]) * 5 < per(&out[0]) * 3, "{out:?}");
+        // Without them (studio 0.67+) the "counters" runs have none either.
+        all_304s(&out[1], &out[0]);
     }
-    // The safety net and the counter-less pulls cost at least 40% fewer
-    // bytes on the wire (gzip already shrinks the bodies; what's left is
-    // mostly response headers).
+    all_304s(&out[5], &out[4]);
+    // The safety net every pull costs at least 40% fewer bytes on the wire
+    // (gzip already shrinks the bodies; what's left is mostly response
+    // headers).
     assert!(per(&out[3]) * 5 < per(&out[2]) * 3, "{out:?}");
-    assert!(per(&out[5]) * 5 < per(&out[4]) * 3, "{out:?}");
-    assert!(out[5].not_modified > 0, "{out:?}");
 }

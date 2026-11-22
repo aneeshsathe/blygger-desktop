@@ -141,11 +141,11 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
 
     // The burst rule off: one key written, the others as stored (wordless
     // turned off first, so "as stored" isn't just the default).
-    let _wordless = RuleBackOn(&me, "wordless");
+    let _wordless = RuleBack(&me, "wordless", rules.on("wordless"));
     me.save_background_rule("wordless", false).unwrap();
     let before = stored_rules(&e.url);
     assert_eq!(before["wordless"], json!(false));
-    let _burst = RuleBackOn(&me, BURST);
+    let _burst = RuleBack(&me, BURST, true);
     let back = me.save_background_rule(BURST, false).unwrap();
     assert!(!back.on(BURST));
     let after = stored_rules(&e.url);
@@ -275,6 +275,35 @@ fn own_published(text: &str) -> String {
     id
 }
 
+/// Your own posts a test made, taken out of the Background lens when
+/// dropped, pass or fail, so later tests don't walk a lens of many pages:
+/// each is deleted if the studio lets it go, else given the owner's
+/// Foreground choice. Clearing the choice isn't enough: studio 0.68's
+/// `superseded` holds posts published minutes apart in Background anyway.
+struct OwnPostsOut {
+    api: Api,
+    ids: Vec<String>,
+}
+
+impl Drop for OwnPostsOut {
+    fn drop(&mut self) {
+        use blyg_core::background::Placement;
+        for id in &self.ids {
+            let deleted = self
+                .api
+                .get_item(id)
+                .and_then(|w| self.api.delete_item(id, w.revision))
+                .is_ok();
+            if !deleted {
+                let key = (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(id));
+                let _ = self
+                    .api
+                    .set_reading_placement(&key, Some(Placement::Foreground));
+            }
+        }
+    }
+}
+
 /// The studio expires a reading cursor whenever the reading collection
 /// moves, as it does on every post a subscription's backfill imports
 /// (studio 0.68: and on every neighbour that post supersedes). A Background
@@ -295,16 +324,21 @@ fn a_lens_that_changes_under_every_walk_waits_for_the_next_pull() {
     }
     let t = tag("lens-moves");
     let own = |id: &str| (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(id));
+    let mut made = OwnPostsOut {
+        api: Api::new(&e.url, e.cred.clone()),
+        ids: Vec::new(),
+    };
     // More than one page of the lens: your own posts, moved there by hand.
-    let placed: Vec<String> = (0..=LENS_LIMIT)
-        .map(|i| {
-            let id = own_published(&format!("{t} {i}"));
-            api.set_reading_placement(&own(&id), Some(Placement::Background))
-                .unwrap();
-            id
-        })
-        .collect();
+    let mut placed = Vec::new();
+    for i in 0..=LENS_LIMIT {
+        let id = own_published(&format!("{t} {i}"));
+        made.ids.push(id.clone());
+        api.set_reading_placement(&own(&id), Some(Placement::Background))
+            .unwrap();
+        placed.push(id);
+    }
     let flipper = own_published(&format!("{t} flipper"));
+    made.ids.push(flipper.clone());
 
     // While `moving`, the reading collection moves before every later page
     // of the lens (a placement flipped), so each walk's cursor expires.
