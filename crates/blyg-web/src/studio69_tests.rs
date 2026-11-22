@@ -439,3 +439,16 @@ fn a_markdown_only_post_is_cleaned_against_its_own_origin() {
     // And the allowlist's own marks: images carry no referrer.
     assert!(html.contains("referrerpolicy=\"no-referrer\""), "{html}");
 }
+
+// ---------------------------------------------------------------- cadence
+
+/// The page's refresh interval, exported for the live check
+/// (`scripts/browser-web-live-check.mjs` derives its budgets from it): 15 s
+/// with `/api/changes`, a whole pull interval (60 s) by conditional reads.
+#[test]
+fn the_refresh_interval_is_exported_for_the_live_check() {
+    assert_eq!(Burrow::refresh_every(true), 15_000.0);
+    assert_eq!(Burrow::refresh_every(false), 60_000.0);
+    let check = include_str!("../../../scripts/browser-web-live-check.mjs");
+    assert!(check.contains("Burrow.refresh_every("), "the check asks the page");
+}
