@@ -452,3 +452,12 @@ fn the_refresh_interval_is_exported_for_the_live_check() {
     let check = include_str!("../../../scripts/browser-web-live-check.mjs");
     assert!(check.contains("Burrow.refresh_every("), "the check asks the page");
 }
+
+/// The shelf is asked conditionally too: an unchanged one is a 304 (the
+/// live check counts a whole read of a held list as a failure).
+#[test]
+fn the_shelf_is_read_conditionally() {
+    let live = include_str!("../www/live.js");
+    assert!(live.contains("const g = await getCond('/api/shelf');"));
+    assert!(!live.contains("await call('GET', '/api/shelf')"));
+}
