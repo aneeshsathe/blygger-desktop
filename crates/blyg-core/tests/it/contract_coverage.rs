@@ -34,6 +34,11 @@
 //! within a few lines (at studio 0.69 that rule left nearly every checked
 //! name uncovered, this one only the two `raw`s).
 //!
+//! A covered item says where and by what (`Tests::why`: file, line and the
+//! anchor that counted), and a stale entry's message prints it: twice an honest
+//! exemption was nearly deleted because the message only said "stale", when
+//! the cover was a coincidence in some other test.
+//!
 //! Tests are `crates/*/tests/**.rs` and, in `src/`, `*_tests.rs`, `tests.rs`,
 //! files under a `tests/` directory, a `#[cfg(test)] mod x;` file and the rest
 //! of a file from its `#[cfg(test)] mod x {`.
@@ -225,28 +230,50 @@ impl Prop {
     }
 
     /// `window` (a few lines of one test file) names a place this property
-    /// lives in.
-    fn anchored_in(&self, window: &str) -> bool {
+    /// lives in; says which.
+    fn anchor_in(&self, window: &str) -> Option<String> {
         let lower = window.to_ascii_lowercase();
-        has_word(&lower, &self.owner.to_ascii_lowercase())
+        if has_word(&lower, &self.owner.to_ascii_lowercase())
             || has_word(&lower, &snake(&self.owner))
-            || self.path.as_ref().is_some_and(|p| has_path(window, p))
-            || self.distinctive_siblings().any(|s| {
+        {
+            return Some(format!("owner {}", self.owner));
+        }
+        if let Some(i) = self.path.as_ref().and_then(|p| path_at(window, p)) {
+            let found = window[i..]
+                .split(|c: char| matches!(c, '"' | '?' | '#') || c.is_whitespace())
+                .next()
+                .unwrap_or("");
+            return Some(format!("path {found}"));
+        }
+        self.distinctive_siblings()
+            .find(|s| {
                 window.contains(&format!("\"{s}\""))
-                    || (snake(s) != s && has_word(window, &snake(s)))
+                    || (snake(s) != *s && has_word(window, &snake(s)))
             })
+            .map(|s| format!("sibling \"{s}\""))
     }
 
-    fn covered_by(&self, text: &str) -> bool {
+    /// The first line (1-based) of `text` that covers this property, and the
+    /// anchor that made it count.
+    fn cover_in(&self, text: &str) -> Option<(usize, String)> {
         let quoted = format!("\"{}\"", self.name);
         if !self.plain() {
             let snake = snake(&self.name);
-            return text.contains(&quoted) || (snake != self.name && has_word(text, &snake));
+            if let Some(i) = text.find(&quoted) {
+                return Some((line_of(text, i), "the bare quoted name".into()));
+            }
+            return word_at(text, &snake)
+                .filter(|_| snake != self.name)
+                .map(|i| (line_of(text, i), format!("the bare name {snake}")));
         }
         let lines: Vec<&str> = text.lines().collect();
-        lines.iter().enumerate().any(|(i, l)| {
+        lines.iter().enumerate().find_map(|(i, l)| {
             let near = &lines[i.saturating_sub(WINDOW)..(i + WINDOW + 1).min(lines.len())];
-            l.contains(&quoted) && self.anchored_in(&near.join("\n"))
+            if !l.contains(&quoted) {
+                return None;
+            }
+            let anchor = self.anchor_in(&near.join("\n"))?;
+            Some((i + 1, format!("\"{}\" near {anchor}", self.name)))
         })
     }
 }
@@ -535,15 +562,26 @@ fn ident_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// `word` with no identifier character on either side.
+/// Where `word` is in `text` with no identifier character on either side.
+fn word_at(text: &str, word: &str) -> Option<usize> {
+    text.match_indices(word)
+        .find(|(i, _)| {
+            !text[..*i].chars().next_back().is_some_and(ident_char)
+                && !text[i + word.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(ident_char)
+        })
+        .map(|x| x.0)
+}
+
 fn has_word(text: &str, word: &str) -> bool {
-    text.match_indices(word).any(|(i, _)| {
-        !text[..i].chars().next_back().is_some_and(ident_char)
-            && !text[i + word.len()..]
-                .chars()
-                .next()
-                .is_some_and(ident_char)
-    })
+    word_at(text, word).is_some()
+}
+
+/// The 1-based line of byte offset `at` in `text`.
+fn line_of(text: &str, at: usize) -> usize {
+    text[..at].matches('\n').count() + 1
 }
 
 fn snake(s: &str) -> String {
@@ -562,8 +600,13 @@ fn snake(s: &str) -> String {
 /// A test string holding the path: `/api/a/b`, a `{param}` matching one
 /// segment, and nothing path-like right after it.
 fn has_path(text: &str, segs: &[String]) -> bool {
+    path_at(text, segs).is_some()
+}
+
+/// Where the path starts in `text` (at its leading `/`).
+fn path_at(text: &str, segs: &[String]) -> Option<usize> {
     let first = format!("/{}/", segs[0]);
-    text.match_indices(&first).any(|(i, _)| {
+    text.match_indices(&first).map(|x| x.0).find(|&i| {
         let mut rest = &text[i + 1..];
         for (n, seg) in segs.iter().enumerate() {
             if seg.starts_with('{') {
@@ -590,50 +633,84 @@ fn has_path(text: &str, segs: &[String]) -> bool {
     })
 }
 
-/// A query string in a test that sends `name`: `?name=` or `&name=`.
-fn has_query(text: &str, name: &str) -> bool {
+/// Where a query string in a test sends `name`: `?name=` or `&name=`.
+fn query_at(text: &str, name: &str) -> Option<usize> {
     let sent = format!("{name}=");
     text.match_indices(&sent)
-        .any(|(i, _)| text[..i].ends_with(['?', '&']))
+        .map(|x| x.0)
+        .find(|&i| text[..i].ends_with(['?', '&']))
 }
 
 struct Tests {
+    /// Each file's path from the repo root (`crates/…`, `/`-separated), for
+    /// `why`; a placeholder for `of`.
+    names: Vec<String>,
     files: Vec<String>,
     lower: Vec<String>,
 }
 
 impl Tests {
     fn load() -> Tests {
-        Tests::of(test_sources().into_iter().map(|x| x.1).collect())
+        let crates = manifest().join("..");
+        let (names, files) = test_sources()
+            .into_iter()
+            .map(|(path, text)| {
+                let rel = path.strip_prefix(&crates).unwrap_or(&path);
+                let parts: Vec<_> = rel
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect();
+                (format!("crates/{}", parts.join("/")), text)
+            })
+            .unzip();
+        Tests::named(names, files)
     }
 
     fn of(files: Vec<String>) -> Tests {
+        Tests::named(vec!["<test>".to_string(); files.len()], files)
+    }
+
+    fn named(names: Vec<String>, files: Vec<String>) -> Tests {
         let lower = files.iter().map(|t| t.to_ascii_lowercase()).collect();
-        Tests { files, lower }
+        Tests {
+            names,
+            files,
+            lower,
+        }
     }
 
     fn covers(&self, rule: &Rule) -> bool {
-        match rule {
-            Rule::Operation(id, segs) => self
-                .files
-                .iter()
-                .any(|t| has_word(t, id) || has_path(t, segs)),
-            Rule::Property(p) => self.files.iter().any(|t| p.covered_by(t)),
-            Rule::Name(name) => {
-                let quoted = format!("\"{}\"", name.to_ascii_lowercase());
-                self.lower.iter().any(|t| t.contains(&quoted))
-            }
-            Rule::Param(name, query) => {
-                let quoted = format!("\"{name}\"");
-                self.files
-                    .iter()
-                    .any(|t| t.contains(&quoted) || (*query && has_query(t, name)))
-            }
-            Rule::Enum(value, parent) => {
-                let quoted = format!("\"{value}\"");
-                self.files.iter().any(|t| {
+        self.why(rule).is_some()
+    }
+
+    /// Where and by what `rule` is covered: `file:line (what counted)`.
+    fn why(&self, rule: &Rule) -> Option<String> {
+        self.files.iter().enumerate().find_map(|(n, t)| {
+            let (line, what) = match rule {
+                Rule::Operation(id, segs) => {
+                    let i = word_at(t, id).or_else(|| path_at(t, segs))?;
+                    let found = t[i..]
+                        .split(|c: char| matches!(c, '"' | '?' | '#') || c.is_whitespace())
+                        .next()
+                        .unwrap_or("");
+                    (line_of(t, i), format!("the operation's id or path {found}"))
+                }
+                Rule::Property(p) => p.cover_in(t)?,
+                Rule::Name(name) => {
+                    let i = self.lower[n].find(&format!("\"{}\"", name.to_ascii_lowercase()))?;
+                    (line_of(t, i), "the quoted header name".to_string())
+                }
+                Rule::Param(name, query) => {
+                    let quoted = format!("\"{name}\"");
+                    let i = t
+                        .find(&quoted)
+                        .or_else(|| query_at(t, name).filter(|_| *query))?;
+                    (line_of(t, i), "the parameter name".to_string())
+                }
+                Rule::Enum(value, parent) => {
+                    let quoted = format!("\"{value}\"");
                     let lines: Vec<&str> = t.lines().collect();
-                    lines.iter().enumerate().any(|(i, l)| {
+                    let i = lines.iter().enumerate().position(|(i, l)| {
                         l.contains(&quoted)
                             && parent.as_ref().is_none_or(|p| {
                                 let near = lines[i.saturating_sub(3)..(i + 4).min(lines.len())]
@@ -641,10 +718,12 @@ impl Tests {
                                     .to_ascii_lowercase();
                                 near.contains(&p.to_ascii_lowercase()) || near.contains(&snake(p))
                             })
-                    })
-                })
-            }
-        }
+                    })?;
+                    (i + 1, "the value near its property".to_string())
+                }
+            };
+            Some(format!("{}:{line} ({what})", self.names[n]))
+        })
     }
 }
 
@@ -699,11 +778,14 @@ fn every_contract_item_is_tested_or_exempted() {
         }
         match (tests.covers(&item.rule), pending, exempt) {
             (true, Some(p), _) => errors.push(format!(
-                "{key} is pending ({}) but a test names it now: delete its [[pending]] entry {:?}",
-                p.pending, p.item
+                "{key} is pending ({}) and is now covered by {}: delete its [[pending]] entry {:?}, or if that line is about something else, this is a false cover: report it instead of deleting the entry",
+                p.pending,
+                tests.why(&item.rule).unwrap_or_default(),
+                p.item
             )),
             (true, None, Some(e)) => errors.push(format!(
-                "{key} is exempted but a test names it now: delete the entry {e:?}"
+                "exempt {key:?} is now covered by {}: delete the entry {e:?}, or if that line is about something else, this is a false cover: report it instead of deleting the entry",
+                tests.why(&item.rule).unwrap_or_default()
             )),
             (true, None, None) => {}
             (false, Some(p), _) => {
@@ -872,15 +954,11 @@ fn the_matchers_read_tests_as_meant() {
         "format!(\"/api/items/{id}/publish\")",
         &segs("api/items/{id}/publish")
     ));
-    let t = Tests {
-        files: vec!["let m = mention();\nassert_eq!(m.relation, \"link\");".into()],
-        lower: vec![],
-    };
+    let t = Tests::of(vec![
+        "let m = mention();\nassert_eq!(m.relation, \"link\");".into(),
+    ]);
     assert!(t.covers(&Rule::Enum("link".into(), Some("relation".into()))));
-    let far = Tests {
-        files: vec!["\"link\"\n\n\n\n\nrelation".into()],
-        lower: vec![],
-    };
+    let far = Tests::of(vec!["\"link\"\n\n\n\n\nrelation".into()]);
     assert!(!far.covers(&Rule::Enum("link".into(), Some("relation".into()))));
     // The past false cover: the Raw tab's label isn't the `raw` parameter.
     let raw = Rule::Param("raw".into(), true);
@@ -981,4 +1059,78 @@ fn common_word_siblings_do_not_anchor() {
         let key = format!("property:CatchUp.cards[].{name}");
         assert!(!reading_row.covers(&all[&key].rule), "{key}");
     }
+}
+
+/// Real lines of another branch's `crates/blyg-web` tests, which read a JSON
+/// card's `html` with `"origin"`, `"id"`, `"version"`, `"contentHtml"` and
+/// `/api/peek` nearby, were suspected of covering the exempted
+/// `CatchUp.cards[].html` (Burrow never calls catch-up). A card is a row of
+/// `id`, `origin`, `sub`, `version`, `source`, `at`, `depth`, `partial`,
+/// `label` and `html`: none of those anchors `html`, and no operation path is
+/// its owner (a schema in `components` has none).
+#[test]
+fn another_posts_html_is_not_the_catch_up_cards() {
+    let all = items(&current()).0;
+    let html = &all["property:CatchUp.cards[].html"].rule;
+    let Rule::Property(card) = html else {
+        panic!("not a property")
+    };
+    assert_eq!(card.owner, "CatchUp");
+    assert!(card.path.is_none(), "a components schema has no operation");
+    let peek = "    let r = v(b.wr_do(\"peek\", &args, NOW));\n    assert_eq!(\n        r[\"req\"][\"path\"],\n        \"/api/peek?origin=https%3A%2F%2Ffar.example.org%2F&id=X1\"\n    );\n    let p = v(b.wr_done(\n        \"peek\",\n        &args,\n        200,\n        r#\"{\"origin\":\"https://far.example.org/\",\"id\":\"X1\",\"kind\":\"thread\",\"version\":2,\n            \"contentHtml\":\"<h1>Far away</h1><p>Hello <script>x()</script>there.</p>\",\n            \"page\":null,\"url\":\"https://far.example.org/t/X1/\",\"stubOf\":null,\"forkedFrom\":null,\"subscriptionId\":null}\"#,\n        NOW,\n    ));\n    assert_eq!(p[\"peek\"][\"title\"], \"Far away\");\n    assert!(!p[\"peek\"][\"html\"].as_str().unwrap().contains(\"script\"));\n    assert_eq!(p[\"peek\"][\"followed\"], false);\n    assert_eq!(p[\"fire\"][\"path\"], \"/api/browse\");\n";
+    let opened = "    let post = v(b.open_reading(\"sub1|md1\", NOW));\n    let html = post[\"html\"].as_str().unwrap();\n    // A relative link would point at the owner's own blyg.\n    assert!(\n        html.contains(\"href=\\\"https://notes.example.com/api/items\\\"\"),\n";
+    let post = "    let post: Value = serde_json::from_str(&b.open_reading(&unread_keys[1], NOW)).unwrap();\n    assert!(!post[\"html\"].as_str().unwrap().is_empty());\n    assert!(post[\"by\"].as_str().unwrap().contains(\" · v\"), \"{post}\");\n";
+    for text in [peek, opened, post] {
+        assert!(!Tests::of(vec![text.into()]).covers(html), "{text}");
+    }
+    // Still covered where the catch-up card is named.
+    let named = "let c = CatchUp::default();\nassert!(c[\"cards\"][0][\"html\"].is_string());";
+    assert!(Tests::of(vec![named.into()]).covers(html));
+    let snake = "fn catch_up() {\n    c[\"html\"]\n}";
+    assert!(Tests::of(vec![snake.into()]).covers(html));
+}
+
+/// A covered item says where and by what, so a stale `[[exempt]]` can be told
+/// from a false cover at a glance.
+#[test]
+fn a_cover_says_where_and_by_what() {
+    let at = |files: Vec<&str>, rule: &Rule| {
+        Tests::named(
+            vec!["crates/x/tests/a.rs".into(); files.len()],
+            files.into_iter().map(String::from).collect(),
+        )
+        .why(rule)
+    };
+    assert_eq!(
+        at(
+            vec!["x\n\nlet i = SpellcheckIssue::default();\nj[\"why\"]"],
+            &issue_why()
+        )
+        .as_deref(),
+        Some("crates/x/tests/a.rs:4 (\"why\" near owner SpellcheckIssue)")
+    );
+    assert_eq!(
+        at(
+            vec!["", "json!({ \"replace\": r,\n \"why\": w })"],
+            &issue_why()
+        )
+        .as_deref(),
+        Some("crates/x/tests/a.rs:2 (\"why\" near sibling \"replace\")")
+    );
+    let by_path = Rule::property(
+        "why",
+        "listThings",
+        Some(vec!["api".into(), "op".into()]),
+        &[],
+    );
+    assert_eq!(
+        at(vec!["get(\"/api/op\");\nj[\"why\"]"], &by_path).as_deref(),
+        Some("crates/x/tests/a.rs:2 (\"why\" near path /api/op)")
+    );
+    let camel = Rule::property("ifNoneMatch", "Conditional", None, &[]);
+    assert_eq!(
+        at(vec!["\n\nh.get(\"ifNoneMatch\")"], &camel).as_deref(),
+        Some("crates/x/tests/a.rs:3 (the bare quoted name)")
+    );
+    assert_eq!(at(vec!["j[\"why\"]"], &issue_why()), None);
 }
