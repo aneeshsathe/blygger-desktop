@@ -771,3 +771,47 @@ fn the_matchers_read_tests_as_meant() {
     let inline = "fn a() {}\n#[cfg(test)]\nfn helper() {}\n#[cfg(test)]\nmod tests {\n}\n";
     assert_eq!(inline_test_mod(inline), inline.find("#[cfg(test)]\nmod"));
 }
+
+/// `SpellcheckIssue.why`, whose siblings in the contract are `find` and
+/// `replace`.
+fn issue_why() -> Rule {
+    Rule::property("why", "SpellcheckIssue", None, &["find", "replace"])
+}
+
+#[test]
+fn a_plain_word_property_needs_an_anchor_near_its_name() {
+    // The past false cover: tests on another branch (web-restore-split) read
+    // an unrelated JSON key "why", so the exempted `SpellcheckIssue.why`
+    // counted as covered, failed as stale, and its exemption was deleted.
+    let other_keys = Tests::of(vec![
+        "    let rows = view[\"rows\"].as_array().unwrap();\n    // Stalest first: z (not held here), c (changed here), p.\n    assert_eq!(rows[0][\"sid\"], \"z000000000000000000000000z\");\n    assert_eq!(rows[0][\"why\"], \"This thread isn't in this browser yet\");\n    assert_eq!(\n        rows[1][\"why\"],\n        \"It has unpublished edits: publish or discard them first\"\n    );\n    assert_eq!(rows[2][\"why\"], Value::Null);\n    assert_eq!(rows[2][\"line\"], \"2 versions behind\");\n".into(),
+        "    assert_eq!(x[\"on\"], true);\n    assert_eq!(x[\"placement\"], \"background\");\n    assert_eq!(x[\"why\"], \"you moved this\");\n    assert_eq!(v(b.wr_bg(\"b|b1\"))[\"why\"], \"blyg in Background\");\n".into(),
+        "\"kind\": \"pending\", \"why\": why, \"heading\": \"Changelog\", \"rows\": rows(&lines),\n".into(),
+    ]);
+    assert!(!other_keys.covers(&issue_why()));
+    // The name within 6 lines of the schema's name (any case, or snake_case).
+    let near = Tests::of(vec![
+        "let i = SpellcheckIssue::default();\n\n\nassert_eq!(j[\"why\"], \"x\");".into(),
+    ]);
+    assert!(near.covers(&issue_why()));
+    let snake_near = Tests::of(vec!["fn spellcheck_issue() {\n    j[\"why\"]\n}".into()]);
+    assert!(snake_near.covers(&issue_why()));
+    // Or next to a distinctive sibling.
+    let sibling = Tests::of(vec!["json!({ \"replace\": r, \"why\": w })".into()]);
+    assert!(sibling.covers(&issue_why()));
+    // A short plain sibling proves nothing.
+    let short = Tests::of(vec!["json!({ \"id\": 1, \"find\": f, \"why\": w })".into()]);
+    assert!(!short.covers(&issue_why()));
+    // 6 lines either side count; 7 don't.
+    let gap = |n: usize| format!("SpellcheckIssue\n{}\"why\"", "\n".repeat(n));
+    assert!(Tests::of(vec![gap(5)]).covers(&issue_why()));
+    assert!(!Tests::of(vec![gap(6)]).covers(&issue_why()));
+    let after = format!("\"why\"\n{}SpellcheckIssue", "\n".repeat(5));
+    assert!(Tests::of(vec![after]).covers(&issue_why()));
+    let far_after = format!("\"why\"\n{}SpellcheckIssue", "\n".repeat(6));
+    assert!(!Tests::of(vec![far_after]).covers(&issue_why()));
+    // A distinctive name keeps the bare rule.
+    let camel = Rule::property("ifNoneMatch", "Conditional", None, &["other"]);
+    assert!(Tests::of(vec!["h.get(\"ifNoneMatch\")".into()]).covers(&camel));
+    assert!(Tests::of(vec!["x.if_none_match".into()]).covers(&camel));
+}
