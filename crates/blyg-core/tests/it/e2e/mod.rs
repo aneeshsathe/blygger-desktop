@@ -5306,6 +5306,8 @@ impl Drop for RuleBackOn<'_> {
 /// a studio without the rule.
 fn superseded_off(me: &LiveBackend) -> Option<RuleBackOn<'_>> {
     use blyg_core::background::SUPERSEDED;
+    // A pull notes whether the studio has Background at all.
+    me.sync_now().unwrap();
     let rules = me.background_rules().unwrap()?;
     rules.offers(SUPERSEDED).then(|| {
         me.save_background_rule(SUPERSEDED, false).unwrap();
