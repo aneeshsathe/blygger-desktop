@@ -184,3 +184,44 @@ fn run_wants_the_red_commit_to_hold_tests_only() {
         "{out}"
     );
 }
+
+/// `--run` builds an old commit. A stand-in `cargo` records where it was told
+/// to build: under the caller's target directory, never in it (a test binary
+/// an older commit leaves there is one the next run takes for its own).
+#[test]
+fn run_builds_the_old_commit_in_a_target_dir_of_its_own() {
+    use std::os::unix::fs::PermissionsExt;
+    let r = Repo::new();
+    let base = r.git(&["rev-parse", "HEAD"]);
+    r.write("crates/x/Cargo.toml", "[package]\nname = \"x\"\n");
+    r.write(TEST, "#[test]\nfn adds() {}\n");
+    let tip = r.commit("red: add", None);
+    let bin = tempfile::tempdir().unwrap();
+    let cargo = bin.path().join("cargo");
+    let fake = "#!/bin/sh\nprintf %s \"$CARGO_TARGET_DIR\" >\"$(dirname \"$0\")/built-in\"\necho 'test adds ... FAILED'\n";
+    std::fs::write(&cargo, fake).unwrap();
+    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+    let shared = bin.path().join("shared");
+    let out = Command::new("bash")
+        .arg(script())
+        .args(["--run", &base, &tip])
+        .current_dir(r.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("PATH", path)
+        .env("CARGO_TARGET_DIR", &shared)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && text.contains("red: test adds"),
+        "{text}"
+    );
+    let built_in = std::fs::read_to_string(bin.path().join("built-in")).unwrap();
+    assert_eq!(Path::new(&built_in), shared.join("test-first"));
+}
