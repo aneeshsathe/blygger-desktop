@@ -52,6 +52,10 @@ pub const SERVED_META: &str = "background.served";
 pub const PLACING_META: &str = "background.placing";
 /// Store meta: the last [`BackgroundSet`] read, as JSON.
 pub const SET_META: &str = "background.set";
+/// Store meta: the `contractVersion` of a studio whose lens read answered
+/// plain rows (a studio from 0.49.12 to 0.60 ignores the filter): not asked
+/// again until its contract changes.
+pub const NO_LENS_META: &str = "background.no_lens";
 
 /// What Burrow says when the blyg has no Background.
 pub const NOT_SERVED: &str = "Your blyg needs blygger-studio 0.61 or later for Background";
@@ -631,6 +635,12 @@ pub fn places(capabilities: &Value) -> bool {
 
 /// Whether a lens read answered the Background lens: every entry carries
 /// its `background`. A studio that ignores the filter answers plain rows.
+///
+/// An empty answer counts as a lens: on a studio with Background it's a
+/// lens with nothing in it yet (the usual case on a new blyg), and an
+/// older studio that ignored the filter answers empty only when it holds
+/// no reading posts, where nothing can be shown in the wrong place. The
+/// next read with rows in it judges again.
 pub fn is_lens(entries: &[Value]) -> bool {
     entries
         .iter()

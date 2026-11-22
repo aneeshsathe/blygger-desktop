@@ -23,11 +23,20 @@ impl Engine {
     /// posts (`setReadingPlacement`). A failed read leaves what was noted.
     pub(super) fn note_background_served(&self) {
         if let Ok(on) = self.api.serves_background() {
-            let _ = self.store.set_background_served(on);
+            let _ = self.store.set_background_served(on && !self.known_without_lens());
         }
         if let Ok(on) = self.api.places_background() {
             let _ = self.store.set_background_placing(on);
         }
+    }
+
+    /// Whether this studio's lens read was found plain rows at its current
+    /// contract (`NO_LENS_META`): asked again once the contract changes.
+    fn known_without_lens(&self) -> bool {
+        let Some(seen) = self.store.meta(crate::background::NO_LENS_META) else {
+            return false;
+        };
+        matches!(self.api.contract_version(), Ok(Some(v)) if v == seen)
     }
 
     /// Whether the blyg serves Background, as of the last check.
@@ -46,13 +55,22 @@ impl Engine {
         if !self.store.background_served() {
             return Ok(false);
         }
-        // A studio before 0.61 refuses the filter, or ignores it and
-        // answers plain rows: it has no Background (until the next check).
+        // A studio before 0.61 refuses the filter (no Background until the
+        // next check), or ignores it and answers plain rows, judged on the
+        // first page (no Background until its contract changes).
         let had = self.store.background_set().is_some();
         let lens = match self.api.background_lens() {
-            Ok(lens) if crate::background::is_lens(&lens) => lens,
+            Ok(Some(lens)) => lens,
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
-            Ok(_) | Err(_) => {
+            Ok(None) => {
+                // Remembered for this contract, across sessions.
+                if let Ok(Some(v)) = self.api.contract_version() {
+                    self.store.set_meta(crate::background::NO_LENS_META, &v)?;
+                }
+                self.store.set_background_served(false)?;
+                return Ok(had);
+            }
+            Err(_) => {
                 self.store.set_background_served(false)?;
                 return Ok(had);
             }

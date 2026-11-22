@@ -215,6 +215,9 @@ pub struct Api {
     /// Whether `POST /api/subscriptions` takes `wholeBlyg`, once known: from
     /// the floor rule (`takes_whole_blyg`), or from a 400 to the key.
     whole_blyg: Mutex<Option<bool>>,
+    /// Whether the blyg has changelog display, read once a pull
+    /// (`serves_changelog`; forgotten by `new_pull`).
+    pub(super) changelog_served: Mutex<Option<bool>>,
     /// Each `GET` URL's last body and its `ETag` (`conditional`).
     validators: Mutex<Validators>,
     /// Send `If-None-Match` with a kept ETag (on unless turned off to
@@ -283,10 +286,19 @@ impl Api {
             session: Mutex::new(None),
             site: Mutex::new(None),
             whole_blyg: Mutex::new(None),
+            changelog_served: Mutex::new(None),
             validators: Mutex::new(Validators::default()),
             conditional: AtomicBool::new(true),
             counters: Counters::default(),
         }
+    }
+
+    /// A new pull: what's read once a pull is read again.
+    pub fn new_pull(&self) {
+        *self
+            .changelog_served
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// Ask `GET`s conditionally (`If-None-Match` with the ETag of the body

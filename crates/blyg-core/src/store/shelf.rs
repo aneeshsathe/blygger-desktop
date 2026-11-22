@@ -17,7 +17,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use super::Store;
 use crate::backend::{CoreError, Result};
 use crate::model::LocalId;
-use crate::shelf::{Entry, OWN};
+use crate::shelf::{Entry, OWN, TAKEN_OFF_MAX, TAKEN_OFF_META};
 
 pub use crate::shelf::SHELF_MAX;
 
@@ -170,8 +170,10 @@ impl Store {
                     "INSERT INTO shelf (local_id, position) VALUES (?1, ?2)",
                     params![id.0, all.len() as i64],
                 )?;
+                note_taken_off(&tx, wire.as_ref(), false)?;
             }
             (true, Some(ix)) if all[ix].local_id.is_none() => {
+                note_taken_off(&tx, wire.as_ref(), false)?;
                 // Named by its server id: now held here, so by its local id.
                 tx.execute(
                     "UPDATE shelf SET local_id = ?1, subscription_id = NULL, remote_id = NULL \
@@ -210,6 +212,7 @@ impl Store {
                     "INSERT INTO shelf (subscription_id, remote_id, position) VALUES (?1, ?2, ?3)",
                     params![entry.sub, entry.remote_id, all.len() as i64],
                 )?;
+                note_taken_off(&tx, Some(entry), false)?;
             }
             (false, Some(ix)) => remove_at(&tx, &all, ix)?,
             _ => {}
@@ -374,7 +377,40 @@ impl Store {
     }
 }
 
+/// Note that this side took `entry` off the shelf (`off`), or put it back
+/// ([`TAKEN_OFF_META`]). A post the blyg can't name yet needs no note.
+fn note_taken_off(tx: &Transaction, entry: Option<&Entry>, off: bool) -> Result<()> {
+    let Some(entry) = entry else {
+        return Ok(());
+    };
+    let held: Option<String> = tx
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [TAKEN_OFF_META],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let mut list: Vec<Entry> = held
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let was = list.len();
+    list.retain(|e| e != entry);
+    if off {
+        list.push(entry.clone());
+        let over = list.len().saturating_sub(TAKEN_OFF_MAX);
+        list.drain(..over);
+    } else if list.len() == was {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![TAKEN_OFF_META, serde_json::to_string(&list).unwrap_or_default()],
+    )?;
+    Ok(())
+}
+
 fn remove_at(tx: &Transaction, all: &[ShelfRow], ix: usize) -> Result<()> {
+    note_taken_off(tx, all[ix].wire.as_ref(), true)?;
     tx.execute("DELETE FROM shelf WHERE rowid = ?1", params![all[ix].rowid])?;
     let rest: Vec<i64> = all
         .iter()

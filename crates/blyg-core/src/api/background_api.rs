@@ -40,8 +40,10 @@ impl Api {
 
     /// Every entry of the studio's Background lens (`GET
     /// /api/reading?background=true`, every page), as served. One coherent
-    /// acquisition: a cursor that expires mid-walk starts it over.
-    pub fn background_lens(&self) -> Result<Vec<Value>> {
+    /// acquisition: a cursor that expires mid-walk starts it over. `None`:
+    /// the first page wasn't the lens (`background::is_lens`; a studio that
+    /// ignores the filter), and no more pages were read.
+    pub fn background_lens(&self) -> Result<Option<Vec<Value>>> {
         for _ in 0..=CURSOR_RESTARTS {
             match self.background_walk() {
                 Err(CoreError::CursorExpired) => continue,
@@ -51,7 +53,7 @@ impl Api {
         Err(CoreError::CursorExpired)
     }
 
-    fn background_walk(&self) -> Result<Vec<Value>> {
+    fn background_walk(&self) -> Result<Option<Vec<Value>>> {
         let mut out = Vec::new();
         let mut cursor: Option<String> = None;
         for _ in 0..MAX_PAGES {
@@ -61,6 +63,9 @@ impl Api {
             }
             let v = self.call("GET", &path, None)?;
             if let Some(items) = v.get("items").and_then(Value::as_array) {
+                if cursor.is_none() && !crate::background::is_lens(items) {
+                    return Ok(None);
+                }
                 out.extend(items.iter().cloned());
             }
             let next = v
@@ -75,7 +80,7 @@ impl Api {
                     ));
                 }
                 Some(n) => cursor = Some(n),
-                None => return Ok(out),
+                None => return Ok(Some(out)),
             }
         }
         Err(CoreError::Other(

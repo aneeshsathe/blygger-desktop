@@ -1346,6 +1346,10 @@ impl Engine {
             st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
         };
         let checked = self.state().compatible;
+        // --- newer contract --- A check from an earlier pull holds removals
+        // back until the contract is read again (`Engine::lay_list`).
+        self.store.contract_stale();
+        self.api.new_pull();
         self.check_server(false)?;
         // --- newer contract --- The safety net checks the contract again
         // (one conditional read): a studio upgraded mid-session is seen
@@ -1377,7 +1381,14 @@ impl Engine {
         if stale("items", ITEMS_DEPS) {
             let settings = full || !self.unchanged(&rev, "items", &["settings"]);
             if let Some(wires) = settled(self.api.list_items_with(settings))? {
-                let mut out = self.store.merge_all(&wires)?;
+                let mut out = self.lay_list(
+                    || self.store.merge_all(&wires),
+                    |mut a, b| {
+                        a.changed |= b.changed;
+                        a.conflicts.extend(b.conflicts);
+                        a
+                    },
+                )?;
                 out.changed |= self.store.merge_wire_syndication(&wires)?; // --- syndication ---
                 for (local_id, mine, theirs) in out.conflicts {
                     self.emit(CoreEvent::Conflict {
@@ -1672,7 +1683,7 @@ impl Engine {
     /// changed.
     fn fetch_signals(&self) -> Result<bool> {
         match self.api.signals()? {
-            Some(list) => self.store.replace_thumbs(&list),
+            Some(list) => self.lay_list(|| self.store.replace_thumbs(&list), |a, b| a || b),
             None => Ok(false),
         }
     }
@@ -1684,7 +1695,7 @@ impl Engine {
     /// none. True when anything shown changed.
     pub fn fetch_hoppers(&self) -> Result<bool> {
         let Some(details) = self.api.hopper_details()? else {
-            return self.store.replace_hoppers(&[]);
+            return self.lay_list(|| self.store.replace_hoppers(&[]), |a, b| a || b);
         };
         let subs: HashMap<SubId, (String, String)> = self
             .store
@@ -1712,7 +1723,7 @@ impl Engine {
                 hopper: d.hopper,
             })
             .collect();
-        self.store.replace_hoppers(&fetched)
+        self.lay_list(|| self.store.replace_hoppers(&fetched), |a, b| a || b)
     }
 
     /// Send a `hopper` op: `PUT` or `DELETE /api/hoppers/{id}/items/…`. A
@@ -1875,8 +1886,11 @@ impl Engine {
                 )
             })
             .collect();
-        let plan = self.store.reconcile_read_state(&server, clear)?;
-        Ok(plan.cleared > 0)
+        let cleared = self.lay_list(
+            || Ok(self.store.reconcile_read_state(&server, clear)?.cleared),
+            |a, b| a + b,
+        )?;
+        Ok(cleared > 0)
     }
 
     /// Run a `read` or `unread` op: with others of its kind that wait, as

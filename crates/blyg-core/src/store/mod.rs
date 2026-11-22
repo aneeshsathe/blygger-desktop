@@ -92,13 +92,52 @@ pub struct Store {
     /// The `reading` rowids written since the cache last looked, from the
     /// connection's update hook.
     reading_dirty: Arc<Mutex<reading::Dirty>>,
-    /// Whether the blyg's lists may remove what's held here: `Withheld` on
-    /// a contract newer than this Burrow knows, and until sync's contract
-    /// check (`Engine::check_server`) has allowed it. Every removal on a
-    /// list's word asks it: `merge_all`, `prune_reading`, `replace_thumbs`,
-    /// `replace_hoppers`, `reconcile_read_state`'s clears and
-    /// `merge_reading_page`'s re-keys.
-    lists_prune: Mutex<Prune>,
+    /// Whether the blyg's lists may remove what's held here ([`Lists`]).
+    /// Every removal on a list's word asks it: `merge_all`,
+    /// `prune_reading`, `replace_thumbs`, `replace_hoppers`,
+    /// `reconcile_read_state`'s clears and `merge_reading_page`'s re-keys.
+    lists: Mutex<Lists>,
+}
+
+/// --- newer contract --- What the blyg's contract lets its lists remove
+/// here, as sync last checked it (`Engine::check_server`,
+/// `Engine::recheck_contract`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Lists {
+    /// `None`: not checked yet this session (nothing is removed, and it
+    /// isn't a newer contract either). `Some(Withheld)`: a newer contract.
+    checked: Option<Prune>,
+    /// The check was made this pull. A removal on an older check is held
+    /// back (`held_back`) until sync reads the contract again: a studio
+    /// upgraded since would otherwise prune on its word.
+    fresh: bool,
+    /// A removal was held back for a stale check since sync last asked.
+    held_back: bool,
+}
+
+/// May a list's word remove something now ([`Store::removal`])?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Removal {
+    Now,
+    /// Allowed as of an earlier pull: held back, and noted for sync to read
+    /// the contract again (`Store::take_held_back`).
+    Recheck,
+    Never,
+}
+
+impl Removal {
+    /// Whether to remove the one thing at hand. Asked only where something
+    /// would go, so a held-back note means a list really dropped something.
+    pub(crate) fn may(self, store: &Store) -> bool {
+        match self {
+            Removal::Now => true,
+            Removal::Recheck => {
+                store.lists().held_back = true;
+                false
+            }
+            Removal::Never => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -346,20 +385,72 @@ impl Store {
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
             // Nothing is removed on a list's word before the contract is known.
-            lists_prune: Mutex::new(Prune::Withheld),
+            lists: Mutex::new(Lists::default()),
             conn: Mutex::new(conn),
         })
     }
 
-    /// Whether the blyg's lists may remove what's held here.
+    fn lists(&self) -> MutexGuard<'_, Lists> {
+        self.lists.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Whether the blyg's lists may remove what's held here, as last
+    /// checked: `Withheld` on a newer contract and before any check.
     pub fn lists_prune(&self) -> Prune {
-        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner())
+        self.lists().checked.unwrap_or(Prune::Withheld)
     }
 
     /// What the blyg's contract lets its lists remove (sync's contract
-    /// check).
+    /// check, made just now).
     pub fn set_lists_prune(&self, prune: Prune) {
-        *self.lists_prune.lock().unwrap_or_else(|p| p.into_inner()) = prune;
+        let mut l = self.lists();
+        l.checked = Some(prune);
+        l.fresh = true;
+    }
+
+    /// The contract is no longer known (it proved too old): nothing is
+    /// removed, and it isn't called newer either.
+    pub fn forget_contract(&self) {
+        *self.lists() = Lists::default();
+    }
+
+    /// Whether sync checked the contract this session (and it wasn't too
+    /// old).
+    pub fn contract_known(&self) -> bool {
+        self.lists().checked.is_some()
+    }
+
+    /// Whether a check found a contract newer than this Burrow knows (not
+    /// merely none made yet).
+    pub fn newer_contract(&self) -> bool {
+        self.lists().checked == Some(Prune::Withheld)
+    }
+
+    /// A new pull: the last check is from before it. A removal it would
+    /// allow is held back until sync reads the contract again.
+    pub fn contract_stale(&self) {
+        self.lists().fresh = false;
+    }
+
+    /// Whether a removal was held back for a stale check since last asked.
+    pub fn take_held_back(&self) -> bool {
+        std::mem::take(&mut self.lists().held_back)
+    }
+
+    /// May a list's word remove something now?
+    pub(crate) fn removal(&self) -> Removal {
+        match *self.lists() {
+            Lists {
+                checked: Some(Prune::Allowed),
+                fresh: true,
+                ..
+            } => Removal::Now,
+            Lists {
+                checked: Some(Prune::Allowed),
+                ..
+            } => Removal::Recheck,
+            _ => Removal::Never,
+        }
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
@@ -1054,7 +1145,7 @@ impl Store {
     /// carry unpushed edits, which will recreate them, or the contract is
     /// newer than Burrow's: `lists_prune`).
     pub fn merge_all(&self, wires: &[WireItem]) -> Result<MergeOutcome> {
-        let prune = self.lists_prune() == Prune::Allowed;
+        let removal = self.removal();
         let mut out = MergeOutcome::default();
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -1096,7 +1187,11 @@ impl Store {
             }
         }
         for (sid, row) in &by_sid {
-            if prune && !seen.contains(sid) && !row.item.pending_sync && !row.item.conflict {
+            if !seen.contains(sid)
+                && !row.item.pending_sync
+                && !row.item.conflict
+                && removal.may(self)
+            {
                 tx.execute(
                     "DELETE FROM versions WHERE local_id = ?1",
                     [&row.item.local_id.0],

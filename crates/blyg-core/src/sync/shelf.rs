@@ -8,7 +8,9 @@
 //!   Without `getShelf` the shelf stays on this computer, as before, and
 //!   nothing is sent. With `getShelf` alone (a read-only sign-in) it's
 //!   shown as on a newer contract, below: the union, and changes made here
-//!   kept here (`SyncState::HeldReadOnly`).
+//!   kept here (`SyncState::HeldReadOnly`), but the blyg's list is
+//!   followed with the usual three-way merge (`follow_shelf_read_only`):
+//!   what another device took off comes off here too.
 //! - Read when the `shelf` change counter moved (`SHELF_DEPS`, with the
 //!   rest of a pull), and on the first pull of a session.
 //! - Sent when it changed here (a queued `shelf` op, or a pull that finds
@@ -21,11 +23,16 @@
 //! - On a contract newer than Burrow knows (`sync/newer.rs`) the shelf is
 //!   read and shown here as the union (nothing comes off on its word; what
 //!   this side took off stays off), and never written: a change made here
-//!   stays queued until a Burrow that knows the contract sends it. A union
+//!   stays queued until a Burrow that knows the contract sends it. What
+//!   this side took off is recorded as it's taken off (`TAKEN_OFF_META`),
+//!   so it stays off with no agreed base to work it out from. A union
 //!   sent back would bring back what another device took off, and the
 //!   50-entry cap would trim it. Meanwhile the status bar reads Synced (a
 //!   held op isn't due) and Saved says the change is syncing: the
 //!   once-a-session notice is the only sign that it's held.
+//! - Before the session's contract check (launched offline, say) a change
+//!   waits too, and Saved says it's syncing (`SyncState::Waiting`), not
+//!   held for a newer Burrow.
 //! - Your posts the blyg can't name yet (scratch notes, drafts not sent)
 //!   stay on this computer's shelf in their places, and go once they can.
 
@@ -34,8 +41,8 @@ use crate::api::shelf_api::PutShelf;
 use crate::backend::{CoreError, Result};
 use crate::model::CoreEvent;
 use crate::shelf::{
-    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, WRITES_META, cap, merge,
-    overflow_message,
+    BASE_META, Entry, REVISION_META, Remote, SERVED_META, SyncState, TAKEN_OFF_META, WRITES_META,
+    cap, merge, overflow_message,
 };
 use crate::store::Op;
 
@@ -60,13 +67,16 @@ impl Engine {
         self.store.meta(WRITES_META).as_deref() == Some("1")
     }
 
-    /// Why a change made here isn't sent: the blyg's contract is newer than
-    /// Burrow knows, or this sign-in may only read the shelf. `None`: it's
-    /// sent (or there's no synced shelf to hold it for).
+    /// Why a change made here isn't sent: the contract isn't checked yet
+    /// this session (`Waiting`: it goes once it is), the blyg's contract is
+    /// newer than Burrow knows, or this sign-in may only read the shelf.
+    /// `None`: it's sent (or there's no synced shelf to hold it for).
     pub(super) fn shelf_held(&self) -> Option<SyncState> {
         if !self.shelf_served() {
             None
-        } else if self.store.lists_prune() == crate::api::Prune::Withheld {
+        } else if !self.store.contract_known() {
+            Some(SyncState::Waiting)
+        } else if self.store.newer_contract() {
             Some(SyncState::HeldNewer)
         } else if !self.shelf_writes() {
             Some(SyncState::HeldReadOnly)
@@ -136,7 +146,11 @@ impl Engine {
     /// the result when it differs. True when the shelf here changed.
     pub(super) fn sync_shelf(&self) -> Result<bool> {
         match self.api.get_shelf()? {
-            // --- newer contract --- and a read-only sign-in: shown, not written.
+            // A read-only sign-in follows the blyg's list, writing nothing.
+            Some(server) if self.shelf_held() == Some(SyncState::HeldReadOnly) => {
+                self.follow_shelf_read_only(&server)
+            }
+            // --- newer contract --- (and not checked yet): shown, not written.
             Some(server) if self.shelf_held().is_some() => self.show_shelf_union(&server),
             Some(server) => self.settle_shelf(server, true),
             None => {
@@ -150,7 +164,8 @@ impl Engine {
     fn settle_shelf(&self, server: Remote, retry: bool) -> Result<bool> {
         let base = self.shelf_base();
         let local = self.store.shelf_wire();
-        let (merged, over) = cap(merge(base.as_deref(), &local, &server.entries));
+        let theirs = self.less_taken_off(&server.entries, &local);
+        let (merged, over) = cap(merge(base.as_deref(), &local, &theirs));
         if merged == server.entries {
             let changed = self.store.apply_shelf(&server.entries)?;
             self.agreed(&server)?;
@@ -198,15 +213,47 @@ impl Engine {
     /// True when the shelf here changed.
     pub(super) fn show_shelf_union(&self, server: &Remote) -> Result<bool> {
         let local = self.store.shelf_wire();
-        let base = self.shelf_base().unwrap_or_default();
-        let taken_off: Vec<&Entry> = base.iter().filter(|e| !local.contains(e)).collect();
-        let theirs: Vec<Entry> = server
-            .entries
-            .iter()
-            .filter(|e| !taken_off.contains(e))
-            .cloned()
-            .collect();
+        let theirs = self.less_taken_off(&server.entries, &local);
         self.store.apply_shelf(&merge(None, &local, &theirs))
+    }
+
+    /// A read-only sign-in: the blyg's list merged three ways with this
+    /// side's, as a writer would, and the result kept here, not sent. What
+    /// another device took off comes off here; what this side took off
+    /// (recorded, so with no base too) stays off. The blyg's list is the
+    /// base of the next merge. True when the shelf here changed.
+    pub(super) fn follow_shelf_read_only(&self, server: &Remote) -> Result<bool> {
+        let local = self.store.shelf_wire();
+        let base = self.shelf_base();
+        let theirs = self.less_taken_off(&server.entries, &local);
+        let (merged, _) = cap(merge(base.as_deref(), &local, &theirs));
+        let changed = self.store.apply_shelf(&merged)?;
+        // The blyg's list is the base now, so this side's removals are
+        // base − local from here on: the record isn't needed.
+        self.agreed(server)?;
+        Ok(changed)
+    }
+
+    /// What this side took off: recorded as it was taken off, and what the
+    /// blyg last agreed that isn't here.
+    fn taken_off(&self) -> Vec<Entry> {
+        self.store
+            .meta(TAKEN_OFF_META)
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// `server` less what this side took off since the blyg last agreed.
+    fn less_taken_off(&self, server: &[Entry], local: &[Entry]) -> Vec<Entry> {
+        let base = self.shelf_base().unwrap_or_default();
+        let recorded = self.taken_off();
+        server
+            .iter()
+            .filter(|e| {
+                local.contains(e) || !(base.contains(e) || recorded.contains(e))
+            })
+            .cloned()
+            .collect()
     }
 
     /// The blyg holds `r`: it's the base of the next merge.
@@ -217,6 +264,7 @@ impl Engine {
         )?;
         self.store
             .set_meta(REVISION_META, &r.revision.to_string())?;
+        self.store.delete_meta(TAKEN_OFF_META)?;
         self.store.delete_meta(REFUSED_META)
     }
 

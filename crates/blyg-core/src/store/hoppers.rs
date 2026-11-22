@@ -292,7 +292,7 @@ impl Store {
     /// On a contract newer than Burrow knows (`lists_prune`) the read only
     /// adds: hoppers and memberships it lacks stay, as do their ops.
     pub fn replace_hoppers(&self, fetched: &[FetchedHopper]) -> Result<bool> {
-        let prune = self.lists_prune() == crate::api::Prune::Allowed;
+        let removal = self.removal();
         let mut c = self.conn();
         let tx = c.transaction()?;
         let before: (Vec<String>, BTreeSet<(String, String, String)>) = {
@@ -307,14 +307,29 @@ impl Store {
                 .collect::<rusqlite::Result<BTreeSet<_>>>()?;
             (hs, ms)
         };
-        let gone: Vec<String> = {
+        let held_ids: Vec<String> = {
             let mut st = tx.prepare("SELECT id FROM hoppers")?;
             st.query_map([], |r| r.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?
-                .into_iter()
-                .filter(|id| prune && !fetched.iter().any(|f| &f.hopper.id == id))
-                .collect()
         };
+        // Would the read drop a hopper or a membership held here?
+        let listed: BTreeSet<(String, String, String)> = fetched
+            .iter()
+            .flat_map(|f| {
+                f.members
+                    .iter()
+                    .map(|(s, r, _)| (f.hopper.id.clone(), s.to_string(), r.to_string()))
+            })
+            .collect();
+        let drops = held_ids
+            .iter()
+            .any(|id| !fetched.iter().any(|f| &f.hopper.id == id))
+            || before.1.iter().any(|m| !listed.contains(m));
+        let prune = drops && removal.may(self);
+        let gone: Vec<String> = held_ids
+            .into_iter()
+            .filter(|id| prune && !fetched.iter().any(|f| &f.hopper.id == id))
+            .collect();
         if prune {
             tx.execute("DELETE FROM hoppers", [])?;
             tx.execute("DELETE FROM hopper_items", [])?;
