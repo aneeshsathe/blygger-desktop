@@ -19,8 +19,13 @@ section: Added
   spellcheck accepts every word in it, Learn Spelling in the editor adds the
   word there too, and Blyg › Dictionary… lists your words, adds and takes
   them out (a write that meets another client's merges onto it; one made
-  offline waits on this computer and is sent when the blyg is back). Installed
-  sets are listed by name (`crates/blyg-app/src/dictionary.rs`,
+  offline waits on this computer and is sent when the blyg is back, and only
+  to that blyg). A word Burrow's Learn Spelling taught this computer is
+  unlearned here once it leaves your blyg's dictionary, here or in Studio;
+  words this computer learned any other way are never touched. A sign-in
+  that can read the dictionary but not change it keeps Learn Spelling's
+  words on this computer, and the sheet says so. Installed sets are listed
+  by name (`crates/blyg-app/src/dictionary.rs`,
   `crates/blyg-core/src/dictionary.rs`).
 - **Blyg › AI on Your Blyg…: studio 0.69's settings.** A text helpers model,
   the Agentic feed tab's name, and, under the change classifier, judging

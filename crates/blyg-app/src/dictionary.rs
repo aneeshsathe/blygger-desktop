@@ -10,8 +10,15 @@
 //! again after a while on Reading's refreshes ([`READ_EVERY`]). A word
 //! learned or edited offline is kept on this computer
 //! (`blyg_core::dictionary::Pending`) and sent by the next read; one the
-//! blyg refuses is said in a toast. A word taken out here is unlearned
-//! from the system's list too. A failed read isn't counted as a read.
+//! blyg refuses is said in a toast. A failed read isn't counted as a read.
+//!
+//! Burrow keeps a record of the words its Learn Spelling added to the
+//! system's list (`Backend::dictionary_taught`). When one of those leaves
+//! the blyg's words (taken out here, or in Studio), the next read unlearns
+//! it on this computer; a word the system learned any other way is never
+//! touched. A sign-in that may read the dictionary but not change it (no
+//! `putDictionarySource`) learns on this computer only, quietly, and the
+//! sheet says it can't add words.
 //!
 //! Keys: type a word and ⏎ adds it; ↑/↓ choose one of your words, ⌘⌫
 //! takes it out; esc closes. A blyg without a dictionary (its capabilities
@@ -19,7 +26,9 @@
 
 use std::time::{Duration, Instant};
 
+use blyg_core::Backend;
 use blyg_core::dictionary::{Accepted, Dictionary, Edit, OWNER, word_problem};
+use std::sync::Arc;
 
 use super::*;
 
@@ -38,6 +47,36 @@ gpui_kit::actions!(
 /// How long a read of the dictionary stands before Reading's refreshes
 /// read it again.
 pub const READ_EVERY: Duration = Duration::from_secs(300);
+
+/// What the sheet says to a sign-in that can't change the dictionary.
+pub const READ_ONLY_NOTE: &str = "This sign-in can read your blyg's dictionary but can't add words \
+     to it. Learn Spelling keeps a word on this computer only.";
+
+/// After a read (or a write) of `d`: the words Burrow taught this
+/// computer that have left the blyg's words, forgotten here; the caller
+/// unlearns them ([`unlearn_all`]).
+fn settle(backend: &Arc<dyn Backend>, d: &Dictionary) -> Vec<String> {
+    let taught = backend.dictionary_taught().unwrap_or_default();
+    let gone = blyg_core::dictionary::left(&taught, d);
+    for w in &gone {
+        let _ = backend.dictionary_teach(w, false);
+    }
+    gone
+}
+
+/// A read of the dictionary, and the taught words it settles ([`settle`]).
+fn read_settled(backend: &Arc<dyn Backend>) -> blyg_core::Result<(Option<Dictionary>, Vec<String>)> {
+    let d = backend.dictionary()?;
+    let gone = d.as_ref().map(|d| settle(backend, d)).unwrap_or_default();
+    Ok((d, gone))
+}
+
+/// Out of the system's learned list: words Burrow taught that left the blyg.
+fn unlearn_all(gone: &[String], cx: &mut App) {
+    for w in gone {
+        crate::composer::unlearned(w, cx);
+    }
+}
 
 /// When the dictionary was last read (per window session).
 #[derive(Default)]
@@ -129,17 +168,18 @@ impl MainView {
             cx,
         );
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.dictionary() });
+        let task = cx.background_spawn(async move { read_settled(&backend) });
         cx.spawn(async move |_, cx| {
             let read = task.await;
             cx.update(|cx| {
                 // Only a read that came back counts: a failed one is tried
                 // again at the next refresh.
-                if let Ok(d) = &read {
+                if let Ok((d, gone)) = &read {
                     cx.set_global(LastRead(Some(Instant::now())));
                     if let Some(d) = d {
                         crate::composer::set_accepted(Accepted::from(d), cx);
                     }
+                    unlearn_all(gone, cx);
                 }
             });
         })
@@ -148,11 +188,24 @@ impl MainView {
 
     /// Learn Spelling's word, on to the blyg's dictionary off the UI
     /// thread. Offline (or a later try can mend it), the backend keeps it
-    /// and the next read sends it, quietly; a refusal is said.
+    /// and the next read sends it, quietly; a refusal is said. A sign-in
+    /// that can't change the dictionary sends nothing and says nothing.
+    /// A word sent (or waiting to be) is recorded as taught: Burrow's to
+    /// unlearn once it leaves the blyg.
     pub(crate) fn dictionary_learn(&mut self, word: String, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         let w = word.clone();
-        let task = cx.background_spawn(async move { backend.edit_dictionary(&Edit::Add(w)) });
+        let task = cx.background_spawn(async move {
+            let r = backend.edit_dictionary(&Edit::Add(w.clone()));
+            let sent = match &r {
+                Ok(d) => d.writable,
+                Err(e) => blyg_core::dictionary::keeps_queue(e),
+            };
+            if sent {
+                let _ = backend.dictionary_teach(&w, true);
+            }
+            r
+        });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| match r {
@@ -191,10 +244,16 @@ impl MainView {
         });
         cx.notify();
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.dictionary() });
+        let task = cx.background_spawn(async move { read_settled(&backend) });
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
-            let _ = this.update_in(cx, |v, _, cx| v.dictionary_loaded(r.map(Some), cx));
+            let _ = this.update_in(cx, |v, _, cx| {
+                let r = r.map(|(d, gone)| {
+                    unlearn_all(&gone, cx);
+                    Some(d)
+                });
+                v.dictionary_loaded(r, cx)
+            });
         })
         .detach();
     }
@@ -237,18 +296,29 @@ impl MainView {
         let Some(s) = self.dictionary_sheet() else {
             return;
         };
-        if s.busy || !matches!(s.load, DictLoad::Ready(_)) {
+        // A sign-in that can't change it isn't asked to.
+        if s.busy || !matches!(&s.load, DictLoad::Ready(d) if d.writable) {
             return;
         }
         s.busy = true;
         s.error = None;
         cx.notify();
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.edit_dictionary(&edit) });
+        let task = cx.background_spawn(async move {
+            let r = backend.edit_dictionary(&edit);
+            r.map(|d| {
+                let gone = settle(&backend, &d);
+                (d, gone)
+            })
+        });
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, _, cx| match r {
-                Ok(d) => v.dictionary_loaded(Ok(Some(Some(d))), cx),
+                Ok((d, gone)) => {
+                    // A word taken out that Burrow taught: flagged again.
+                    unlearn_all(&gone, cx);
+                    v.dictionary_loaded(Ok(Some(Some(d))), cx)
+                }
                 Err(e) => {
                     if let Some(s) = v.dictionary_sheet() {
                         s.busy = false;
@@ -302,8 +372,7 @@ impl MainView {
         let Some(w) = d.owner_words().get(ix).cloned() else {
             return;
         };
-        // Out of the system's learned list too, or it'd still pass here.
-        crate::composer::unlearned(&w, cx);
+        // Unlearned here too once stored, if Burrow taught it (`settle`).
         self.dictionary_edit(Edit::Remove(w), window, cx);
     }
 
@@ -369,8 +438,10 @@ impl MainView {
             )
             .child(muted(
                 "Words your blyg's spellcheck accepts, in Burrow, in Studio and in every other \
-                 client. Learn Spelling in the editor adds a word here too, and taking one \
-                 out here unlearns it on this computer."
+                 client. Learn Spelling in the editor adds a word here too. When a word \
+                 Burrow's Learn Spelling taught this computer leaves your blyg's dictionary, \
+                 here or in Studio, it's unlearned on this computer too; a word this computer \
+                 learned any other way is never touched."
                     .into(),
             ));
         let d = match &s.load {
@@ -404,13 +475,18 @@ impl MainView {
             }
             DictLoad::Ready(d) => d,
         };
-        body = body.child(
-            crate::theme_ext::field_box(div(), theme)
-                .px(px(10.))
-                .py(px(6.))
-                .text_size(px(13.))
-                .child(gpui_kit::base::input::Input::new(&s.add)),
-        );
+        let writable = d.writable;
+        body = if writable {
+            body.child(
+                crate::theme_ext::field_box(div(), theme)
+                    .px(px(10.))
+                    .py(px(6.))
+                    .text_size(px(13.))
+                    .child(gpui_kit::base::input::Input::new(&s.add)),
+            )
+        } else {
+            body.child(muted(READ_ONLY_NOTE.into()))
+        };
         let words = d.owner_words();
         let mut list = div()
             .id("dictionary-words")
@@ -439,7 +515,8 @@ impl MainView {
                             .text_color(if selected { p.sel_ink } else { p.ink })
                             .child(w.clone()),
                     )
-                    .child(
+                    .when(writable, |row| {
+                        row.child(
                         div()
                             .id(SharedString::from(format!("dictionary-remove-{i}")))
                             .px(px(6.))
@@ -449,7 +526,8 @@ impl MainView {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.dictionary_remove(i, window, cx)
                             })),
-                    ),
+                        )
+                    }),
             );
         }
         body = body
@@ -466,9 +544,12 @@ impl MainView {
         if s.busy {
             body = body.child(muted("Saving…".into()));
         }
-        body = body.child(muted(
-            crate::keymap::hint("⏎ adds · ↑↓ choose · ⌘⌫ takes out · esc closes").to_string(),
-        ));
+        let keys = if writable {
+            "⏎ adds · ↑↓ choose · ⌘⌫ takes out · esc closes"
+        } else {
+            "↑↓ choose · esc closes"
+        };
+        body = body.child(muted(crate::keymap::hint(keys).to_string()));
         (460., body.into_any_element())
     }
 }

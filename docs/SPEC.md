@@ -295,7 +295,9 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   Spelling adds the word to the system's list and to the blyg's owner
   source (read, change, `PUT` from that revision; a 409 re-reads and merges,
   three tries). Offline, the edit is kept in store meta `dictionary.pending`
-  (`dictionary::Pending`, a later edit of a word replacing an earlier) and
+  (`dictionary::Pending`, a later edit of a word replacing an earlier; kept
+  with the blyg's URL, so a database opened for another blyg never sends
+  them there) and
   the next read of the dictionary sends the queue the same way (one
   read-change-write of the queue at a time). It's kept, as the outbox keeps
   a change, on whatever a later try can mend (offline, 429, 5xx, an ended
@@ -303,9 +305,17 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   once stored, or when the blyg keeps no dictionary or refuses the words; a
   refused Learn Spelling is said in a toast. A read that fails isn't counted
   as read. The read follows `getDictionary` alone (a read-only token still
-  gets the accepted words), a write `putDictionarySource`. Taking a word out
-  in the sheet unlearns it from the system's list too
-  (`SpellEngine::unlearn`, NSSpellChecker's `unlearnWord:`). **Blyg › Dictionary…** lists your words (⏎ adds, ⌘⌫ or ×
+  gets the accepted words), a write `putDictionarySource`. A sign-in without
+  `putDictionarySource` (`Dictionary::writable` false) learns on this
+  computer only: Learn Spelling sends and queues nothing and says nothing
+  (a word queued offline before Burrow knew is dropped at the next read),
+  and the sheet says it can't add words. Burrow records the words its Learn
+  Spelling taught the system's list (store meta `dictionary.taught`, per
+  blyg; `Backend::dictionary_taught`), and a read or write of the dictionary
+  unlearns those that have left the owner's words, here or in Studio
+  (`dictionary::left`, `SpellEngine::unlearn`, NSSpellChecker's
+  `unlearnWord:`). A word the system learned any other way is never
+  unlearned. **Blyg › Dictionary…** lists your words (⏎ adds, ⌘⌫ or ×
   takes out) and names installed sets. Studio's spellcheck extension (its
   `/x/spellcheck/words` list and AI proofread) isn't used: the system
   checker and Burrow's own AI Proofread cover both.
