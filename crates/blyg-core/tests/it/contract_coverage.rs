@@ -14,9 +14,11 @@
 //!   the `"why"` of an unrelated JSON row once counted as
 //!   `SpellcheckIssue.why`, so its honest exemption failed as stale and was
 //!   deleted. Such a name needs its quoted form within 6 lines of the schema
-//!   or operation it lives in (its name, snake_case, or an operation's path)
-//!   or of a sibling property that is itself distinctive (not a plain word
-//!   of under 5 letters);
+//!   or operation it lives in (its name or snake_case, each as a whole
+//!   identifier: `AgenticEditionInput` doesn't name `AgenticEdition`; or an
+//!   operation's path) or of a sibling property that is itself distinctive
+//!   (not a plain word of under 5 letters, nor a common one in `COMMON`:
+//!   `origin`, `version` and `id` sit together in unrelated rows);
 //! - `enum:{where}={value}`: a test holds `"value"` within 3 lines of the
 //!   property or parameter it belongs to (a bare `"link"` is too common);
 //! - `param:{operationId}/{in}:{name}`: a test holds `"name"` in the
@@ -51,8 +53,17 @@ use serde_json::Value;
 /// Lines either side of a plain-word property's name that may hold its anchor.
 const WINDOW: usize = 6;
 /// A sibling property anchors a plain-word property unless it is itself a
-/// plain lowercase word shorter than this.
+/// plain lowercase word shorter than this, or one of `COMMON`.
 const MIN_SIBLING: usize = 5;
+
+/// Plain words too common as JSON keys to vouch for a sibling: they sit
+/// together in unrelated rows (a reading row's `origin`, `version`, `source`,
+/// a lineage node's `partial`, `depth`), which once made
+/// `CatchUp.cards[].id` look tested.
+const COMMON: &[&str] = &[
+    "origin", "version", "source", "label", "title", "author", "created", "updated", "content",
+    "status", "items", "cursor", "count", "value", "partial", "depth",
+];
 
 const HINT: &str = "write a test that names it (e2e against a real studio, see skills/real-server-testing), or add it to crates/blyg-core/tests/fixtures/contract-coverage.toml with a reason";
 
@@ -187,7 +198,7 @@ impl Prop {
         self.siblings
             .iter()
             .map(String::as_str)
-            .filter(|s| !(plain_word(s) && s.len() < MIN_SIBLING))
+            .filter(|s| !(plain_word(s) && (s.len() < MIN_SIBLING || COMMON.contains(s))))
     }
 
     /// What a test must hold for an uncovered plain-word name, for the
@@ -217,8 +228,8 @@ impl Prop {
     /// lives in.
     fn anchored_in(&self, window: &str) -> bool {
         let lower = window.to_ascii_lowercase();
-        lower.contains(&self.owner.to_ascii_lowercase())
-            || lower.contains(&snake(&self.owner))
+        has_word(&lower, &self.owner.to_ascii_lowercase())
+            || has_word(&lower, &snake(&self.owner))
             || self.path.as_ref().is_some_and(|p| has_path(window, p))
             || self.distinctive_siblings().any(|s| {
                 window.contains(&format!("\"{s}\""))
@@ -933,4 +944,41 @@ fn a_plain_word_property_needs_an_anchor_near_its_name() {
     let camel = Rule::property("ifNoneMatch", "Conditional", None, &["other"]);
     assert!(Tests::of(vec!["h.get(\"ifNoneMatch\")".into()]).covers(&camel));
     assert!(Tests::of(vec!["x.if_none_match".into()]).covers(&camel));
+}
+
+/// A property of a schema whose name is another's prefix: a test about
+/// `AgenticEditionInput` doesn't anchor `AgenticEdition`'s properties.
+#[test]
+fn an_owner_anchors_only_as_a_whole_identifier() {
+    let parent = |owner: &str| Rule::property("why", owner, None, &["find", "replace"]);
+    for text in [
+        "let i = AgenticEditionInput::default();\nassert_eq!(j[\"why\"], \"x\");",
+        "fn agentic_edition_input() {\n    j[\"why\"]\n}",
+    ] {
+        let t = Tests::of(vec![text.into()]);
+        assert!(!t.covers(&parent("AgenticEdition")), "{text}");
+        assert!(t.covers(&parent("AgenticEditionInput")), "{text}");
+    }
+    let own = Tests::of(vec![
+        "let i = AgenticEdition::default();\nassert_eq!(j[\"why\"], \"x\");".into(),
+        "fn agentic_edition() {\n    j[\"why\"]\n}".into(),
+    ]);
+    assert!(own.covers(&parent("AgenticEdition")));
+    assert!(!own.covers(&parent("AgenticEditionInput")));
+}
+
+/// Real lines of `crates/blyg-ext/tests/reading.rs` (a reading row) hold
+/// `"id"`, `"origin"` and `"version"`, common words that sit together in
+/// many unrelated rows: they don't make `CatchUp.cards[].id` or `.origin`
+/// tested.
+#[test]
+fn common_word_siblings_do_not_anchor() {
+    let all = items(&current()).0;
+    let reading_row = Tests::of(vec![
+        "        \"origin\": \"https://blyg.example.com\", \"kind\": \"thread\", \"state\": \"current\",\n        \"version\": version, \"created\": \"2026-10-01T09:00:00Z\", \"updated\": null,\n        \"observed_at\": \"2026-10-01T09:05:00Z\",\n        \"content_md\": md, \"content_html\": format!(\"<p>{md}</p>\"),\n        \"author\": {\"name\": \"Rue\", \"url\": null}, \"page\": null, \"thumb\": null, \"hoppers\": [],\n        \"stub_of\": {\"origin\": \"https://other.example.com\", \"id\": \"p7\", \"version\": 2},\n".into(),
+    ]);
+    for name in ["id", "origin", "version"] {
+        let key = format!("property:CatchUp.cards[].{name}");
+        assert!(!reading_row.covers(&all[&key].rule), "{key}");
+    }
 }

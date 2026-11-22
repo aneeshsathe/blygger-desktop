@@ -53,8 +53,16 @@ reason = "Burrow doesn't ask for catch-up's cards because its own Catch up (blyg
 reason = "catch-up's answer (operation catchUp), which Burrow doesn't ask for: its own Catch up lays out the conversation (blyg_core::catchup)"
 items = [
   "property:CatchUp.cards",
+  "property:CatchUp.cards[].at",
   "property:CatchUp.cards[].depth",
   "property:CatchUp.cards[].html",
+  "property:CatchUp.cards[].id",
+  "property:CatchUp.cards[].label",
+  "property:CatchUp.cards[].origin",
+  "property:CatchUp.cards[].partial",
+  "property:CatchUp.cards[].source",
+  "property:CatchUp.cards[].sub",
+  "property:CatchUp.cards[].version",
   "property:CatchUp.ordered",
   "enum:CatchUp.ordered=depth",
   "enum:CatchUp.ordered=time",
