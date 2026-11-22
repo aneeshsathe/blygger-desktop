@@ -184,11 +184,16 @@ impl MainView {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
                         };
+                        // --- auto cross-post --- the sites chosen for it start
+                        // now, one after another, each with its two sheets.
+                        let auto = v.auto_crosspost_after_publish(&id, window, cx);
                         // --- browser macros --- a granted macro can cross-post it.
-                        let cross = if v.macro_cross_post_hint() {
-                            crate::keymap::hint(" · ⇧⌘P to cross-post")
+                        let cross = if !auto.is_empty() {
+                            format!(" · cross-posting to {}", auto.join(", "))
+                        } else if v.macro_cross_post_hint() {
+                            crate::keymap::hint(" · ⇧⌘P to cross-post").to_string()
                         } else {
-                            ""
+                            String::new()
                         };
                         let sub = crate::keymap::hint_owned(format!(
                             "{} · ⌘O opens it{cross}",
