@@ -54,6 +54,26 @@ pub fn serves_contacts(version: &str) -> bool {
     }
 }
 
+/// The first studio that reads `@handle`s in natural grammar (0.66, #158):
+/// `@lin-driven` names Lin there, through the longest prefix before a `-`
+/// or `_` that names a contact. No capability says so; only the version.
+pub const NATURAL_GRAMMAR: (u64, u64, u64) = (0, 66, 0);
+
+/// Whether a studio running `version` (`blyg.json`'s generator) reads
+/// handles in natural grammar. Never known or unreadable: no, the
+/// whole-token reading, so a preview never links what publish won't.
+pub fn natural_grammar(version: Option<&str>) -> bool {
+    version
+        .and_then(crate::site::parse_version)
+        .is_some_and(|v| v >= NATURAL_GRAMMAR)
+}
+
+/// [`natural_grammar`] for the studio `backend` last saw
+/// (`Backend::studio_version`: local, instant, kept across launches).
+pub fn natural_grammar_at(backend: &dyn crate::Backend) -> bool {
+    natural_grammar(backend.studio_version().as_deref())
+}
+
 /// The contacts in a `GET /api/contacts` answer: `{items: […]}`,
 /// `{contacts: […]}` or a bare array. Entries without a handle or an
 /// origin are left out; a leading `@` is dropped.

@@ -283,5 +283,13 @@
   {"name": "tangle_unclosed", "kind": "thread", "md": "![[+ never closed\n\nMore."},
   {"name": "tangle_after_quote", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n![[+ new]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
   {"name": "tangle_placeholder_fragment", "kind": "fragment", "md": "See [[+ later]] in a fragment."},
-  {"name": "comment_to_self", "kind": "thread", "md": "Kept /* a note to self */ text.\n\n/* a whole\nparagraph note */\n\nAfter."}
+  {"name": "comment_to_self", "kind": "thread", "md": "Kept /* a note to self */ text.\n\n/* a whole\nparagraph note */\n\nAfter."},
+  {"name": "mention_possessive", "kind": "fragment", "md": "In @lin's case, and in @lin’s too."},
+  {"name": "mention_hyphenated", "kind": "fragment", "md": "A @lin-driven agenda, a @lin-driven-and-led plan, @lin_ish, and @lin-"},
+  {"name": "mention_longest_handle", "kind": "fragment", "md": "@lin-k-led and @lin-led, and @LIN-K."},
+  {"name": "mention_unknown_prefix", "kind": "fragment", "md": "@nobody-driven, @sam's and @lin."},
+  {"name": "mention_thread", "kind": "thread", "md": "@lin's notes.\n\n> @lin-driven, in a quote, stays\n\n`@lin-ish` in code, and [@lin](https://x.example/) linked."},
+  {"name": "tr_fragment_tk_block_directive", "kind": "fragment", "md": "Opening.\n\n[TK]write it[=]Mine.\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]"},
+  {"name": "tr_fragment_tk_inline_directive", "kind": "fragment", "md": "Lead [TK]bridge[=]one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\ntwo[/TK] tail."},
+  {"name": "tr_block_tk_two_quotes", "kind": "thread", "md": "Intro.\n\n[TK]write[=]![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1vh2]][/TK]\n\nEnd."}
 ]

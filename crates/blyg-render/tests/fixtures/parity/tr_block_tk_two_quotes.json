@@ -1,0 +1,28 @@
+{
+  "name": "tr_block_tk_two_quotes",
+  "kind": "thread",
+  "md": "Intro.\n\n[TK]write[=]![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1vh2]][/TK]\n\nEnd.",
+  "html": "<p>Intro.</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<div class=\"blyg-tk-gen\"></div>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vh2\" data-blyg-version=\"1\">\n<h3></h3>\n<p>An empty heading falls back to the excerpt.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vh2/\">fragment ↗</a> · snapshot of v1</p></blockquote>\n<p>End.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vh2",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

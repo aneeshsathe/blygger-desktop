@@ -205,6 +205,160 @@ fn emails_pastes_and_code_never_open_it(cx: &mut TestAppContext) {
     assert_eq!(labels(&view, cx), None, "inside a code fence");
 }
 
+/// `setup`, on a blyg that rewrites `@handle` at publish (contacts),
+/// running the studio version `studio` (`None`: unknown).
+fn setup_handles<'a>(
+    studio: Option<&str>,
+    cx: &'a mut TestAppContext,
+) -> (Entity<MainView>, &'a mut VisualTestContext) {
+    let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::app::bind_keys(cx);
+        crate::settings::init(
+            ConfigStore::in_memory(CONNECTED),
+            Arc::new(MemoryTokenStore::default()),
+            None,
+            cx,
+        );
+        composer::init(None, false, cx);
+    });
+    let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
+    fake.set_rewrites_handles(true);
+    fake.set_studio_version(studio);
+    let backend: Arc<dyn Backend> = fake.clone();
+    let (view, cx) = cx.add_window_view(move |window, cx| {
+        MainView::new(
+            backend,
+            Some(fake),
+            prefs,
+            std::time::Instant::now(),
+            window,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    (view, cx)
+}
+
+/// Pick Lin after typing `typed` (which ends in `@li`).
+fn pick_lin(view: &Entity<MainView>, typed: &str, cx: &mut VisualTestContext) {
+    cx.simulate_input(typed);
+    cx.run_until_parked();
+    assert_eq!(labels(view, cx).unwrap()[0], "Lin");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+}
+
+/// Studio 0.66 (#158): a contact's pick writes `@handle ` with a space, and
+/// a possessive, hyphen or closing punctuation typed straight after it takes
+/// the space's place, so `@lin's` and `@lin-driven` read as written. One
+/// undo takes the punctuation back to the pick, never to `@lin '`.
+#[gpui_kit::test]
+fn punctuation_after_a_handle_pick_closes_up_the_space(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(Some("0.68.0"), cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}In @lin "),
+        "a pick ends in a space"
+    );
+    cx.simulate_input("'");
+    cx.run_until_parked();
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}In @lin'"),
+        "the space gives way"
+    );
+    cx.simulate_input("s case, then");
+    pick_lin(&view, " @li", cx);
+    // One key at a time, as typing is.
+    cx.simulate_input("-");
+    cx.run_until_parked();
+    assert!(
+        text(&view, cx).ends_with("then @lin-"),
+        "{}",
+        text(&view, cx)
+    );
+    cx.simulate_input("driven");
+    cx.run_until_parked();
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}In @lin's case, then @lin-driven")
+    );
+    // A letter after a pick keeps the space.
+    pick_lin(&view, " and @li", cx);
+    cx.simulate_input("x");
+    cx.run_until_parked();
+    assert!(
+        text(&view, cx).ends_with(" and @lin x"),
+        "{}",
+        text(&view, cx)
+    );
+    // Undo: the closed-up punctuation goes in one step, back to the pick.
+    pick_lin(&view, " or @li", cx);
+    cx.simulate_input(")");
+    cx.run_until_parked();
+    assert!(
+        text(&view, cx).ends_with(" or @lin)"),
+        "{}",
+        text(&view, cx)
+    );
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-z"));
+    cx.run_until_parked();
+    let t = text(&view, cx);
+    assert!(
+        !t.ends_with(" or @lin )"),
+        "never a state nobody typed: {t:?}"
+    );
+    assert!(t.ends_with(" or @lin "), "back to the pick: {t:?}");
+    // Redo brings the closed-up text back, not the key's own `@lin )`.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-z"));
+    cx.run_until_parked();
+    let t = text(&view, cx);
+    assert!(t.ends_with(" or @lin)"), "redo closes up again: {t:?}");
+}
+
+/// Studio 0.56-0.65 links only a whole-token handle at publish, so there the
+/// pick writes `@handle` with no space, as before, and nothing closes up.
+#[gpui_kit::test]
+fn on_an_older_studio_a_pick_writes_the_bare_handle(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(Some("0.65.0"), cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
+    assert_eq!(text(&view, cx), format!("{before}In @lin"));
+    cx.simulate_input(" says");
+    cx.run_until_parked();
+    assert_eq!(text(&view, cx), format!("{before}In @lin says"));
+}
+
+/// A studio whose version was never known reads as an older one: the bare
+/// handle, since `@lin-driven` might publish as text there.
+#[gpui_kit::test]
+fn a_never_known_studio_version_keeps_the_bare_handle(cx: &mut TestAppContext) {
+    let (view, cx) = setup_handles(None, cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    pick_lin(&view, "In @li", cx);
+    assert_eq!(text(&view, cx), format!("{before}In @lin"));
+}
+
+/// Studio 0.66 (#157) dropped Shift+Enter's backslash line break: Enter, with
+/// or without Shift, is a plain new line. Burrow never bound it; this holds it.
+#[gpui_kit::test]
+fn shift_enter_is_a_plain_new_line(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    cx.simulate_input("Tyger Tyger, burning bright.");
+    cx.simulate_keystrokes("shift-enter");
+    cx.simulate_input("In the forests");
+    cx.run_until_parked();
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}Tyger Tyger, burning bright.\nIn the forests")
+    );
+}
+
 // ------------------------------------------------------------ brackets (#53)
 
 /// TK scopes and a link, the way issue #53's reporter writes them.
@@ -281,6 +435,42 @@ fn with_bracket_picker_on_the_link_popup_never_takes_the_typing(cx: &mut TestApp
         format!("{before}{TK_PROSE}"),
         "every key landed"
     );
+}
+
+/// Studio 0.66 (#157): past a label's `|` the author writes words, not a
+/// search, so the picker shuts; and retyping a bracket of a link a `]]`
+/// already closes doesn't open it.
+#[gpui_kit::test]
+fn the_link_picker_shuts_at_a_label_and_in_written_brackets(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup_with(
+        "# test config\nblyg-url = https://blyg.example.com\nbracket-picker = on\n",
+        cx,
+    );
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    let typing = "see [[abc | a label]]";
+    let up = type_keys(&view, typing, cx);
+    let open = typing.find("[[").unwrap() + 1;
+    let pipe = typing.find('|').unwrap();
+    for (i, u) in up.iter().enumerate() {
+        assert_eq!(
+            *u,
+            (open..pipe).contains(&i),
+            "key {i} of {typing:?}: {up:?}"
+        );
+    }
+    assert_eq!(text(&view, cx), format!("{before}{typing}"));
+    // Take out the second `[`, then type it back: the link is written.
+    let at = before.len() + "see [".len();
+    view.update_in(cx, |v, window, cx| {
+        v.editor.update(cx, |s, cx| {
+            s.set_selected_range(at..at + 1, cx);
+            s.replace("", window, cx);
+        });
+    });
+    cx.run_until_parked();
+    let up = type_keys(&view, "[", cx);
+    assert_eq!(up, [false], "a finished link is edited, not picked");
+    assert_eq!(text(&view, cx), format!("{before}{typing}"));
 }
 
 // ------------------------------------------------------------ spelling

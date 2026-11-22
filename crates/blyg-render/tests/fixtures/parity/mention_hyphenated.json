@@ -1,0 +1,12 @@
+{
+  "name": "mention_hyphenated",
+  "kind": "fragment",
+  "md": "A @lin-driven agenda, a @lin-driven-and-led plan, @lin_ish, and @lin-",
+  "html": "<p>A <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>-driven agenda, a <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>-driven-and-led plan, <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>_ish, and <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>-</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -162,6 +162,10 @@ pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 /// the blyg served it ("1"/"0").
 const CONTACTS_META: &str = "contacts.json";
 const CONTACTS_SERVED_META: &str = "contacts.served";
+/// --- contacts --- The studio version (`blyg.json`'s generator) last seen,
+/// so a launch knows whether handles read in natural grammar (studio 0.66)
+/// before any check, and offline.
+const STUDIO_VERSION_META: &str = "studio.version";
 
 /// --- loose ends --- your posts a verified mention names, as last fetched.
 const MENTIONED_META: &str = "loose_ends.mentioned";
@@ -505,6 +509,16 @@ enum ProfileTarget {
 const PROFILE_TEXT_MAX: u64 = 4 * 1024 * 1024;
 
 impl LiveBackend {
+    /// --- contacts --- Keep the studio version just seen
+    /// ([`Backend::studio_version`]); written only when it changed.
+    fn keep_studio_version(&self, v: &str) {
+        let store = &self.engine.store;
+        if store.meta(STUDIO_VERSION_META).as_deref() != Some(v) {
+            // Best effort: the next sighting writes it again.
+            let _ = store.set_meta(STUDIO_VERSION_META, v);
+        }
+    }
+
     /// Resolve a URL the way subscribing does: what we already know (your
     /// own blyg, your subscriptions) first, then the subscribe preview (the
     /// owner Worker's §12.1 resolution). Only when that isn't available
@@ -809,6 +823,12 @@ impl Backend for LiveBackend {
         let got = self.e().track(self.e().api.contacts())?;
         let store = &self.engine.store;
         store.set_meta(CONTACTS_SERVED_META, if got.is_some() { "1" } else { "0" })?;
+        // Handles' grammar follows the studio's version: learn it with them.
+        if got.is_some()
+            && let Some(v) = self.e().api.studio_version()
+        {
+            self.keep_studio_version(&v);
+        }
         let json = serde_json::to_string(&got.unwrap_or_default())
             .map_err(|e| CoreError::Other(e.to_string()))?;
         store.set_meta(CONTACTS_META, &json)
@@ -1801,11 +1821,28 @@ impl Backend for LiveBackend {
     }
 
     fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
-        self.engine.api.cached_studio_update()
+        let u = self.engine.api.cached_studio_update();
+        if let Some(v) = u.as_ref().and_then(|u| u.current.as_deref()) {
+            self.keep_studio_version(v);
+        }
+        u
+    }
+
+    fn studio_version(&self) -> Option<String> {
+        self.engine
+            .api
+            .cached_studio_update()
+            .and_then(|u| u.current)
+            .inspect(|v| self.keep_studio_version(v))
+            .or_else(|| self.engine.store.meta(STUDIO_VERSION_META))
     }
 
     fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
-        self.engine.api.refresh_studio_update(force)
+        let u = self.engine.api.refresh_studio_update(force)?;
+        if let Some(v) = u.as_ref().and_then(|u| u.current.as_deref()) {
+            self.keep_studio_version(v);
+        }
+        Ok(u)
     }
     // --- end site ---
 

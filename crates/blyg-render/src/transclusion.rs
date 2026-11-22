@@ -88,6 +88,14 @@ pub trait Resolver {
         let _ = handle;
         None
     }
+
+    /// --- contacts --- Whether the blyg reads `@handle`s in natural
+    /// grammar (studio 0.66, #158): a word naming no contact falls back to
+    /// its longest prefix before a `-` or `_` that does. `false` keeps the
+    /// whole-token reading of studio 0.56-0.65. Default: yes.
+    fn natural_handles(&self) -> bool {
+        true
+    }
 }
 
 /// A nested quote's source, for its provenance line ([`Resolver::nested_source`]).
@@ -162,8 +170,9 @@ impl fmt::Display for UnresolvedReason {
                     "quoted passage not found in the target's version {version}"
                 );
             }
+            // The studio's publish refusal (model.ts publishScoped, 0.67, #161).
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code"
+                "a fragment can't quote another item: make this a thread, or link it with [[id]]"
             }
             UnresolvedReason::Other(s) => s,
         };
@@ -195,8 +204,7 @@ impl UnresolvedReason {
                 format!("the quoted passage isn't in version {version} of that post")
             }
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment can't quote. Quote it from a thread, or put the line in code to show it"
-                    .into()
+                "a fragment can't quote: make this a thread, or link it with [[id]]".into()
             }
             UnresolvedReason::Other(s) => s.clone(),
         }

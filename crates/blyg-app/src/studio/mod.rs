@@ -485,7 +485,7 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
     let unresolved =
         (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")));
     let fragment = (fragment_lines > 0)
-        .then(|| "⚠ A fragment can't quote: quote from a thread, or put the line in code".into());
+        .then(|| "⚠ A fragment can't quote: make this a thread, or link it with [[id]]".into());
     match (fragment, unresolved) {
         (Some(a), Some(b)) => Some(format!("{a} · {b}")),
         (a, b) => a.or(b),
@@ -1222,7 +1222,7 @@ mod tests {
         assert_eq!(
             unresolved_warning(&s).as_deref(),
             Some(
-                "⚠ A fragment can't quote: quote from a thread, or put the line in code · \
+                "⚠ A fragment can't quote: make this a thread, or link it with [[id]] · \
                  ⚠ 2 quotes and 1 link can't be resolved"
             )
         );

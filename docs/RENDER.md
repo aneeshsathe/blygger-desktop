@@ -57,10 +57,9 @@ block scope is rendered on its own, so here the preview splits its output
 at each such line (outside code, with any attached `>` run): the prose on
 either side becomes its own `div.blyg-tk-gen`, the directive stays in the
 document for the thread walk, and whitespace-only prose is dropped. That
-is what the decision says publish produces. Since 0.59 the studio bakes
-the quote too, but inside the block's wrapper, so the parity test rewrites
-the studio's shape to this one for four fixtures (`SPEC_BLOCK_SPLIT`, see
-"Parity"). Since decision #102
+is what the decision says publish produces. Studio 0.59 baked the quote
+too, but inside the block's wrapper; since 0.67 (#161) it closes the
+wrapper before the quote and reopens it after, as here. Since decision #102
 (protocol 0.4 §5.7) this shape is the rule: a baked quote is never inside
 a `blyg-tk-gen` wrapper. An inline span that a quote interrupts closes
 before it and reopens after it (`<span>one</span>` | quote |
@@ -160,7 +159,11 @@ label included, as the studio reports it.
    `publish_grammar_errors(md, kind)` finds it without a render, and
    `blyg_core::grammar::publish_error` turns it into the message the publish
    path refuses with before anything is sent (`LiveBackend::publish_with`).
-   The studio (0.59) still publishes it as text.
+   Since 0.67 (#161) the studio refuses it at publish too, in the body or
+   in a block scope's output (model.ts `publishScoped`, `directiveLines`),
+   and the reason (`Display`) is its words: "a fragment can't quote another
+   item: make this a thread, or link it with [[id]]". Its preview still
+   reports nothing, so the parity harness adds what publish would refuse.
 2. The `@vN` reservation is the own-line form, labelled or not (above).
    Reported as `ReservedVersion` in both kinds.
 3. Code is CommonMark's block structure (`markdown::code_ranges`, from
@@ -174,8 +177,10 @@ label included, as the studio reports it.
    `{origin}{f|t}/{id}/` convention. The local store does not hold another
    origin's `item` template (§6.1), so the default path is used. The
    provenance line and the Reader's own links are presentation and keep the
-   convention, which §5.8 still allows there. The studio's `blygItemUrl`
-   still guesses.
+   convention, which §5.8 still allows there. Since 0.67 (#161) the studio
+   links its item document too, through the origin's `item` template when
+   the subscription holds one (`surface.ts` `itemUrl`); Burrow's store holds
+   no templates, so it always uses the default `items/{id}.json`.
 6. An author's relative URL resolves by RFC 3986 against the item's
    identity origin (`absolutize_html`, run last when `RenderOpts::mount` is
    absolute): `media/x.png` → `{origin}media/x.png`, `/archive/` →
@@ -243,6 +248,24 @@ the stream to label; a labelled link also sets `Span::label` (and `text`
 to it), which the caller keeps instead of its own label. Its ids are read
 looser (either case), like its directive grammar; labels are read as the
 grammar reads them.
+
+**`@handle` mentions** (`handles.rs`, contacts.ts `consumeHandles`, studio
+0.56). On a blyg that rewrites handles, an `@handle` naming a contact
+(`Resolver::contact`, any case) becomes `[@Name](url)` before anything
+else, and that link the contact's h-card after rendering, through the
+`[[id]]` token splice. Handles in code, quoted lines, bracket grammar,
+Markdown links and autolinks are left alone. Since studio 0.66 (#158) a
+handle reads in natural grammar: a word that names no contact falls back
+to its longest prefix ending before a `-` or `_` that does, so `@lin's`,
+`@lin-driven` and `@lin_ish` all name Lin, while a longer handle in the
+book (`@lin-k-led` → `lin-k`) still wins. Only `@` and the handle become
+the link; the rest of the word stays. Studio 0.56–0.65 publish only a
+whole-token handle, so the fallback runs only when
+`Resolver::natural_handles` says so: the app's resolver asks
+`blyg_core::contacts::natural_grammar` of the studio version `blyg.json`
+names (0.66 or later). The version is kept in the store (`studio.version`
+meta, learnt from the update state and the contacts refresh); one never
+known reads as older, so the preview never links what publish won't.
 
 A line map follows every rewrite (`linemap.rs`), so each top-level block can
 carry `data-line="N"` (0-based source line) for source ↔ preview jumping.
@@ -386,12 +409,32 @@ node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/studio/clone
 cargo test -p blyg-render
 ```
 
-**Reference version: studio 0.64.1** (tag `v0.64.1`, unpatched),
-re-generated 2026-11-19 from 0.49.1 (markdown-it 14.3.3). The 0.49.1
+**Reference version: studio 0.68.0** (tag `v0.68.0`, unpatched),
+re-generated 2026-11-21 from 0.64.1 (markdown-it 14.3.3). Eight cases were
+added (293): five `mention_*` cases for natural grammar (0.66 #158; the fake
+store has contacts now, `lin` and `Lin-K`), two fragments whose generated
+output holds a directive line, and a block scope with two quotes in a row.
+Of the 285 existing cases 13 changed, all from studio 0.67's #161, which
+took up three r15 rules Burrow already followed, so their rewrites are gone:
+
+- A fragment's own-line `![[id]]` (in its text or in generated output) is a
+  publish error, with Studio's reason, "a fragment can't quote another item:
+  make this a thread, or link it with [[id]]" (`gen_parity.mjs` reads it
+  from `model.ts`). The `SPEC_ERRORS` entries for it went.
+- A link to another blyg's item with no `page` names its item document
+  (`items/{id}.json`); the no-`page` rewrite went.
+- A quote baked in a generated block sits between two `div.blyg-tk-gen`
+  wrappers, never inside one; `SPEC_BLOCK_SPLIT` went.
+
+One studio quirk is rewritten instead (`SPEC_REWRITES`): between two quotes
+in a row the studio leaves an empty `div.blyg-tk-gen`, which #102 (9) drops
+(`tr_block_tk_two_quotes`).
+
+**Studio 0.64.1** (re-generated 2026-11-19 from 0.49.1). The 0.49.1
 fixtures could not be regenerated against 0.59 or later until the
 generator moved to Miniflare 4. The harness now follows 0.64.1's preview
 handler: comments to self dropped (`previewComments`), `@handle` mentions
-resolved (`consumeHandles`; the fake store has no contacts), tangle spans
+resolved (`consumeHandles`; the fake store had no contacts until 0.68), tangle spans
 (`previewTangles`, threads only), the generated blocks passed to the walk,
 and `injectNestedProvenance` after `injectProvenance`.
 
@@ -410,9 +453,8 @@ Of the 257 existing cases 15 changed, all from studio changes:
 - An own-line `![[id]]` in a generated block is baked as a quote, inside
   the block's `div.blyg-tk-gen` (the four decision-#60 cases). This crate
   already baked them, between two wrappers, as #102 (9) says; the parity
-  test now rewrites the studio's shape to the spec's (`SPEC_BLOCK_SPLIT`)
-  and compares the rest byte for byte, so they are no longer known
-  divergences.
+  test rewrote the studio's shape to the spec's until studio 0.67 took the
+  spec's shape (above).
 - `tk_inline_dollar` holds a formula now (maths, below).
 
 28 cases were added: maths (`math_*`: inline, display, display inside a
@@ -487,10 +529,9 @@ from its list", so every list only shrinks:
 
 Bug emulation: none. The patched-Worker bugs (patch 9) and the 0.47.0
 label bugs were dropped earlier; the three Worker behaviours under
-"Worker behaviour pinned as it is" are still the studio's in 0.64.1, and
-the r15 rewrites below that 0.64.1 still needs (#102 (9) inline spans, the
-reserved labelled `@vN`, the no-`page` link, the fragment directive error)
-remain.
+"Worker behaviour pinned as it is" are still the studio's in 0.68.0, and
+the r15 rewrites that 0.68.0 still needs (#102 (9) inline spans and the
+empty wrapper between two quotes, the reserved labelled `@vN`) remain.
 
 ### Earlier syncs
 
@@ -554,15 +595,15 @@ block's quotes inside the block, #105), so a re-sync is its own task. The
 rewrites follow the spec where the studio differs; studio 0.59 already
 bakes `data-blyg-label` exactly as rewritten.
 
-Results (studio 0.64.1). Tests compare after collapsing whitespace between
+Results (studio 0.68.0). Tests compare after collapsing whitespace between
 tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
-`tr_block_tk_directive_attached`) match after the `SPEC_BLOCK_SPLIT`
-rewrite; `tests/it/preview.rs` still pins this crate's output for them.
+`tr_block_tk_directive_attached`) match the studio's own output since 0.67;
+`tests/it/preview.rs` still pins this crate's output for them.
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 285 (258 byte-identical; 15 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 293 | 293 (272 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |
