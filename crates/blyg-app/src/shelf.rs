@@ -51,7 +51,7 @@ impl crate::app::sheet::SheetView for ShelfSheet {
 /// The toast after ⌥⌘B.
 pub fn toggled_toast(on: bool) -> &'static str {
     if on {
-        crate::keymap::hint("Saved · ⌘B")
+        crate::keymap::hint("Added to Saved · ⌘B")
     } else {
         "Removed from Saved"
     }
@@ -352,14 +352,17 @@ mod tests {
 
     #[test]
     fn the_toast_says_where_it_went() {
-        assert_eq!(toggled_toast(true), crate::keymap::hint("Saved · ⌘B"));
+        assert_eq!(
+            toggled_toast(true),
+            crate::keymap::hint("Added to Saved · ⌘B")
+        );
         assert_eq!(toggled_toast(false), "Removed from Saved");
         use crate::platform_text::{Platform, spelled_as};
         spelled_as(Platform::Windows, || {
-            assert_eq!(toggled_toast(true), "Saved · Ctrl+B");
+            assert_eq!(toggled_toast(true), "Added to Saved · Ctrl+B");
         });
         spelled_as(Platform::Mac, || {
-            assert_eq!(toggled_toast(true), "Saved · ⌘B");
+            assert_eq!(toggled_toast(true), "Added to Saved · ⌘B");
         });
     }
 }

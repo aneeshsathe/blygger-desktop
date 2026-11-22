@@ -20,10 +20,14 @@ pub fn keys(backend: &dyn blyg_core::Backend) -> Vec<Key> {
         .collect()
 }
 
-/// The toast after "+ Save" / "✓ Saved" (the studio's words since 0.68,
+/// The toast after "+ Save" / "✓ Saved" (Saved: the studio's name since 0.68,
 /// when the Shelf became Saved).
 pub fn toggled_toast(on: bool) -> &'static str {
-    if on { "Saved" } else { "Removed from Saved" }
+    if on {
+        "Added to Saved"
+    } else {
+        "Removed from Saved"
+    }
 }
 
 /// What the Shelf lens says about where the shelf lives.
@@ -70,7 +74,7 @@ mod tests {
 
     #[test]
     fn the_toasts_and_notes_say_where_the_shelf_is() {
-        assert_eq!(toggled_toast(true), "Saved");
+        assert_eq!(toggled_toast(true), "Added to Saved");
         assert_eq!(toggled_toast(false), "Removed from Saved");
         assert!(state_note(SyncState::Local).contains("this computer"));
         assert!(state_note(SyncState::Synced).contains("Synced"));

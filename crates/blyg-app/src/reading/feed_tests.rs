@@ -173,7 +173,7 @@ fn which_lists_follow_the_feeds_order() {
     assert!(!shows_kinds(ReadMode::Stream, &Source::Smart(Smart::All)));
 }
 
-/// Raw (studio's `raw=true`): what came in, Background or not, withdrawn
+/// Raw (the studio's Raw tab): what came in, Background or not, withdrawn
 /// too, never your own posts, newest first by its date clamped to when it
 /// came in. The Agentic feed lists nothing yet.
 #[test]
@@ -461,7 +461,8 @@ mod app {
                 );
             }
         });
-        // Mark All Read on the Feed: everything it shows is read.
+        // Mark All Read on the Feed: everything it shows to read is sent
+        // as read.
         let wanted = view.read_with(cx, |v, _| v.mark_all_keys(None));
         assert!(!wanted.is_empty());
         view.update_in(cx, |v, window, cx| {
@@ -469,13 +470,12 @@ mod app {
             v.confirm_mark_all(window, cx);
         });
         settle(cx);
-        let held = fake.reading();
+        let sent = fake.reading_sends();
         for (sub, id) in wanted {
-            let r = held
-                .iter()
-                .find(|r| r.subscription_id == sub && r.remote_id == id)
-                .unwrap();
-            assert!(r.read_version.is_some(), "{id} marked read");
+            assert!(
+                sent.contains(&format!("set_read:{sub}:{id}")),
+                "{id} marked read: {sent:?}"
+            );
         }
     }
 }

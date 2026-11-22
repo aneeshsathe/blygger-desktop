@@ -50,7 +50,7 @@ impl Platform {
 
 /// Run `f` with the app's text spelled as `p` on this thread (tests only):
 /// `spelled_as(Platform::Windows, || toggled_toast(true))` is
-/// "Saved · Ctrl+B" on any machine. The previous spelling comes
+/// "Added to Saved · Ctrl+B" on any machine. The previous spelling comes
 /// back afterwards, panic or not. Only the wording changes, not the key
 /// bindings.
 #[cfg(test)]

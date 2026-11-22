@@ -6,9 +6,12 @@
 //!
 //! - The Feed is pace-layered by default (`blyg_core::pace`), or
 //!   chronological: the `readerOrder` setting, saved on the blyg when it
-//!   has it (studio 0.68), else on this computer. The Stream and every
-//!   source but hoppers, trails, Saved, Mentions, Background and Raw
-//!   follow it.
+//!   has it (studio 0.68), else on this computer. As the studio's lists
+//!   (every one but a hopper's, Saved and Raw), the Stream and every
+//!   source but hoppers, trails, Saved, Raw and the Agentic feed follow it.
+//! - The places are worked out off the UI thread whenever the rows change
+//!   (`feed_rebuild`); until they arrive the last ones stand, and a row
+//!   with none yet goes on top.
 //! - The Feed's own controls sit in the reading header: All · Threads ·
 //!   Fragments (in Reader, on the Feed and its two kinds) and Pace-layered ·
 //!   Chronological.
@@ -19,8 +22,9 @@
 
 use std::collections::HashMap;
 
-use blyg_core::ReadingItem;
 use blyg_core::order::ReaderOrder;
+use blyg_core::pace::RowFacts;
+use blyg_core::{ReadingItem, RemoteVersion, Subscription, SubscriptionKind};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -58,6 +62,33 @@ pub struct Feed {
     positions: HashMap<Key, usize>,
     /// The blyg's setting was read this session.
     pub loaded: bool,
+    /// Bumped by each choice made here: a read of the blyg's order that
+    /// started before one doesn't undo it.
+    pub chosen: u64,
+    /// Bumped by each rebuild: only the latest one's places land.
+    rebuilds: u64,
+}
+
+/// The changelogs cached on this computer, by origin and remote id.
+pub type Changelogs = HashMap<(String, String), Vec<RemoteVersion>>;
+
+/// Whether `r` is a plain feed's (RSS, Atom): the studio's `l0`.
+pub fn is_l0(r: &ReadingItem, subs: &[Subscription]) -> bool {
+    subs.iter()
+        .any(|s| s.id == r.subscription_id && s.kind == SubscriptionKind::Rss)
+}
+
+/// Every row's place from its facts: the pace-layered replay, then the
+/// rows it couldn't place (no time of theirs parses) at the bottom, in
+/// listing order. Runs off the UI thread.
+pub fn places(facts: Vec<RowFacts>, changelogs: &Changelogs) -> HashMap<Key, usize> {
+    let keys: Vec<Key> = facts.iter().map(|f| f.key.clone()).collect();
+    let mut placed = blyg_core::pace::positions(facts, changelogs);
+    for k in keys {
+        let next = placed.len();
+        placed.entry(k).or_insert(next);
+    }
+    placed
 }
 
 impl Feed {
@@ -69,19 +100,16 @@ impl Feed {
     }
 
     /// The rows (or the order) changed: work out each row's place again,
-    /// with the pins of the changelogs this computer has cached.
-    pub fn rebuild(
-        &mut self,
-        rows: &[ReadingItem],
-        changelogs: &HashMap<(String, String), Vec<blyg_core::RemoteVersion>>,
-    ) {
+    /// with the pins of the changelogs this computer has cached, here and
+    /// now (the app does it off the UI thread: `MainView::feed_rebuild`).
+    #[cfg(test)]
+    pub fn rebuild(&mut self, rows: &[ReadingItem], changelogs: &Changelogs) {
         self.positions = match self.order {
             ReaderOrder::Newest => HashMap::new(),
-            ReaderOrder::PaceLayered => blyg_core::order::feed_positions(rows, |r| {
-                changelogs
-                    .get(&(r.origin.clone(), r.remote_id.to_string()))
-                    .cloned()
-            }),
+            ReaderOrder::PaceLayered => places(
+                rows.iter().map(|r| RowFacts::of(r, false)).collect(),
+                changelogs,
+            ),
         };
     }
 
@@ -92,16 +120,15 @@ impl Feed {
 }
 
 /// Whether what's shown follows the Feed's order: the Stream, and every
-/// Reader source but those that keep their own (hoppers, trails, Saved,
-/// Mentions, Background and Raw, as the studio's tabs) and the Agentic feed.
+/// Reader source but those that keep their own: hoppers, Saved and Raw, as
+/// the studio's (`reading-data.ts`), Burrow's trails, and the Agentic feed.
 pub fn follows_feed(mode: ReadMode, source: &Source) -> bool {
     mode == ReadMode::Stream
         || !matches!(
             source,
             Source::Hopper(_)
                 | Source::Trail(_)
-                | Source::Mentions
-                | Source::Smart(Smart::Shelf | Smart::Background | Smart::Raw | Smart::Agentic)
+                | Source::Smart(Smart::Shelf | Smart::Raw | Smart::Agentic)
         )
 }
 
@@ -153,23 +180,53 @@ pub fn raw_order(rows: &[ReadingItem], shown: &mut [usize]) {
 }
 
 impl MainView {
-    /// The rows changed: the Feed's places again.
-    pub(crate) fn feed_rebuild(&mut self) {
-        let logs = match self.reading.feed.order {
-            ReaderOrder::PaceLayered => self.backend.cached_changelogs(),
-            ReaderOrder::Newest => HashMap::new(),
-        };
+    /// The rows (or the order) changed: the Feed's places again, worked
+    /// out off the UI thread. Here only each row's facts are taken (no
+    /// text); the cached changelogs are read and the replay runs in the
+    /// background, and the places land if no later rebuild started.
+    pub(crate) fn feed_rebuild(&mut self, cx: &mut Context<Self>) {
         let r = &mut self.reading;
-        r.feed.rebuild(&r.rows, &logs);
+        r.feed.rebuilds += 1;
+        if r.feed.order == ReaderOrder::Newest {
+            r.feed.positions.clear();
+            return;
+        }
+        let ticket = r.feed.rebuilds;
+        let facts: Vec<RowFacts> = r
+            .rows
+            .iter()
+            .map(|row| RowFacts::of(row, is_l0(row, &r.subs)))
+            .collect();
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move {
+            let logs = backend.cached_changelogs();
+            places(facts, &logs)
+        });
+        cx.spawn(async move |this, cx| {
+            let placed = task.await;
+            let _ = this.update(cx, |v, cx| {
+                let f = &mut v.reading.feed;
+                if f.rebuilds != ticket || f.order != ReaderOrder::PaceLayered {
+                    return;
+                }
+                f.positions = placed;
+                v.reading.refilter();
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Read the blyg's `readerOrder` once a session (and when Settings
-    /// opens); a blyg without it keeps the local choice.
+    /// opens); a blyg without it keeps the local choice. A choice made
+    /// here while it was being read wins: it's sent again, now that the
+    /// blyg is known to keep it, instead of being undone.
     pub(crate) fn reader_order_refresh(&mut self, force: bool, cx: &mut Context<Self>) {
         if self.reading.feed.loaded && !force {
             return;
         }
         self.reading.feed.loaded = true;
+        let chosen = self.reading.feed.chosen;
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.load_reader_order() });
         cx.spawn(async move |this, cx| {
@@ -177,9 +234,14 @@ impl MainView {
                 return;
             };
             let _ = this.update(cx, |v, cx| {
-                if v.reading.feed.order != order {
+                let now = v.reading.feed.order;
+                if v.reading.feed.chosen != chosen {
+                    if now != order {
+                        v.save_reader_order(now, cx);
+                    }
+                } else if now != order {
                     v.reading.feed.order = order;
-                    v.feed_rebuild();
+                    v.feed_rebuild(cx);
                     v.reading.refilter();
                     cx.notify();
                 }
@@ -195,29 +257,45 @@ impl MainView {
         if was == order {
             return;
         }
+        self.reading.feed.chosen += 1;
         self.reading.feed.order = order;
-        self.feed_rebuild();
+        self.feed_rebuild(cx);
         self.reading.refilter();
         cx.notify();
+        self.save_reader_order_from(order, was, cx);
+    }
+
+    /// Save `order` (already shown): the Feed shows what the blyg kept,
+    /// or the order it had before when the save fails.
+    fn save_reader_order(&mut self, order: ReaderOrder, cx: &mut Context<Self>) {
+        let was = self.reading.feed.order;
+        self.save_reader_order_from(order, was, cx);
+    }
+
+    fn save_reader_order_from(
+        &mut self,
+        order: ReaderOrder,
+        was: ReaderOrder,
+        cx: &mut Context<Self>,
+    ) {
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.save_reader_order(order) });
         cx.spawn(async move |this, cx| {
             let r = task.await;
-            let _ = this.update(cx, |v, cx| match r {
-                Ok(kept) if kept == order => {}
-                Ok(kept) => {
-                    v.reading.feed.order = kept;
-                    v.feed_rebuild();
-                    v.reading.refilter();
-                    cx.notify();
-                }
-                Err(e) => {
-                    v.reading.feed.order = was;
-                    v.feed_rebuild();
-                    v.reading.refilter();
+            let _ = this.update(cx, |v, cx| {
+                let shown = match &r {
+                    Ok(kept) => *kept,
+                    Err(_) => was,
+                };
+                if let Err(e) = &r {
                     v.show_toast(format!("Couldn't change the order: {e}"), None, cx);
-                    cx.notify();
                 }
+                if v.reading.feed.order != shown {
+                    v.reading.feed.order = shown;
+                    v.feed_rebuild(cx);
+                    v.reading.refilter();
+                }
+                cx.notify();
             });
         })
         .detach();
@@ -335,8 +413,8 @@ impl MainView {
         }
         col.child(crate::app::settings_page::note(
             &p,
-            "The Feed's order, also chosen in the reading header. Hoppers, Saved, trails, \
-             Background and Raw keep their own order. Saved on your blyg when it keeps the setting \
+            "The Feed's order, also chosen in the reading header. Hoppers, Saved, trails \
+             and Raw keep their own order. Saved on your blyg when it keeps the setting \
              (blygger-studio 0.68 or later), else on this computer.",
         ))
         .into_any_element()

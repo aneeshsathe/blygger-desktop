@@ -157,6 +157,18 @@ impl Timing {
     }
 }
 
+/// --- reader order --- the sample blyg's `readerOrder` and this
+/// computer's copy, as `LiveBackend` keeps them (`reader.order` and
+/// `reader.order.served` in the store's meta), and how a save answers.
+#[derive(Default)]
+struct FakeReaderOrder {
+    blyg: blyg_core::order::ReaderOrder,
+    local: Option<blyg_core::order::ReaderOrder>,
+    served: bool,
+    keeps: Option<blyg_core::order::ReaderOrder>,
+    fails: bool,
+}
+
 struct State {
     items: Vec<Item>,
     versions: HashMap<LocalId, Vec<Version>>,
@@ -216,7 +228,7 @@ struct State {
     bg_blygs: Vec<SubId>,
     bg_rules: Vec<(String, bool)>,
     /// --- reader order --- the Feed's order (`Settings.readerOrder`).
-    reader_order: blyg_core::order::ReaderOrder,
+    reader_order: FakeReaderOrder,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -419,8 +431,8 @@ impl FakeBackend {
                 bg_choices: Vec::new(), // --- background ---
                 bg_blygs: Vec::new(),
                 bg_rules: background_seed::rules(),
-                reader_order: Default::default(), // --- reader order ---
-                trails: Vec::new(),               // --- trails ---
+                reader_order: FakeReaderOrder::default(), // --- reader order ---
+                trails: Vec::new(),                       // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
                 site: fake_site(),                          // --- site ---
@@ -450,8 +462,41 @@ impl FakeBackend {
     /// pace-layered Feed has its own tests (`reading/feed_tests.rs`).
     #[cfg(test)]
     pub fn chronological(self) -> Self {
-        self.lock().reader_order = blyg_core::order::ReaderOrder::Newest;
+        let mut s = self.lock();
+        s.reader_order.blyg = blyg_core::order::ReaderOrder::Newest;
+        s.reader_order.local = None;
+        drop(s);
         self
+    }
+
+    /// Tests: the blyg's reader order, the one kept on this computer, and
+    /// whether the blyg was seen to keep it (as `LiveBackend`'s meta).
+    #[cfg(test)]
+    pub fn set_reader_order_state(
+        &self,
+        blyg: blyg_core::order::ReaderOrder,
+        local: Option<blyg_core::order::ReaderOrder>,
+        served: bool,
+    ) {
+        let mut s = self.lock();
+        s.reader_order.blyg = blyg;
+        s.reader_order.local = local;
+        s.reader_order.served = served;
+    }
+
+    /// Tests: how a save answers: the blyg keeps `keeps` instead of what
+    /// was asked, or the save `fails`.
+    #[cfg(test)]
+    pub fn reader_order_answers(&self, keeps: Option<blyg_core::order::ReaderOrder>, fails: bool) {
+        let mut s = self.lock();
+        s.reader_order.keeps = keeps;
+        s.reader_order.fails = fails;
+    }
+
+    /// Tests: the order the blyg holds.
+    #[cfg(test)]
+    pub fn blyg_reader_order(&self) -> blyg_core::order::ReaderOrder {
+        self.lock().reader_order.blyg
     }
 
     /// Tests: keep uploads in memory only (don't touch the data dir).
@@ -2843,22 +2888,42 @@ impl Backend for FakeBackend {
     }
     // --- end background ---
 
-    // --- reader order --- the blyg's setting, in memory.
+    // --- reader order --- the blyg's setting and this computer's copy, in
+    // memory, gated as LiveBackend's: sent only once the blyg was seen to
+    // keep it.
     fn reader_order(&self) -> blyg_core::order::ReaderOrder {
-        self.lock().reader_order
+        let s = self.lock();
+        s.reader_order.local.unwrap_or(s.reader_order.blyg)
     }
 
     fn load_reader_order(&self) -> Result<Option<blyg_core::order::ReaderOrder>> {
-        Ok(Some(self.lock().reader_order))
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        o.served = true;
+        o.local = Some(o.blyg);
+        Ok(Some(o.blyg))
     }
 
     fn save_reader_order(
         &self,
         order: blyg_core::order::ReaderOrder,
     ) -> Result<blyg_core::order::ReaderOrder> {
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        if !o.served {
+            o.local = Some(order);
+            return Ok(order);
+        }
+        drop(s);
         self.remote_guard()?;
-        self.lock().reader_order = order;
-        Ok(order)
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        if o.fails {
+            return Err(blyg_core::CoreError::Other("the blyg didn't answer".into()));
+        }
+        o.blyg = o.keeps.unwrap_or(order);
+        o.local = Some(o.blyg);
+        Ok(o.blyg)
     }
 
     // --- hoppers --- the store's rules: membership is local and instant;

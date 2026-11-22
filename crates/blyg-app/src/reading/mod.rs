@@ -474,10 +474,10 @@ impl State {
         let data_dir = cx
             .try_global::<crate::connection::Connection>()
             .map(|c| c.data_dir.clone());
-        // --- reader order --- the Feed's places from the start.
+        // --- reader order --- the Feed's order; its places are worked
+        // out off the UI thread when Reading opens (`feed_rebuild`).
         let rows = vm::order(backend.reading());
-        let mut feed = feed::Feed::new(backend.reader_order());
-        feed.rebuild(&rows, &backend.cached_changelogs());
+        let feed = feed::Feed::new(backend.reader_order());
         Self {
             view: View::Posts,
             focus: cx.focus_handle(),
@@ -797,7 +797,7 @@ impl MainView {
         r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.background.set_rows(&r.rows); // --- background --- "+N parts"
-        self.feed_rebuild(); // --- reader order ---
+        self.feed_rebuild(cx); // --- reader order ---
         let r = &mut self.reading;
         r.refilter();
         self.refresh_lineage_counts(cx); // --- lineage counts ---
@@ -853,7 +853,7 @@ impl MainView {
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 let r = &mut self.reading;
                 r.background.set_rows(&r.rows); // --- background --- "+N parts"
-                self.feed_rebuild(); // --- reader order ---
+                self.feed_rebuild(cx); // --- reader order ---
                 self.reader_order_refresh(false, cx);
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---

@@ -325,92 +325,164 @@ fn same_origin(a: &str, b: &str) -> bool {
     a.trim_end_matches('/') == b.trim_end_matches('/')
 }
 
-/// One reading row's history (studio `importedVersions`): its cached
-/// changelog's versions up to the current one, else its first and latest
-/// versions; times clamped to when it was seen; the current quotes stand
-/// for every pinned version's and the current one's.
-pub fn row_versions(row: &ReadingItem, changelog: Option<&[RemoteVersion]>) -> Vec<PaceVersion> {
-    let key_of = |id: &str| {
-        (
-            row.subscription_id.clone(),
-            crate::model::RemoteId::from(id),
-        )
-    };
-    let own = row.subscription_id == OWN_SUBSCRIPTION;
-    let mut seen = HashSet::new();
-    let quotes: Vec<Key> = row
-        .transclusions
-        .iter()
-        .filter(|q| match &q.origin {
-            None => true,
-            Some(o) => !own && same_origin(o, &row.origin),
-        })
-        .filter(|q| seen.insert(q.id.clone()))
-        .map(|q| key_of(&q.id))
-        .collect();
-    let Some(fallback) = parse_ts_ms(&row.observed_at)
-        .or_else(|| row.updated.as_deref().and_then(parse_ts_ms))
-        .or_else(|| row.created.as_deref().and_then(parse_ts_ms))
-    else {
-        return Vec::new();
-    };
-    let at = |asserted: Option<&str>| clamped(asserted, &row.observed_at).unwrap_or(fallback);
-    let maintenance = row.background.as_ref().is_some_and(|b| b.maintenance());
-    let logged: Vec<&RemoteVersion> = changelog
-        .unwrap_or_default()
-        .iter()
-        .filter(|v| v.version <= row.version)
-        .collect();
-    let mut out: Vec<PaceVersion> = if logged.is_empty() {
-        let mut v = vec![PaceVersion {
-            version: 1,
-            at: at(row.created.as_deref().or(row.updated.as_deref())),
-            pinned: false,
-            quotes: if row.version <= 1 {
-                quotes.clone()
-            } else {
-                vec![]
-            },
-            maintenance: false,
-        }];
-        if row.version > 1 {
-            v.push(PaceVersion {
-                version: row.version,
-                at: at(row.updated.as_deref()),
-                pinned: false,
-                quotes: quotes.clone(),
-                maintenance,
-            });
+/// What the order reads of a reading row, without its text: small, so a
+/// whole list's facts are taken on the UI thread and the replay runs off
+/// it ([`positions`]).
+#[derive(Debug, Clone)]
+pub struct RowFacts {
+    pub key: Key,
+    pub origin: String,
+    pub thread: bool,
+    pub withdrawn: bool,
+    pub version: u32,
+    pub created: Option<String>,
+    pub updated: Option<String>,
+    pub observed_at: String,
+    /// Its own blyg's quotes, once each; none for an l0 row.
+    pub quotes: Vec<Key>,
+    /// The studio's Background says the current version is maintenance.
+    pub maintenance: bool,
+}
+
+impl RowFacts {
+    /// `row`'s facts. An `l0` row (a plain feed's: RSS, Atom) lends no
+    /// quotes, as the studio's `row.l0` doesn't.
+    pub fn of(row: &ReadingItem, l0: bool) -> RowFacts {
+        let key_of = |id: &str| {
+            (
+                row.subscription_id.clone(),
+                crate::model::RemoteId::from(id),
+            )
+        };
+        let own = row.subscription_id == OWN_SUBSCRIPTION;
+        let mut seen = HashSet::new();
+        let quotes: Vec<Key> = row
+            .transclusions
+            .iter()
+            .filter(|_| !l0)
+            .filter(|q| match &q.origin {
+                None => true,
+                Some(o) => !own && same_origin(o, &row.origin),
+            })
+            .filter(|q| seen.insert(q.id.clone()))
+            .map(|q| key_of(&q.id))
+            .collect();
+        RowFacts {
+            key: (row.subscription_id.clone(), row.remote_id.clone()),
+            origin: row.origin.clone(),
+            thread: row.kind == Kind::Thread,
+            withdrawn: row.state != "current",
+            version: row.version,
+            created: row.created.clone(),
+            updated: row.updated.clone(),
+            observed_at: row.observed_at.clone(),
+            quotes,
+            maintenance: row.background.as_ref().is_some_and(|b| b.maintenance()),
         }
-        v
-    } else {
-        logged
-            .into_iter()
-            .map(|e| PaceVersion {
-                version: e.version,
-                at: at(Some(e.at.as_str())
-                    .filter(|s| !s.is_empty())
-                    .or(row.updated.as_deref())),
-                pinned: e.pinned,
-                quotes: if e.pinned || e.version == row.version {
-                    quotes.clone()
+    }
+
+    /// Its history (studio `importedVersions`): the cached changelog's
+    /// versions up to the current one, else its first and latest versions;
+    /// times clamped to when it was seen; the current quotes stand for
+    /// every pinned version's and the current one's. None when no time of
+    /// it parses.
+    pub fn versions(&self, changelog: Option<&[RemoteVersion]>) -> Vec<PaceVersion> {
+        let Some(fallback) = parse_ts_ms(&self.observed_at)
+            .or_else(|| self.updated.as_deref().and_then(parse_ts_ms))
+            .or_else(|| self.created.as_deref().and_then(parse_ts_ms))
+        else {
+            return Vec::new();
+        };
+        let at = |asserted: Option<&str>| clamped(asserted, &self.observed_at).unwrap_or(fallback);
+        let logged: Vec<&RemoteVersion> = changelog
+            .unwrap_or_default()
+            .iter()
+            .filter(|v| v.version <= self.version)
+            .collect();
+        let mut out: Vec<PaceVersion> = if logged.is_empty() {
+            let mut v = vec![PaceVersion {
+                version: 1,
+                at: at(self.created.as_deref().or(self.updated.as_deref())),
+                pinned: false,
+                quotes: if self.version <= 1 {
+                    self.quotes.clone()
                 } else {
                     vec![]
                 },
-                maintenance: maintenance && e.version == row.version && e.version > 1,
-            })
-            .collect()
-    };
-    out.sort_by_key(|v| v.version);
-    out
+                maintenance: false,
+            }];
+            if self.version > 1 {
+                v.push(PaceVersion {
+                    version: self.version,
+                    at: at(self.updated.as_deref()),
+                    pinned: false,
+                    quotes: self.quotes.clone(),
+                    maintenance: self.maintenance,
+                });
+            }
+            v
+        } else {
+            logged
+                .into_iter()
+                .map(|e| PaceVersion {
+                    version: e.version,
+                    at: at(Some(e.at.as_str())
+                        .filter(|s| !s.is_empty())
+                        .or(self.updated.as_deref())),
+                    pinned: e.pinned,
+                    quotes: if e.pinned || e.version == self.version {
+                        self.quotes.clone()
+                    } else {
+                        vec![]
+                    },
+                    maintenance: self.maintenance && e.version == self.version && e.version > 1,
+                })
+                .collect()
+        };
+        out.sort_by_key(|v| v.version);
+        out
+    }
 }
 
-/// The history of every reading row (studio `loadReaderHistory`), in a
-/// fixed listing order (by key), with each row's cached changelog when
-/// `changelog` has one.
+/// One reading row's history: [`RowFacts::versions`] of its facts.
+pub fn row_versions(
+    row: &ReadingItem,
+    changelog: Option<&[RemoteVersion]>,
+    l0: bool,
+) -> Vec<PaceVersion> {
+    RowFacts::of(row, l0).versions(changelog)
+}
+
+/// The history of every row (studio `loadReaderHistory`) from its facts,
+/// in a fixed listing order (by key), with each one's cached changelog
+/// when `changelogs` (by origin and remote id) has one.
+pub fn facts_history(
+    facts: impl IntoIterator<Item = RowFacts>,
+    changelogs: &HashMap<(String, String), Vec<RemoteVersion>>,
+) -> Vec<PaceItem> {
+    let mut items: Vec<PaceItem> = facts
+        .into_iter()
+        .map(|f| {
+            let log = changelogs.get(&(f.origin.clone(), f.key.1.to_string()));
+            PaceItem {
+                versions: f.versions(log.map(Vec::as_slice)),
+                key: f.key,
+                thread: f.thread,
+                withdrawn: f.withdrawn,
+            }
+        })
+        .collect();
+    items.sort_by(|a, b| a.key.cmp(&b.key));
+    items.dedup_by(|a, b| a.key == b.key);
+    items
+}
+
+/// The history of every reading row, with each row's cached changelog
+/// when `changelog` has one and `l0` saying which rows are a plain feed's.
 pub fn history<'a>(
     rows: impl IntoIterator<Item = &'a ReadingItem>,
     changelog: impl Fn(&ReadingItem) -> Option<Vec<RemoteVersion>>,
+    l0: impl Fn(&ReadingItem) -> bool,
 ) -> Vec<PaceItem> {
     let mut items: Vec<PaceItem> = rows
         .into_iter()
@@ -418,12 +490,26 @@ pub fn history<'a>(
             key: (r.subscription_id.clone(), r.remote_id.clone()),
             thread: r.kind == Kind::Thread,
             withdrawn: r.state != "current",
-            versions: row_versions(r, changelog(r).as_deref()),
+            versions: row_versions(r, changelog(r).as_deref(), l0(r)),
         })
         .collect();
     items.sort_by(|a, b| a.key.cmp(&b.key));
     items.dedup_by(|a, b| a.key == b.key);
     items
+}
+
+/// Every row's place, top first, from its facts: [`reader_positions`] over
+/// [`facts_history`]. The work of the Feed's rebuild, which Burrow runs
+/// off the UI thread.
+pub fn positions(
+    facts: Vec<RowFacts>,
+    changelogs: &HashMap<(String, String), Vec<RemoteVersion>>,
+) -> HashMap<Key, usize> {
+    reader_positions(&facts_history(facts, changelogs))
+        .into_iter()
+        .enumerate()
+        .map(|(i, k)| (k, i))
+        .collect()
 }
 
 #[cfg(test)]

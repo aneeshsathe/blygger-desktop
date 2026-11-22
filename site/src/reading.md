@@ -52,8 +52,8 @@ right.
   The choice is in the reading header (Pace-layered · Chronological), and
   in Settings › READER ORDER; your blyg keeps it (`readerOrder`,
   blygger-studio 0.68), or this computer does on an older studio. The
-  Stream follows it too, and so does every source except hoppers, trails,
-  Saved, Mentions, Background and Raw, which keep their own order. In the Reader the
+  Stream follows it too, and so do Mentions, Background and every other
+  source except hoppers, trails, Saved and Raw, which keep their own order. In the Reader the
   header also has the Feed's kinds: **All · Threads · Fragments**.
   Burrow counts the pins of posts whose changelog it has read (the ones you
   opened); a post it knows nothing more of counts as its first and latest
@@ -82,7 +82,7 @@ right.
   post's chips puts it there, and **✓ Saved** takes it out (see
   [Saved](writing.md#the-shelf)). A saved post stays in Saved even when it's
   in Background; a withdrawn one leaves.
-- **Background** holds what you've set aside, newest first, and nothing
+- **Background** holds what you've set aside, in the Feed's order, and nothing
   else lists it: not the other feeds, Mentions, the counts or the stream.
   Withdrawn posts are always there, the blygs' and your own; opened, one
   reads as withdrawn (with its retained pin, when the author kept one). On

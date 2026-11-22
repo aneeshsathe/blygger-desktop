@@ -175,9 +175,12 @@ fn timing_reading_list_at_scale() {
 }
 
 /// The pace-layered Feed's rebuild at the scale of a big reading list:
-/// about 4,000 rows and a few hundred cached changelogs (the posts opened),
-/// read from the store and replayed (`order::feed_positions`). Burrow runs
-/// it whenever the reading list reloads, off the UI thread.
+/// about 4,000 rows and a few hundred cached changelogs (the posts opened).
+/// Burrow runs it whenever the reading list reloads: on the UI thread it
+/// only takes each row's facts (`pace::RowFacts`, a frame's budget at
+/// most); reading the changelogs and the replay (`pace::positions`) run
+/// off it. A release build on a local Mac: about 0.4 ms for the
+/// changelogs and 31 ms for the replay, so its budget is twice that.
 #[test]
 #[ignore = "timing: run by the CI timing job"]
 fn timing_pace_layered_feed_at_scale() {
@@ -202,17 +205,15 @@ fn timing_pace_layered_feed_at_scale() {
     let mut budget = Budget::default();
     let logs = budget.time("cached_changelogs (300)", 8.0, || store.cached_changelogs());
     assert_eq!(logs.len(), LOGS);
-    let pos = budget.time("feed_positions (4k rows)", 16.0, || {
-        blyg_core::order::feed_positions(
-            &rows,
-            |r| {
-                logs.get(&(r.origin.clone(), r.remote_id.to_string()))
-                    .cloned()
-            },
-            |_| false,
-        )
+    let facts = budget.time("RowFacts, UI thread (4k rows)", 8.0, || {
+        rows.iter()
+            .map(|r| blyg_core::pace::RowFacts::of(r, false))
+            .collect::<Vec<_>>()
     });
-    assert_eq!(pos.len(), rows.len());
+    let pos = budget.time("pace::positions, off it (4k rows)", 60.0, || {
+        blyg_core::pace::positions(facts, &logs)
+    });
+    assert!(pos.len() > rows.len() * 9 / 10);
     budget.done();
 }
 

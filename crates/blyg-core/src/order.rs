@@ -153,13 +153,15 @@ impl ReaderOrder {
 
 /// Every row's place in the pace-layered Feed, top first
 /// ([`crate::pace::reader_positions`] over `rows`, with each row's cached
-/// changelog when `changelog` has one). A row missing from it (it arrived
-/// after) goes above every place, as the studio's does.
+/// changelog when `changelog` has one, and `l0` saying which rows are a
+/// plain feed's). A row missing from it (it arrived after) goes above every
+/// place, as the studio's does.
 pub fn feed_positions<'a>(
     rows: impl IntoIterator<Item = &'a ReadingItem>,
     changelog: impl Fn(&ReadingItem) -> Option<Vec<RemoteVersion>>,
+    l0: impl Fn(&ReadingItem) -> bool,
 ) -> HashMap<Key, usize> {
-    crate::pace::reader_positions(&crate::pace::history(rows, changelog))
+    crate::pace::reader_positions(&crate::pace::history(rows, changelog, l0))
         .into_iter()
         .enumerate()
         .map(|(i, k)| (k, i))
