@@ -101,6 +101,15 @@ fn a_fragment_directive_carries_the_studios_reason() {
     assert_eq!(out.stats.unresolved[0].directive, format!("![[{A}]]"));
 }
 
+/// The status bar's sentence for it gives the studio's advice too.
+#[test]
+fn a_fragment_directive_says_make_it_a_thread_or_link_it() {
+    assert_eq!(
+        UnresolvedReason::DirectiveInFragment.human(),
+        "a fragment can't quote: make this a thread, or link it with [[id]]"
+    );
+}
+
 /// (2) The `@vN` reservation is the own-line form, with or without a label.
 #[test]
 fn reserved_version_is_the_own_line_form() {
