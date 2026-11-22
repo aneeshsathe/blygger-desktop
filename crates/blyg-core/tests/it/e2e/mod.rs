@@ -2353,12 +2353,7 @@ fn reading_is_walked_only_when_reading_moves() {
     let api = Api::new(&e.url, e.cred.clone());
     let feeds: LiveFeeds = std::sync::Arc::new(std::sync::Mutex::new(vec![(
         "/seed.xml",
-        many_rss(
-            "Walk seed",
-            "https://seed.blyg.example.com/",
-            WALK_SEED,
-            0,
-        ),
+        many_rss("Walk seed", "https://seed.blyg.example.com/", WALK_SEED, 0),
     )]));
     let host = serve_live_feeds(feeds);
     let seed = me
@@ -2885,7 +2880,12 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
 
 /// Studio 0.68's new settings fields (contract 6.1.0): the Feed's order and
 /// the four Background rules phase 2 added.
-const NEW_RULES: [&str; 4] = ["quotes-refreshed", "quotes-material", "near-same", "superseded"];
+const NEW_RULES: [&str; 4] = [
+    "quotes-refreshed",
+    "quotes-material",
+    "near-same",
+    "superseded",
+];
 
 /// Those fields of a settings answer.
 fn new_settings(v: &Value) -> Value {
@@ -2923,7 +2923,11 @@ fn settings_writes_keep_fields_this_burrow_doesnt_know() {
 
     // Studio (another client) moves them all away from what they are:
     // readerOrder to the other order ("newest" or "pace-layered").
-    let order = if v["readerOrder"] == "newest" { "pace-layered" } else { "newest" };
+    let order = if v["readerOrder"] == "newest" {
+        "pace-layered"
+    } else {
+        "newest"
+    };
     let flipped: serde_json::Map<String, Value> = NEW_RULES
         .iter()
         .map(|k| {
