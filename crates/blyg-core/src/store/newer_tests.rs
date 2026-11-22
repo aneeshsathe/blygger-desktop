@@ -129,6 +129,34 @@ fn an_items_versions_drop_nothing_unless_allowed() {
     assert_eq!(held(&s), [3], "a known contract replaces");
 }
 
+/// On a check from an earlier pull, a fetch whose version list lacks a held
+/// version keeps it and notes it held back (`Engine::lay_list` then reads
+/// the contract again); once the check is fresh the removal goes.
+#[test]
+fn a_stale_checks_version_removal_waits_for_the_recheck() {
+    let s = Store::open_in_memory().unwrap();
+    s.set_lists_prune(Prune::Allowed);
+    s.merge_all(&[wire("S1", "one")]).unwrap();
+    let id = s.local_id_for_server("S1").unwrap();
+    let with = |vs: &[u32]| WireItem {
+        versions: Some(vs.iter().map(|&n| version(n)).collect()),
+        ..wire("S1", "one")
+    };
+    let held = |s: &Store| -> Vec<u32> { s.versions(&id).iter().map(|v| v.version).collect() };
+    s.apply_server(&id, &with(&[1, 2])).unwrap();
+    s.contract_stale();
+    s.apply_server(&id, &with(&[1, 2, 3])).unwrap();
+    assert!(!s.take_held_back(), "nothing dropped, nothing held back");
+    s.apply_server(&id, &with(&[2, 3])).unwrap();
+    assert_eq!(held(&s), [1, 2, 3], "kept on a stale check");
+    assert!(s.take_held_back());
+    // The re-check allows it: laid again, version 1 goes.
+    s.set_lists_prune(Prune::Allowed);
+    s.apply_server(&id, &with(&[2, 3])).unwrap();
+    assert_eq!(held(&s), [2, 3]);
+    assert!(!s.take_held_back());
+}
+
 #[test]
 fn your_items_stay_when_a_newer_contracts_list_lacks_them() {
     let s = Store::open_in_memory().unwrap();
