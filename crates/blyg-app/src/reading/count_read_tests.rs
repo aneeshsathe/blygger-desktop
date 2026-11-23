@@ -692,6 +692,7 @@ fn the_front_window_asks_at_most_once_a_minute(cx: &mut TestAppContext) {
     cx.executor().advance_clock(Duration::from_secs(45));
     front(cx);
     assert_eq!(rule(cx), Some(MarkRead::Opened), "again after it");
+}
 
 // --- studio 0.71 user testing ---
 

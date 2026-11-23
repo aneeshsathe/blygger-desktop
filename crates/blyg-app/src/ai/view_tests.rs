@@ -1027,7 +1027,7 @@ fn a_post_left_untouched_while_the_blyg_generates_says_nothing_overlaps(cx: &mut
     e.answer(&g);
     assert_eq!(
         e.toast(),
-        "Generated on your blyg | It recorded the provenance itself"
+        "Generated on your blyg | Your blyg noted what it read"
     );
     let it = e.fake.item(&LocalId(DRAFT.into())).unwrap();
     assert!(!it.pending_sync && !it.conflict, "nothing to push: {it:?}");
@@ -1041,6 +1041,7 @@ fn server_fill_takes_the_answer_already_held() {
         server_fill(ASKED, ANSWERED, Some(ANSWERED.into())).as_deref(),
         Some(ANSWERED)
     );
+}
 
 // --- studio 0.71 user testing ---
 
