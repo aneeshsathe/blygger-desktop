@@ -353,8 +353,7 @@ impl MainView {
         // --- reading & versions --- a fresh reading state from the new
         // blyg, on the same screen.
         let view = self.reading.view;
-        self.flush_seen_now(); // --- studio 0.71 --- to the blyg they were seen on
-        self.reading = reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.refresh_problems(cx);
         self.remember_blyg_card(cx);
         if self.backend.sync_status() != SyncStatus::Synced || self.backend.items().is_empty() {

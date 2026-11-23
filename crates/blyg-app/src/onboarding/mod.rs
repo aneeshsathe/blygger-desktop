@@ -355,7 +355,6 @@ impl MainView {
     pub(crate) fn onboarding_sample_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let fake = (self.onboarding.make_fake)();
         let as_backend: Arc<dyn blyg_core::Backend> = fake.clone();
-        self.flush_seen_now(); // --- studio 0.71 --- before the backend changes
         if !crate::connection::use_sample_data(as_backend.clone(), cx) {
             // No app global (headless tests): swap the window's own backend.
             let sink = self.onboarding_ui_sink(window, cx);
@@ -364,7 +363,7 @@ impl MainView {
         }
         self.fake = Some(fake);
         self.base_url = self.backend.base_url();
-        self.reading = super::reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.current = None;
         self.requery(window, cx);
         self.show_toast(

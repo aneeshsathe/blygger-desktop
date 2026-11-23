@@ -324,6 +324,18 @@ impl MainView {
         send_to(on, due, cx);
     }
 
+    /// The backend under the window changed (a blyg switched to, connected
+    /// or signed out of, the sample data, the tour's swaps): the one place
+    /// the reading state is rebuilt for it. The seen marks waiting go to the
+    /// blyg they were seen on, the rows, folders, order and rule start over
+    /// from the new backend, and its "Count an entry as read" is read now,
+    /// so the old backend's rule never marks entries on this one.
+    pub(crate) fn reading_for_new_backend(&mut self, cx: &mut Context<Self>) {
+        self.flush_seen_now();
+        self.reading = crate::app::reading::State::new(&*self.backend, cx);
+        self.count_read_refresh(false, cx);
+    }
+
     /// Write every seen mark waiting, now, on this thread (a mark is a
     /// local write: the blyg gets it with the next sync): Burrow quits, the
     /// window closes, or the blyg changes. They go to the blyg they were
