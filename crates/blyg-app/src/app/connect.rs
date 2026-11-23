@@ -319,6 +319,7 @@ impl MainView {
             Err(e) => return self.set_connect_state(Some(e), false, cx),
         };
         let host = vm::url_host(&url).unwrap_or(url.clone());
+        self.flush_seen_now(); // --- studio 0.71 --- before the backend changes
         match crate::connection::go_live(&url, cx) {
             Ok(true) => {
                 self.sheet.close();
@@ -383,6 +384,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         self.sheet.close();
+        self.flush_seen_now(); // --- studio 0.71 --- before the backend changes
         match crate::connection::disconnect(delete_local, cx) {
             Ok(host) => {
                 self.current = None;

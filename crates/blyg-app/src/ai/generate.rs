@@ -119,6 +119,7 @@ pub fn prepare_fill(
             version: versions.iter().find(|(v, _)| v == id).and_then(|(_, v)| *v),
             origin: remote_origin(items, reading, id),
             cited: None,
+            ..Default::default()
         })
         .collect();
     Ok(FillJob {
@@ -273,6 +274,7 @@ mod tests {
             sources: vec![],
             pages: vec![],
             at: None,
+            ..Default::default()
         }
     }
 
@@ -345,12 +347,14 @@ mod tests {
                     version: Some(2),
                     origin: None,
                     cited: None,
+                    ..Default::default()
                 },
                 ProvenanceSource {
                     id: "zzzzzzzzzzzzzzzzzzzzzzzzzz".into(),
                     version: None,
                     origin: None,
                     cited: None,
+                    ..Default::default()
                 },
             ],
             ..prov("m2")

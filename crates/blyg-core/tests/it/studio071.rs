@@ -200,6 +200,54 @@ fn the_request_says_proceed_only_when_asked() {
     );
 }
 
+/// A source of a kind Burrow doesn't know, a page without `cited`, a post
+/// whose `version` isn't a number, and unknown fields on a known source and
+/// on the scope: the scope still reads (it isn't `null`), and a push that
+/// moves it (`tk::remap`, then the wire form) writes every one back as it
+/// came. Before, the scope read as nothing and was pushed back as `null`
+/// (the 0.27.3 class), and unknown fields were dropped.
+#[test]
+fn unknown_sources_and_fields_round_trip_through_a_remap() {
+    let mut post = remote();
+    post["weight"] = json!(0.5);
+    let mut web = page();
+    web["lang"] = json!("en");
+    let dataset = json!({ "dataset": "tides-2030", "cited": { "source": "Tide tables" } });
+    let uncited = json!({ "url": "https://news.example.com/uncited" });
+    let odd_version = json!({ "id": ID, "version": "2" });
+    let scope = json!({
+        "model": "m3", "at": "2030-01-01T00:00:00Z",
+        "sources": [post, web, dataset, uncited, odd_version],
+        "temperature": 0.2, "via": { "tool": "an-invented-tool" }
+    });
+    let md = format!("[TK]reply to ![[{ID}]][=]A reply.[/TK]");
+    let w: WireItem = serde_json::from_value(json!({
+        "id": "S1", "revision": 4, "kind": "fragment", "status": "draft", "version": 0,
+        "contentMd": md, "provenance": [scope.clone()]
+    }))
+    .unwrap();
+    let p = w.server_provenance().unwrap();
+    let held = p[0]
+        .as_ref()
+        .expect("an unknown source doesn't null its scope");
+    assert_eq!(held.sources.len(), 1, "the post it knows: {held:?}");
+    assert_eq!(held.pages.len(), 1, "the page it knows: {held:?}");
+    assert_eq!(serde_json::to_value(held).unwrap(), scope, "as served");
+    tk::validate(&md, &p).expect("valid as served");
+
+    // A hand-written scope typed in front: the push carries it, unchanged.
+    let moved = format!("[TK]typed first[=]By hand.[/TK]\n\n{md}");
+    let r = tk::remap(&md, &p, &moved).unwrap();
+    assert!(r[0].is_none());
+    tk::validate(&moved, &r).unwrap();
+    let wire = serde_json::to_value(&r).unwrap();
+    assert_eq!(wire, json!([null, scope]), "pushed back as it came");
+    // What the store keeps (`items.tk_prov`) round-trips too.
+    let kept: Vec<Option<ScopeProvenance>> =
+        serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+    assert_eq!(kept, r);
+}
+
 // ------------------------------------------------------------- readerMarkRead
 
 #[test]
@@ -216,11 +264,14 @@ fn reader_mark_read_reads_from_settings_and_patches_alone() {
     );
     // Absent: a studio before 0.70, so not offered (no default invented).
     assert_eq!(s(json!({ "readerOrder": "newest" })), None);
-    // A value Burrow doesn't know reads as the contract's default.
+    // A value Burrow doesn't know reads as `opened`, the safer rule: a
+    // future rule may mark less than `seen` does, and under `opened` only
+    // a post that opens is marked read.
     assert_eq!(
         s(json!({ "readerMarkRead": "later" })),
-        Some(MarkRead::Seen)
+        Some(MarkRead::Opened)
     );
+    assert_eq!(s(json!({ "readerMarkRead": 3 })), Some(MarkRead::Opened));
     assert_eq!(
         MarkRead::Opened.patch(),
         json!({ "readerMarkRead": "opened" })

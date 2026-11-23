@@ -1165,11 +1165,17 @@ impl Backend for LiveBackend {
         let out = self.command(id, &sid, |rev| {
             self.e().api.generate(&sid, scope, Some(rev), proceed)
         })?;
-        if let crate::generate::GenerateOutcome::Generated(g) = &out {
-            self.e().store.set_revision(id, g.revision)?;
+        if let crate::generate::GenerateOutcome::Generated(_) = &out {
             // The spliced text and the provenance the blyg recorded, kept
             // here so the writer shows what it read and an edit that moves
-            // the scopes carries it.
+            // the scopes carries it. The answer's revision isn't stored on
+            // its own: the merge stores the blyg's revision only with the
+            // text it accounts for. A keystroke during the request left a
+            // local edit that never saw the generated text; under it the
+            // old revision stays, so that edit's push is refused (409) and
+            // read again with conflict detection rather than going through
+            // over the generated words. Unread (offline), the old revision
+            // stays too, with the same effect.
             if let Some(w) = self.refresh(id, &sid)
                 && let Some(p) = w.server_provenance()
             {

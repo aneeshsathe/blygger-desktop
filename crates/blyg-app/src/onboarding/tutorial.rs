@@ -163,6 +163,7 @@ impl MainView {
             notes: Some(notes),
         };
         self.base_url = self.backend.base_url();
+        self.flush_seen_now(); // --- studio 0.71 --- to the blyg they were seen on
         self.reading = crate::app::reading::State::new(&*self.backend, cx);
         self.current = None;
         self.onboarding.finished_tours = finished_tours(cx);
@@ -344,6 +345,7 @@ impl MainView {
         }
         self.fake = p.fake;
         self.base_url = self.backend.base_url();
+        self.flush_seen_now(); // --- studio 0.71 --- to the blyg they were seen on
         self.reading = crate::app::reading::State::new(&*self.backend, cx);
         self.studio_set_view(p.view, cx);
 

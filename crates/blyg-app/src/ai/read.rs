@@ -87,6 +87,33 @@ pub fn scopes(
         .collect()
 }
 
+/// The most entries a list of what generation read shows: the blyg that
+/// generated decides how many pages a scope read.
+pub const SHOWN: usize = 50;
+
+/// The first [`SHOWN`] entries of `scopes`, in order, and how many more
+/// there are.
+pub fn capped(scopes: Vec<(usize, Vec<Entry>)>) -> (Vec<(usize, Vec<Entry>)>, usize) {
+    let (mut left, mut more) = (SHOWN, 0);
+    let mut out = Vec::new();
+    for (i, mut entries) in scopes {
+        if entries.len() > left {
+            more += entries.len() - left;
+            entries.truncate(left);
+        }
+        left -= entries.len();
+        if !entries.is_empty() {
+            out.push((i, entries));
+        }
+    }
+    (out, more)
+}
+
+/// The line after a capped list ("+10 more").
+pub fn more(n: usize) -> String {
+    format!("+{n} more")
+}
+
 /// A scope's heading in the list ("TK 2").
 pub fn scope_label(index: usize) -> String {
     format!("TK {}", index + 1)
@@ -113,19 +140,23 @@ mod tests {
                     version: Some(1),
                     origin: None,
                     cited: None,
+                    ..Default::default()
                 },
                 ProvenanceSource {
                     id: "01far".into(),
                     version: Some(2),
                     origin: Some("https://ada.example.com".into()),
                     cited: None,
+                    ..Default::default()
                 },
             ],
             pages: vec![PageSource {
                 url: "https://news.example.com/a".into(),
                 cited: json!({"source": "Example News", "url": "https://news.example.com/a"}),
+                ..Default::default()
             }],
             at: None,
+            ..Default::default()
         }
     }
 

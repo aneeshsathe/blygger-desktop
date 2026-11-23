@@ -563,7 +563,7 @@ impl MainView {
         let due = self.reading.stream.tracker.observe(&on_screen, now);
         // --- studio 0.71 --- the studio's seen marks go in batches.
         if rule.is_some_and(super::count_read::SeenRule::batched) {
-            self.reading.count_read.batch.add(due, now);
+            self.add_seen(due, now, cx);
             self.flush_seen(now, !watching, cx);
         } else {
             self.flush_seen(now, true, cx);

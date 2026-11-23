@@ -7,8 +7,10 @@
 //!   counts, short ones included, by the studio's rule (`seen_fully`): the
 //!   whole card, or as much of a tall one as most of the screen holds. The
 //!   marks wait in a batch and go together every `SEEN_FLUSH` (and when the
-//!   Stream stops being watched), as the studio's do. Opening a post counts
-//!   too, in either layout.
+//!   Stream stops being watched), as the studio's do; whatever waits is
+//!   written when Burrow quits, the window closes or the blyg changes,
+//!   always to the blyg it was seen on, and dropped when another rule is
+//!   chosen. Opening a post counts too, in either layout.
 //! - **when I open it** (`opened`): only opening a post (the Reader's list,
 //!   the Stream's side pane, a card's date) counts.
 //! - **only when I mark it** (`never`): nothing counts by itself; `r`, the
@@ -27,8 +29,10 @@
 //! covers the Stream, starts over. After `stream_vm::READ_DWELL` (1 s) of
 //! passing ticks it is due, once.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use blyg_core::Backend;
 use blyg_core::mark_read::MarkRead;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -121,6 +125,33 @@ impl SeenBatch {
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
+
+    /// Every mark waiting, now (Burrow quits, the window closes, the blyg
+    /// changes).
+    pub fn take_all(&mut self) -> Vec<Key> {
+        self.since = None;
+        std::mem::take(&mut self.pending)
+    }
+}
+
+/// The backend a batch's marks were seen on: the blyg behind the app's
+/// `SwitchBackend` then, so they reach it after a switch too.
+pub struct SeenOn(pub Arc<dyn Backend>);
+
+impl std::fmt::Debug for SeenOn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SeenOn(..)")
+    }
+}
+
+/// The quit and window-close hooks that write the batch on the way out.
+#[derive(Default)]
+pub struct OutHooks(Vec<Subscription>);
+
+impl std::fmt::Debug for OutHooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "OutHooks({})", self.0.len())
+    }
 }
 
 /// The setting as this window knows it (inside `reading::State`).
@@ -129,12 +160,15 @@ pub struct CountRead {
     /// The blyg's choice; `None`: it doesn't offer one (or it isn't read
     /// yet), and Burrow's earlier behaviour holds.
     pub setting: Option<MarkRead>,
-    /// Read from the blyg this session.
+    /// Read from the blyg this session (a read that failed is asked again).
     loaded: bool,
     /// Bumped by each choice made here, so a slower answer can't undo it.
     chosen: u64,
     /// Seen marks waiting to go.
     pub batch: SeenBatch,
+    /// The blyg they were seen on (set with the first of them).
+    on: Option<SeenOn>,
+    hooks: OutHooks,
 }
 
 impl CountRead {
@@ -143,6 +177,17 @@ impl CountRead {
             setting,
             ..CountRead::default()
         }
+    }
+
+    /// Take the blyg's (or this window's) choice. Away from "when I see
+    /// it", the marks that rule collected are dropped: under the new one a
+    /// card only seen isn't read.
+    fn set(&mut self, m: Option<MarkRead>) {
+        if m != Some(MarkRead::Seen) {
+            self.batch.take_all();
+            self.on = None;
+        }
+        self.setting = m;
     }
 
     /// Opening a post counts (all but `never`).
@@ -174,14 +219,17 @@ impl MainView {
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.load_reader_mark_read() });
         cx.spawn(async move |this, cx| {
-            let Ok(got) = task.await else {
-                return;
-            };
+            let got = task.await;
             let _ = this.update(cx, |v, cx| {
                 let c = &mut v.reading.count_read;
-                if c.chosen == chosen && c.setting != got {
-                    c.setting = got;
-                    cx.notify();
+                match got {
+                    // Offline at launch, say: ask again on the next refresh.
+                    Err(_) => c.loaded = false,
+                    Ok(got) if c.chosen == chosen && c.setting != got => {
+                        c.set(got);
+                        cx.notify();
+                    }
+                    Ok(_) => {}
                 }
             });
         })
@@ -198,7 +246,7 @@ impl MainView {
         if before == m {
             return;
         }
-        c.setting = Some(m);
+        c.set(Some(m));
         c.chosen += 1;
         let chosen = c.chosen;
         cx.notify();
@@ -223,31 +271,118 @@ impl MainView {
         .detach();
     }
 
-    /// Send the seen marks that are due (all of them with `force`), off the
-    /// UI thread, together. Your own posts are never marked.
-    pub(crate) fn flush_seen(&mut self, now: Instant, force: bool, cx: &mut Context<Self>) {
-        let due = self.reading.count_read.batch.due(now, force);
-        self.send_marks(due, cx);
+    /// The backend a read mark goes to: the blyg active now, itself, not
+    /// the app's `SwitchBackend` (which forwards to whichever blyg is
+    /// active when the mark is written), so a mark held for a while still
+    /// reaches the blyg it was made on.
+    pub(crate) fn mark_target(&self, cx: &App) -> Arc<dyn Backend> {
+        match cx.try_global::<crate::connection::Connection>() {
+            Some(c) if std::ptr::addr_eq(Arc::as_ptr(&self.backend), Arc::as_ptr(&c.switch)) => {
+                c.switch.current()
+            }
+            _ => self.backend.clone(),
+        }
     }
 
-    /// Mark these posts read in one background task.
-    pub(crate) fn send_marks(&mut self, keys: Vec<Key>, cx: &mut Context<Self>) {
-        let keys: Vec<Key> = keys
-            .into_iter()
-            .filter(|k| !super::own::is_own(k))
-            .collect();
+    /// Hold seen marks for the batch, with the blyg they were seen on. A
+    /// batch from another blyg (the backend was swapped under the window)
+    /// goes to its own blyg first. The first one also sets the hooks that
+    /// write the batch when Burrow quits or the window closes.
+    pub(crate) fn add_seen(&mut self, keys: Vec<Key>, now: Instant, cx: &mut Context<Self>) {
         if keys.is_empty() {
             return;
         }
-        let backend = self.backend.clone();
-        cx.background_spawn(async move {
-            for (sub, rid) in keys {
-                let _ = backend.mark_read(&sub, &rid);
-            }
-        })
-        .detach();
+        let target = self.mark_target(cx);
+        let same = |on: &SeenOn| std::ptr::addr_eq(Arc::as_ptr(&on.0), Arc::as_ptr(&target));
+        if self
+            .reading
+            .count_read
+            .on
+            .as_ref()
+            .is_some_and(|on| !same(on))
+        {
+            self.flush_seen_now();
+        }
+        let c = &mut self.reading.count_read;
+        c.on.get_or_insert(SeenOn(target));
+        c.batch.add(keys, now);
+        self.seen_hooks(cx);
     }
 
+    /// Send the seen marks that are due (all of them with `force`) to the
+    /// blyg they were seen on, off the UI thread, together. Your own posts
+    /// are never marked.
+    pub(crate) fn flush_seen(&mut self, now: Instant, force: bool, cx: &mut Context<Self>) {
+        let c = &mut self.reading.count_read;
+        let due = c.batch.due(now, force);
+        if due.is_empty() {
+            return;
+        }
+        let Some(SeenOn(on)) = c.on.take() else {
+            return self.send_marks(due, cx);
+        };
+        send_to(on, due, cx);
+    }
+
+    /// Write every seen mark waiting, now, on this thread (a mark is a
+    /// local write: the blyg gets it with the next sync): Burrow quits, the
+    /// window closes, or the blyg changes. They go to the blyg they were
+    /// seen on.
+    pub(crate) fn flush_seen_now(&mut self) {
+        let c = &mut self.reading.count_read;
+        let keys = c.batch.take_all();
+        let Some(SeenOn(on)) = c.on.take() else {
+            return;
+        };
+        for (sub, rid) in keys.iter().filter(|k| !super::own::is_own(k)) {
+            let _ = on.mark_read(sub, rid);
+        }
+        // The last hold on a blyg switched away from: dropping a live
+        // backend waits for its sync thread, which the UI thread mustn't.
+        std::thread::spawn(move || drop(on));
+    }
+
+    /// Write the batch when Burrow quits or this window closes (set once
+    /// per reading state).
+    fn seen_hooks(&mut self, cx: &mut Context<Self>) {
+        let hooks = &mut self.reading.count_read.hooks;
+        if !hooks.0.is_empty() {
+            return;
+        }
+        hooks.0.push(cx.on_app_quit(|v, _| {
+            v.flush_seen_now();
+            async {}
+        }));
+        hooks.0.push(cx.on_release(|v, _| v.flush_seen_now()));
+    }
+
+    /// Mark these posts read in one background task, on the blyg active
+    /// now.
+    pub(crate) fn send_marks(&mut self, keys: Vec<Key>, cx: &mut Context<Self>) {
+        let target = self.mark_target(cx);
+        send_to(target, keys, cx);
+    }
+}
+
+/// Mark `keys` read on `backend` in one background task. Your own posts are
+/// never marked.
+fn send_to(backend: Arc<dyn Backend>, keys: Vec<Key>, cx: &mut Context<MainView>) {
+    let keys: Vec<Key> = keys
+        .into_iter()
+        .filter(|k| !super::own::is_own(k))
+        .collect();
+    if keys.is_empty() {
+        return;
+    }
+    cx.background_spawn(async move {
+        for (sub, rid) in keys {
+            let _ = backend.mark_read(&sub, &rid);
+        }
+    })
+    .detach();
+}
+
+impl MainView {
     /// Settings › READER ORDER's "Count an entry as read": the three
     /// choices, when the blyg offers the setting.
     pub(crate) fn render_count_read_settings(&self, cx: &mut Context<Self>) -> Option<AnyElement> {

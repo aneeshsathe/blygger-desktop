@@ -550,13 +550,16 @@ fn what_generated_text_read_is_escaped() {
             blyg_core::PageSource {
                 url: "javascript:alert(1)".into(),
                 cited: serde_json::json!({"source": "<b>x</b>"}),
+                ..Default::default()
             },
             blyg_core::PageSource {
                 url: "https://a.example.com/?q=\"><i>".into(),
                 cited: serde_json::json!({}),
+                ..Default::default()
             },
         ],
         at: None,
+        ..Default::default()
     };
     let html = super::reader::generation_read(&[p]);
     assert!(!html.contains("<i>"), "{html}");
@@ -565,4 +568,27 @@ fn what_generated_text_read_is_escaped() {
     assert!(html.contains("&lt;b&gt;x&lt;/b&gt;"), "{html}");
     assert_eq!(html.matches("<a href=").count(), 1, "{html}");
     assert_eq!(super::reader::generation_read(&[]), "");
+}
+
+/// Another blyg decides how long the list is: the first 50 entries show,
+/// then how many more there are.
+#[test]
+fn what_generated_text_read_shows_the_first_fifty() {
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://news.example.com/{i}");
+            serde_json::json!({ "url": url, "cited": { "source": "News", "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let a: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages[..30] }))
+            .unwrap();
+    let b: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages[30..] }))
+            .unwrap();
+    let html = super::reader::generation_read(&[a, b]);
+    assert_eq!(html.matches("<li>").count(), 51, "50 and the rest: {html}");
+    assert!(html.contains("news.example.com/49<"), "{html}");
+    assert!(!html.contains("news.example.com/50<"), "{html}");
+    assert!(html.contains("+10 more"), "{html}");
 }

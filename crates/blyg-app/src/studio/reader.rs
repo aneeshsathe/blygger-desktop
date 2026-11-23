@@ -409,6 +409,10 @@ pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
         return String::new();
     }
     let many = scopes.len() > 1;
+    // Another blyg decides how long this is: the first `read::SHOWN`
+    // entries, then how many more.
+    let total: usize = scopes.iter().map(|p| p.sources.len() + p.pages.len()).sum();
+    let mut left = crate::ai::read::SHOWN;
     let mut out = format!(
         "<div class=\"blyg-gen-read\"><p class=\"blyg-gen-read-h\">{}</p><ul>",
         esc(GENERATION_READ)
@@ -421,6 +425,10 @@ pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
         };
         let told: Vec<&str> = p.notifies().map(|s| s.id.as_str()).collect();
         for s in &p.sources {
+            if left == 0 {
+                break;
+            }
+            left -= 1;
             let from = s
                 .origin
                 .as_deref()
@@ -442,6 +450,10 @@ pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
             ));
         }
         for page in &p.pages {
+            if left == 0 {
+                break;
+            }
+            left -= 1;
             let link = match url::Url::parse(&page.url) {
                 Ok(u) if matches!(u.scheme(), "http" | "https") => {
                     format!("<a href=\"{}\">{}</a>", esc(u.as_str()), esc(&page.url))
@@ -455,6 +467,9 @@ pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
                 esc(crate::ai::read::TELLS_NO_ONE)
             ));
         }
+    }
+    if let Some(more) = total.checked_sub(crate::ai::read::SHOWN).filter(|n| *n > 0) {
+        out.push_str(&format!("<li>{}</li>", esc(&crate::ai::read::more(more))));
     }
     out.push_str("</ul></div>\n");
     out

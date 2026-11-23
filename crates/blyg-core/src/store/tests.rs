@@ -460,6 +460,7 @@ fn generated(model: &str) -> Option<ScopeProvenance> {
         sources: vec![],
         pages: vec![],
         at: None,
+        ..Default::default()
     })
 }
 
