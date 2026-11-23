@@ -1712,20 +1712,21 @@ fn the_checkpoint_step_stops_on_the_tours_blyg_then_generates_anyway(cx: &mut Te
         None,
         "the sheet went with the step"
     );
-    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
-    let view = e.view.clone();
-    crate::test_wait::until(e.cx, "the canned AI's words", move |cx| {
-        // The canned AI waits in real time: step the clock gently, or the
-        // AI's timeout fires first.
-        cx.executor().advance_clock(Duration::from_millis(30));
-        cx.run_until_parked();
-        view.read_with(cx, |v, cx| {
-            v.editor
-                .read(cx)
-                .value()
-                .contains("slowly, then all at once")
-        })
+    // Asked of the provider ⌘G would pick, not by waiting for the canned
+    // words: they land after a real-time sleep, and the "tk" step moves on
+    // (its next step rewrites the draft) once they do, so a wait for them
+    // raced the tour under a loaded test run.
+    let kind = e.cx.update(|_, cx| {
+        cx.global::<crate::ai::AiGlobal>()
+            .test_provider
+            .as_ref()
+            .map(|p| p.kind())
     });
+    assert_eq!(
+        kind,
+        Some(blyg_ai::ProviderKind::LocalCodex),
+        "the canned AI, not the blyg"
+    );
 }
 
 // --- what's new --- the first launch after an update.
