@@ -778,6 +778,17 @@ fn do_step(e: &mut Env, id: &str) {
         "full-editor" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-3")),
         "write-view" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-1")),
         "tk" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g")),
+        // --- studio 0.71 --- ⌘G on the tour's blyg, once the gap has
+        // reached it: the checkpoint sheet.
+        "tk-checkpoint" => {
+            gap_on_the_tours_blyg(e);
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+            crate::test_wait::poll("the checkpoint sheet", || {
+                e.cx.executor().advance_clock(Duration::from_millis(500));
+                e.cx.run_until_parked();
+                checkpoint_heading(e).is_some()
+            });
+        }
         "shorten" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-g"))
         }
@@ -1631,6 +1642,88 @@ fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
         .view
         .read_with(e.cx, |v, cx| v.editor.read(cx).value().to_string());
     assert!(text.contains("]("), "a mention link was inserted: {text}");
+}
+
+// --- studio 0.71 --- the AI tour's checkpoint step: ⌘G goes to the tour's
+// (fake) blyg, which can't read the gap's `.invalid` link.
+
+/// The tour's draft has reached the tour's blyg with its gap (⌘G on the
+/// blyg asks first).
+fn gap_on_the_tours_blyg(e: &mut Env) {
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the tour's draft on its blyg", move |cx| {
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            v.backend
+                .item(&LocalId(steps::DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md.contains("forecast.invalid"))
+        })
+    });
+}
+
+/// The checkpoint sheet's question, while it's up.
+fn checkpoint_heading(e: &mut Env) -> Option<String> {
+    e.view.read_with(e.cx, |v, _| {
+        v.sheet
+            .get::<crate::app::ai_view::checkpoint::TkCheckpointSheet>()
+            .map(|s| crate::app::ai_view::checkpoint::heading(&s.checkpoint))
+    })
+}
+
+/// ⌘G stops at the checkpoint (the canned AI would have filled the gap at
+/// once), the step stays for ⏎, and ⏎ fills the gap with what the blyg
+/// read listed under the preview.
+#[gpui_kit::test]
+fn the_checkpoint_step_stops_on_the_tours_blyg_then_generates_anyway(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    enter(&mut e, "tk-checkpoint");
+    do_step(&mut e, "tk-checkpoint");
+    assert_eq!(
+        checkpoint_heading(&mut e).as_deref(),
+        Some("1 of 2 links in this TK could not be read. Generate anyway?")
+    );
+    assert!(tour_done(&mut e), "the sheet is what the step waits for");
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("tk-checkpoint"), "it stays for ⏎");
+    e.cx.simulate_keystrokes("enter");
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the gap filled on the blyg", move |cx| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| v.editor.read(cx).value().contains("[=]"))
+    });
+    assert_eq!(tour_step(&mut e), Some("tk-checkpoint"));
+    let read = e.view.read_with(e.cx, |v, cx| v.tk_read(cx));
+    assert_eq!(read.len(), 1, "what the blyg read: {read:?}");
+    e.cx.update(|window, _| window.refresh());
+    e.cx.run_until_parked();
+    assert!(
+        e.cx.debug_bounds("preview-tk-read").is_some(),
+        "listed under the preview"
+    );
+    // Leaving the step puts the canned AI back: the next ⌘G never asks
+    // the blyg.
+    enter(&mut e, "tk");
+    assert_eq!(
+        checkpoint_heading(&mut e),
+        None,
+        "the sheet went with the step"
+    );
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the canned AI's words", move |cx| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            v.editor
+                .read(cx)
+                .value()
+                .contains("slowly, then all at once")
+        })
+    });
 }
 
 // --- what's new --- the first launch after an update.
