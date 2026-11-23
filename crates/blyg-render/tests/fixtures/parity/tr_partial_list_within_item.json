@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_list_within_item",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq1]]\n> it small",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq1\" data-blyg-version=\"1\">\n<ol start=\"2\">\n<li>it small</li>\n</ol>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq1/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq1",
+      "version": 1,
+      "selector": {
+        "exact": "it small",
+        "prefix": "s of thumb:\nWrite it down.\nKeep ",
+        "suffix": ".\nRead it back.\nThat is all."
+      }
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_list_start_remote",
+  "kind": "thread",
+  "md": "![[02abcdefghjkmnpqrstvwxyz07]]\n> eighth\n>\n> ninth",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz07\" data-blyg-version=\"2\" data-blyg-origin=\"https://blyg.example.com/\">\n<ol start=\"8\">\n<li>eighth</li>\n<li>ninth</li>\n</ol>\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz07/\">from <em>Example Notes</em> ↗</a> · excerpt of v2</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz07",
+      "version": 2,
+      "origin": "https://blyg.example.com/",
+      "selector": {
+        "exact": "eighth\nninth",
+        "prefix": "seventh\n"
+      }
+    }
+  ],
+  "errors": []
+}
