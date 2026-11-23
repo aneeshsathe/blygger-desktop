@@ -574,7 +574,17 @@ impl MainView {
         };
         // --- auto cross-post --- the next chosen site, or why the rest stopped.
         let sub = match (
-            self.auto_crosspost_after_run(&out, was_listed, window, cx),
+            self.auto_crosspost_after_run(
+                crate::app::extensions::auto_crosspost::Ran {
+                    post: run.copy_of.as_ref().map(|c| &c.0),
+                    ext: &run.ext,
+                    macro_id: &run.spec.id,
+                },
+                &out,
+                was_listed,
+                window,
+                cx,
+            ),
             sub,
         ) {
             (Some(rest), Some(s)) => Some(format!("{s} · {rest}")),

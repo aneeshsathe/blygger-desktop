@@ -43,6 +43,23 @@ pub(crate) struct Auto {
     running: Option<(LocalId, String, String)>,
 }
 
+/// Which macro run ended, for `auto_crosspost_after_run`: its post (a
+/// macro on a published post makes a copy of one; `None` otherwise), its
+/// extension and its macro id.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Ran<'a> {
+    pub post: Option<&'a LocalId>,
+    pub ext: &'a str,
+    pub macro_id: &'a str,
+}
+
+impl Ran<'_> {
+    /// It is the queued run `(post, extension, macro id)`.
+    fn is(&self, queued: &(LocalId, String, String)) -> bool {
+        self.post == Some(&queued.0) && self.ext == queued.1 && self.macro_id == queued.2
+    }
+}
+
 /// A macro's key in the choices.
 pub fn macro_key(ext: &str, id: &str) -> String {
     format!("{ext}/{id}")
@@ -253,23 +270,33 @@ impl MainView {
         self.auto_crosspost_next(window, cx);
     }
 
-    /// Hook (a macro run ended with `out`; `listed`: its copy was recorded
-    /// on the post): a queued run that posted without a record turns its
-    /// site off for the post, which couldn't tell next time. Then start the
-    /// next queued run, or, when the page still needs the user, stop the
-    /// rest. What to add to the run's toast in that case.
+    /// Hook (macro run `ran` ended with `out`; `listed`: its copy was
+    /// recorded on the post): a queued run that posted without a record
+    /// turns its site off for the post, which couldn't tell next time. Then
+    /// start the next queued run, or, when the page still needs the user,
+    /// stop the rest. What to add to the run's toast in that case.
+    ///
+    /// A queued run counts as running from the moment it's handed over,
+    /// while its text is still being prepared and no macro runs in the pane:
+    /// another run (a manual one) can start and end in that gap. Its end
+    /// leaves the queued run, its choice and the rest of the queue alone.
     pub(crate) fn auto_crosspost_after_run(
         &mut self,
+        ran: Ran<'_>,
         out: &Outcome,
         listed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
-        if let Some((id, ext, macro_id)) = self.ext.auto.running.take()
-            && out.counts_as_post()
-            && !listed
-        {
-            self.auto_set_choice(&id, &ext, &macro_id, false, cx);
+        match self.ext.auto.running.take() {
+            Some(queued) if !ran.is(&queued) => {
+                self.ext.auto.running = Some(queued);
+                return None;
+            }
+            Some((id, ext, macro_id)) if out.counts_as_post() && !listed => {
+                self.auto_set_choice(&id, &ext, &macro_id, false, cx);
+            }
+            _ => {}
         }
         if self.ext.auto.queue.is_empty() {
             return None;
