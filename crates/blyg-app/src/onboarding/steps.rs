@@ -2110,7 +2110,7 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "ai",
         title: "AI and TK",
-        blurb: "Fill a gap, a link it can't read, shorten, an added quote.",
+        blurb: "Fill a gap, a link it can't read, shorten.",
         steps: &["tk", "tk-checkpoint", "shorten", "echoed-quote"],
     },
     Tour {
