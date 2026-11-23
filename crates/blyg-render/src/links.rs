@@ -19,7 +19,7 @@ use crate::grammar::{self, Ids};
 use crate::linemap::Mapped;
 use crate::markdown;
 use crate::transclusion::{Found, Resolution, Resolver, Unresolved, UnresolvedReason};
-use crate::util::{blyg_item_url, escape_html, is_js_ws, item_document_url};
+use crate::util::{blyg_item_url, escape_html, is_js_ws, item_document_url, js_trim};
 
 /// The token a link becomes before rendering (the Worker's U+E003).
 const SENTINEL: char = '\u{E003}';
@@ -652,9 +652,70 @@ fn collapse_ws(s: &str) -> String {
     out
 }
 
-/// markdown.ts `plainTextFromHtml`.
+/// markdown.ts `mathAsTex`: each `<math>` that has an
+/// `application/x-tex` annotation becomes its TeX in dollars (`$$` when the
+/// tag says `display="block"`), spaced off. For excerpts and labels only,
+/// never for the §2 text content. Elements are found as the studio's
+/// `replaceElements` finds them: case-insensitive, the name ended by a
+/// non-word character, each to the first `</math>`; once an opener has no
+/// closer, no later one has either.
+fn math_as_tex(html: &str) -> std::borrow::Cow<'_, str> {
+    const ANNOTATION: &str = "<annotation encoding=\"application/x-tex\">";
+    if !html.contains("<math") {
+        return html.into();
+    }
+    let lower = html.to_ascii_lowercase();
+    let opener = |mut from: usize| loop {
+        let i = from + lower[from..].find("<math")?;
+        match lower.as_bytes().get(i + 5) {
+            Some(b) if b.is_ascii_alphanumeric() || *b == b'_' => from = i + 1,
+            _ => return Some(i),
+        }
+    };
+    let mut out = String::with_capacity(html.len());
+    let mut from = 0;
+    while let Some(at) = opener(from) {
+        let Some(open_end) = lower[at..].find('>').map(|g| at + g) else {
+            break;
+        };
+        let Some(close) = lower[open_end + 1..]
+            .find("</math>")
+            .map(|c| open_end + 1 + c)
+        else {
+            break;
+        };
+        let end = close + "</math>".len();
+        let inner = &html[open_end + 1..close];
+        out.push_str(&html[from..at]);
+        let tex = inner.find(ANNOTATION).and_then(|a| {
+            let body = a + ANNOTATION.len();
+            inner[body..]
+                .find("</annotation>")
+                .map(|e| &inner[body..body + e])
+        });
+        match tex {
+            Some(tex) => {
+                let mark = if html[at..=open_end].contains("display=\"block\"") {
+                    "$$"
+                } else {
+                    "$"
+                };
+                out.push_str(&format!(" {mark}{}{mark} ", js_trim(tex)));
+            }
+            None => out.push_str(&html[at..end]),
+        }
+        from = end;
+    }
+    out.push_str(&html[from..]);
+    out.into()
+}
+
+/// markdown.ts `plainTextFromHtml`: formulas as TeX ([`math_as_tex`]),
+/// scripts and styles gone, a space at every §2 boundary, other tags
+/// stripped, entities decoded, whitespace collapsed.
 pub fn plain_text_from_html(html: &str) -> String {
-    let s = script_re().replace_all(html, " ");
+    let html = math_as_tex(html);
+    let s = script_re().replace_all(&html, " ");
     let s = boundary_re().replace_all(&s, " ");
     collapse_ws(&decode_entities(&strip_nonempty_tags(&s)))
 }

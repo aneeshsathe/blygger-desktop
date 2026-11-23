@@ -125,7 +125,7 @@ keeps later lines paired with their quotes.
 
 **Text content** (spec §2, decision #118, protocol 0.4 r23; studio 0.71
 `BLOCK_BOUNDARY`). `selection_text`, `selection_lines` and
-`plain_text_from_html` share one boundary list (`links.rs` `BOUNDARY`): the
+`plain_text_from_html` (which also reads a formula as `$TeX$`) share one boundary list (`links.rs` `BOUNDARY`): the
 start tag **and** the end tag of `p`, `h1`–`h6`, `li`, `ul`, `ol`, `dl`,
 `dt`, `dd`, `blockquote`, `pre`, `div`, `table`, `thead`, `tbody`, `tfoot`,
 `tr`, `td`, `th`, `figure`, `figcaption`, `section`, `article`, `aside`,
@@ -469,9 +469,15 @@ item's paragraphs and its nested list, a remote list's `start`), four
 `tr_partial_text_*` cases for §2 (table cells as lines, a row as one line,
 `dt`/`dd`, `details`/`summary`/`figure`), a whole quote of the same item
 and `link_label_text_blocks` (an excerpt across cells and sections). Burrow
-followed every one: 295 of the 310 matched before the port, 310 after. No
-difference needed a rewrite or a divergence entry, and no new studio bug
-was found.
+followed every one: 295 of the 310 matched before the port, 310 after. One
+more case, `link_label_math` (311), found an older Burrow bug: since 0.64
+(#105) the studio's `plainTextFromHtml` reads a formula as its TeX in
+dollars (`mathAsTex`), so an unlabelled `[[id]]` link to an item with a
+formula reads `“Euler: $e^{i\pi}+1=0$ holds.”`, where Burrow ran the
+MathML's text into the annotation (`ee^{i\pi}+1=0`). `plain_text_from_html`
+does it now (`math_as_tex`); `selection_text` keeps no such exception, as
+§2 has none. No difference needed a rewrite or a divergence entry, and no
+new studio bug was found.
 
 **Studio 0.68.0**, re-generated 2026-11-21 from 0.64.1 (markdown-it 14.3.3). Eight cases were
 added (293): five `mention_*` cases for natural grammar (0.66 #158; the fake
@@ -675,7 +681,7 @@ tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes (lists, §2 text content), `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 310 | 310 (289 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes (lists, §2 text content), `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 311 | 311 (290 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |
