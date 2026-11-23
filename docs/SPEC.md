@@ -8,8 +8,8 @@ the studio's private API contracts 5.x and 6.x (`blyg_core::api::CONTRACT_MAJOR`
 changes wait until the studio is updated, and Burrow says so once, with a status-bar
 notice. On a newer contract sync goes on but removes nothing held here ("Contract
 guard" below). `docs/SERVER.md` has the
-details. **Synced to** blygger-studio v0.65.0 (contract 5.14.0; Burrow 0.27.0), whose
-rendering is re-synced to studio 0.71.0's (`docs/RENDER.md`), and blygger-spec protocol 0.4 r23 (f5817bd,
+details. **Synced to** blygger-studio v0.71.0 (contract 6.3.0; Burrow 0.28.0), whose
+rendering Burrow's matches (`docs/RENDER.md`), and blygger-spec protocol 0.4 r23 (f5817bd,
 `docs/CONFORMANCE.md`). The floor stays `MIN_STUDIO` (0.49.12): every newer
 feature is asked for only when the blyg's capabilities or answers offer it. Goal: **zero
 friction between a thought and a published post.** The feel target is
