@@ -1364,7 +1364,7 @@ fn only_test_code_is_scanned() {
 fn hand_built_keystrokes_with_the_platform_key_fail() {
     for bad in [
         r#"cx.simulate_keystrokes("cmd-n");"#,
-        r#"cx.simulate_keystrokes("a cmd-shift-z");"#,
+        r#"cx.simulate_keystrokes("a cmd-shift-p");"#,
         r#"let k = Keystroke::parse("alt-cmd-left").unwrap();"#,
         r#"window.dispatch_keystroke("cmd-w", cx);"#,
     ] {
