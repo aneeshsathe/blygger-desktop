@@ -2438,6 +2438,18 @@ fn the_date_step_highlights_the_newest_card(cx: &mut TestAppContext) {
     tour_extensions_ready(&mut e);
     enter(&mut e, "count-read");
     settle(&mut e);
+    let newest = |e: &mut Env| {
+        e.view.read_with(e.cx, |v, _| {
+            let first = v
+                .reading
+                .shown_rows()
+                .next()
+                .map(crate::app::reading::vm::key);
+            first.is_some() && v.reading.sel == first
+        })
+    };
+    // Entered straight away, before the Stream's list has filled.
+    assert!(newest(&mut e), "the newest card is selected");
     // An earlier step's selection, further down.
     e.view
         .update_in(e.cx, |v, window, cx| v.stream_move(2, window, cx));
