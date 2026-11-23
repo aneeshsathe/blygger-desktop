@@ -3825,6 +3825,29 @@ mod tests {
         false
     }
 
+    /// --- syndication --- Copies elsewhere belong to one fake blyg: fakes
+    /// in parallel tests never see each other's, even under the same local
+    /// id (`local-<n>-<ms>` repeats across tests started in the same
+    /// millisecond). A shared list once made the auto cross-post test skip
+    /// a site another test had recorded a copy on.
+    #[test]
+    fn copies_elsewhere_belong_to_one_fake() {
+        let (a, _) = fake();
+        let (b, _) = fake();
+        let id = a.create_draft(Kind::Fragment, "Low water.").unwrap();
+        a.publish(&id, None).unwrap();
+        let copy = blyg_core::syndication::SyndicationEntry::new(
+            "https://substack.com/@tidepools/note/c-7",
+            1,
+        );
+        a.set_syndication(&id, &[copy]).unwrap();
+        assert_eq!(a.syndication(&id).len(), 1);
+        assert!(
+            b.syndication(&id).is_empty(),
+            "another fake's copies leaked"
+        );
+    }
+
     #[test]
     fn seeded_newest_first_and_search() {
         let (b, _) = fake();
