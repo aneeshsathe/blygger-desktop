@@ -1581,6 +1581,42 @@ impl Backend for FakeBackend {
         Ok(sink.1)
     }
 
+    /// Like blyg-core: the blyg's text becomes what was synced, and the
+    /// merged text the edit that waits to go.
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        _revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let push = {
+            let mut st = self.lock();
+            let it = st
+                .items
+                .iter_mut()
+                .find(|i| &i.local_id == id)
+                .ok_or(CoreError::NotFound)?;
+            if it.conflict {
+                return Ok(false);
+            }
+            it.content_md = merged.to_string();
+            it.pending_sync = merged != generated;
+            let push = it.pending_sync;
+            st.synced.insert(id.clone(), generated.to_string());
+            if let Some((old_md, old)) = st.prov.get(id).cloned()
+                && let Some(new) = blyg_core::tk::remap(&old_md, &old, merged)
+            {
+                st.prov.insert(id.clone(), (merged.to_string(), new));
+            }
+            push
+        };
+        if push {
+            self.touched();
+        }
+        Ok(true)
+    }
+
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>) {
         self.lock().sink = Some(Arc::from(sink));
     }

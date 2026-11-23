@@ -640,6 +640,25 @@ pub trait Backend: Send + Sync {
         proceed: bool,
     ) -> Result<crate::generate::GenerateOutcome>;
 
+    /// --- studio 0.71 --- A keystroke landed while `generate_on_blyg` ran,
+    /// and the writer merged it with the generated text: keep `merged` as
+    /// the edit to push, over the blyg's `generated` text at the
+    /// `revision` the generate answered with, so it goes through with no
+    /// conflict. Without this call that edit is pushed at the revision
+    /// before the generate, refused, and read again as a conflict. False
+    /// (nothing changed) when the item is in conflict already, or the
+    /// backend doesn't take it.
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let _ = (id, generated, revision, merged);
+        Ok(false)
+    }
+
     /// False when the server can't record the AI provenance of text
     /// generated in the app (it would then publish without disclosure).
     /// Every studio Burrow supports takes it with the text; a backend that
