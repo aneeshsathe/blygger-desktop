@@ -570,36 +570,7 @@ impl MainView {
                 });
             // The ring's own selector (tests), and the scroll to it after ⇥.
             let c: AnyElement = if ring {
-                let reveal = self.preview.reveal.clone();
-                let scroll = self
-                    .sheet
-                    .get::<crate::app::settings_page::SettingsSheet>()
-                    .map(|s| s.scroll.clone());
-                div()
-                    .flex_none()
-                    .debug_selector(|| "bg-rule-focused".into())
-                    .on_children_prepainted(move |b, window, _| {
-                        let (Some(b), Some(scroll)) = (b.first(), scroll.as_ref()) else {
-                            return;
-                        };
-                        if !reveal.replace(false) {
-                            return;
-                        }
-                        let view = scroll.bounds();
-                        let margin = px(48.);
-                        let off = scroll.offset();
-                        let dy = if b.bottom() + margin > view.bottom() {
-                            view.bottom() - (b.bottom() + margin)
-                        } else if b.top() - margin < view.top() {
-                            view.top() - (b.top() - margin)
-                        } else {
-                            return;
-                        };
-                        scroll.set_offset(point(off.x, off.y + dy));
-                        window.refresh();
-                    })
-                    .child(c)
-                    .into_any_element()
+                self.settings_focused_chip("bg-rule-focused", c)
             } else {
                 c.into_any_element()
             };

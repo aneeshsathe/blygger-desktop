@@ -263,6 +263,9 @@ impl Kit<'_> {
     }
 }
 
+/// The room a sheet leaves under itself, at most.
+pub(crate) const SHEET_BOTTOM_GAP: f32 = 12.;
+
 impl MainView {
     /// The open sheet in its frame (or the Settings page), if one is up.
     pub(super) fn render_sheet(
@@ -291,14 +294,21 @@ impl MainView {
                 .left_0()
                 // --- browser macros --- beside the side pane, not over it
                 .right(self.macro_sheet_right().unwrap_or(px(0.)))
+                // A tall sheet stops short of the window's bottom and
+                // scrolls, so its keys stay reachable.
+                .bottom(px(SHEET_BOTTOM_GAP))
                 .flex()
                 .justify_center()
+                .items_start()
                 .child(
                     div()
                         .id("sheet")
+                        .debug_selector(|| "sheet".into())
                         .occlude()
                         .w(px(width))
                         .max_w(relative(0.92))
+                        .max_h_full()
+                        .overflow_y_scroll()
                         .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))

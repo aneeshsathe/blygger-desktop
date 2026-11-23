@@ -8,6 +8,7 @@
 # line says why the handler is never live there (or that it is unchecked).
 # A new shortcut belongs in keymap.rs, where the Windows tests see it.
 
+ai/checkpoint.rs render | guard | the checkpoint sheet's d (Details) is a bare key
 access.rs access_key | chord shift-backspace shift-delete | revoke every token; predates the rule; candidate to move into the keymap
 browser/view.rs open_link | mouse | the held modifiers of a link click choose where it opens; the last resort reads keymap::secondary_held (cmd, ctrl on Windows)
 browser/view.rs render_browser_pane | guard | esc closes the pane only with no modifier held

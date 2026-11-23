@@ -1054,8 +1054,7 @@ impl MainView {
                     div()
                         .id("preview-tk-read")
                         .flex_none()
-                        .max_h(px(160.))
-                        .overflow_y_scroll()
+                        // The list scrolls inside itself (`READ_LIST_MAX_H`).
                         .px(px(16.))
                         .pt(px(8.))
                         .rule_t(p)

@@ -72,10 +72,13 @@ impl SheetView for PublishSheet {
                 .child(kit.input_box(gpui_kit::base::input::Input::new(note).into_any_element()))
                 .children(v.render_note_ai(cx)) // --- access-ai ---
                 .children(v.render_auto_crosspost(id, cx)) // --- auto cross-post ---
-                .child(kit.keys_row(vec![
-                    kit.key_hint("⏎", "publish"),
-                    kit.key_hint("esc", "cancel"),
-                ]))
+                .child(
+                    kit.keys_row(vec![
+                        kit.key_hint("⏎", "publish"),
+                        kit.key_hint("esc", "cancel"),
+                    ])
+                    .debug_selector(|| "publish-keys".into()),
+                )
                 .into_any_element(),
         ))
     }

@@ -335,7 +335,7 @@ scenes! {
     Main {
         Newer = "newer",
         SettingsBackgroundLocked = "settings-background-locked",
-        // --- studio 0.71 --- READER ORDER's "Count an entry as read".
+        // --- studio 0.71 --- READ MARKS' "Count an entry as read".
         SettingsCountRead = "settings-count-read",
     }
     /// extensions/mod.rs (--- ux 0.28 ---): cross-post on and allowed, a

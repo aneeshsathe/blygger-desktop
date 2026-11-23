@@ -881,7 +881,7 @@ impl MainView {
                 }
                 self.show_toast(
                     "Generated on your blyg",
-                    Some("It recorded the provenance itself".into()),
+                    Some(checkpoint::DONE_ON_BLYG.into()),
                     cx,
                 );
             }

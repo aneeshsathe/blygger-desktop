@@ -1390,13 +1390,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "count-read",
         since: "0.28.0",
-        title: ui_text("A date opens its post; what counts as read"),
+        title: ui_text("Open a post from its date"),
         caption: ui_text(
-            "A card's date opens its post in full beside the Stream (in the Reader, a row's \
-                  date opens it too). On a blyg with blygger-studio 0.70 or later, Settings \
-                  (⌘,) › READER ORDER has “Count an entry as read”: when a card has been fully \
-                  on screen for about a second, when you open it, or only when you mark it. \
-                  Click this card's date.",
+            "Click the date on the highlighted card: its post opens in full beside the \
+                  Stream (in the Reader, a row's date opens it too). On a blyg with \
+                  blygger-studio 0.70 or later, Settings (⌘,) › READ MARKS has “Count an entry \
+                  as read”: when a card has been on screen for about a second, when you open \
+                  it, or only when you mark it.",
         ),
         keys: &[Key::StreamDate],
         key_label: ui_text("click"),

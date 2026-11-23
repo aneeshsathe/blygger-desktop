@@ -1133,7 +1133,8 @@ impl MainView {
             }
             Setup::Stream => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
-                self.stream_move(1, window, cx);
+                // The newest, whatever an earlier step left selected.
+                self.stream_select(0, window, cx);
             }
             Setup::StreamLead => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);

@@ -1,6 +1,6 @@
 //! --- studio 0.71 --- When a reading entry counts as read: the blyg's
 //! **Count an entry as read** (`readerMarkRead`, studio 0.70;
-//! `blyg_core::mark_read`), chosen in Settings › READER ORDER and applied
+//! `blyg_core::mark_read`), chosen in Settings › READ MARKS and applied
 //! in the Stream and the Reader.
 //!
 //! - **when I see it** (`seen`): a Stream card on screen for about a second
@@ -383,16 +383,25 @@ fn send_to(backend: Arc<dyn Backend>, keys: Vec<Key>, cx: &mut Context<MainView>
 }
 
 impl MainView {
-    /// Settings › READER ORDER's "Count an entry as read": the three
-    /// choices, when the blyg offers the setting.
+    /// Settings › READ MARKS: "Count an entry as read", its three choices
+    /// each with what it means, when the blyg offers the setting. ⇥ reaches
+    /// it (`pref_preview::Row::CountRead`): ←/→ choose, space or ⏎ save.
     pub(crate) fn render_count_read_settings(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let now = self.reading.count_read.setting?;
         let p = self.palette;
         let theme = &*self.theme;
-        let chips = MarkRead::ALL.into_iter().map(|m| {
+        // Settings' keyboard cursor on a choice.
+        let focused = match &self.preview.cursor {
+            Some((
+                crate::app::pref_preview::Row::CountRead,
+                crate::app::pref_preview::Pick::CountRead(m),
+            )) => Some(*m),
+            _ => None,
+        };
+        let rows = MarkRead::ALL.into_iter().map(|m| {
             let on = now == m;
             let id = format!("count-read-{}", m.as_str());
-            div()
+            let chip = div()
                 .id(SharedString::from(id.clone()))
                 .debug_selector(move || id.clone())
                 .flex_none()
@@ -402,17 +411,29 @@ impl MainView {
                 .items_center()
                 .gap(px(5.))
                 .map(|d| crate::theme_ext::chip(d, theme, on))
+                .when(focused == Some(m), |d| {
+                    d.bg(p.bg).shadow(crate::app::settings_page::focus_ring(&p))
+                })
                 .cursor_pointer()
                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
                 .child(if on { "●" } else { "○" })
                 .child(m.label())
-                .on_click(cx.listener(move |this, _, _, cx| this.set_count_read(m, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.set_count_read(m, cx)));
+            let chip = if focused == Some(m) {
+                self.settings_focused_chip("count-read-focused", chip)
+            } else {
+                chip.into_any_element()
+            };
+            let hint_id = format!("count-read-hint-{}", m.as_str());
+            div().flex().items_center().gap(px(6.)).child(chip).child(
+                crate::app::settings_page::side_note(&p, hint(m))
+                    .debug_selector(move || hint_id.clone()),
+            )
         });
         Some(
             div()
                 .id("count-read")
                 .debug_selector(|| "count-read".into())
-                .mt(px(8.))
                 .flex()
                 .flex_col()
                 .gap(px(6.))
@@ -422,31 +443,26 @@ impl MainView {
                         .text_color(p.muted)
                         .child(COUNT_READ),
                 )
-                .child(div().flex().flex_wrap().gap(px(6.)).children(chips))
-                .child(crate::app::settings_page::note(&p, hint(now)))
+                .children(rows)
+                .child(crate::app::settings_page::note(&p, SAVED_ON_BLYG))
                 .into_any_element(),
         )
     }
 }
 
-/// What the chosen rule does, under the chips.
+/// Settings' row label for "Count an entry as read".
+pub const ROW_LABEL: &str = "READ MARKS";
+
+/// Under the choices.
+pub const SAVED_ON_BLYG: &str = "Saved on your blyg, so Studio counts the same way.";
+
+/// What each choice means, one line beside it (the details are in the
+/// guide's Reading page).
 pub fn hint(m: MarkRead) -> &'static str {
     match m {
-        MarkRead::Seen => {
-            "A post in the Stream counts once it has been on screen for about a second, \
-             short ones included: all of the card in view, or at least 60% of the card or \
-             of the window, whichever is smaller, while Burrow is in front. Marks go to \
-             your blyg a few seconds later, together. Opening a post counts too. Saved on \
-             your blyg."
-        }
-        MarkRead::Opened => {
-            "A post counts when you open it: in the Reader, in the Stream's side pane, or \
-             from a card's date. Saved on your blyg."
-        }
-        MarkRead::Never => {
-            "Nothing counts by itself: mark posts with r, the post menu or Mark All Read. \
-             Saved on your blyg."
-        }
+        MarkRead::Seen => "after about a second on screen in the Stream; opening it counts too",
+        MarkRead::Opened => "when you open it; short posts stay unread until opened or marked",
+        MarkRead::Never => crate::keymap::hint("only r, the post menu, ⇧R or Mark All Read"),
     }
 }
 

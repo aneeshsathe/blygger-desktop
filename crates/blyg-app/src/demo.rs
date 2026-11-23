@@ -197,7 +197,7 @@ impl MainView {
                 self.settings_preview_key("space", false, window, cx);
             }
             (Scene::SettingsBackgroundLocked, n) => self.settings_demo(n, window, cx),
-            // --- studio 0.71 --- Settings at its end, where READER ORDER's
+            // --- studio 0.71 --- Settings at its end, where READ MARKS'
             // "Count an entry as read" is (the fake blyg offers it).
             (Scene::SettingsCountRead, 2) => {
                 // The end of the page, then back up past BACKGROUND (drawn

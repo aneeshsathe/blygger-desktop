@@ -76,8 +76,8 @@ address. Posts you read list the same, when their publisher disclosed it. See
 
 ### Count an entry as read
 
-On blygger-studio 0.70 and later, Settings › READER ORDER has **Count an
-entry as read**: when I see it (a card fully on screen for about a second,
+On blygger-studio 0.70 and later, Settings › READ MARKS has **Count an
+entry as read**: when I see it (a card on screen for about a second,
 sent to your blyg in batches), when I open it, or only when I mark it. Your
 blyg keeps the choice. A card's **date** now opens the post, in the stream
 and the Reader. See [Count an entry as read](reading.md#count-an-entry-as-read).
