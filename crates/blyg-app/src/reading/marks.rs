@@ -25,6 +25,8 @@ use super::vm::{self, Key};
 use super::{RSheet, View};
 use crate::app::MainView;
 
+gpui_kit::actions!(blygger, [PickAll]);
+
 /// The open "Mark all read?" question.
 pub struct MarkAll {
     /// "Rue", "All unread", "the stream".
@@ -86,6 +88,25 @@ impl MainView {
         }
         cx.notify();
         true
+    }
+
+    /// `PickAll` (⌘A, Ctrl+A on Windows: the keymap's `Reading` row) on the
+    /// Reader. A text field there (search, compose, the trail bar) keeps its
+    /// own ⌘A: its `Input` binding is deeper, and the checks below pass the
+    /// key on when one has the keyboard anyway, or there's no Reader list.
+    pub(crate) fn on_pick_all(&mut self, _: &PickAll, window: &mut Window, cx: &mut Context<Self>) {
+        let typing = self.reading_search_focused(window, cx)
+            || self.reading.compose.has_keyboard(window, cx)
+            || self.trail_field_focused(window, cx);
+        if self.reading.sheet.is_some()
+            || typing
+            || self.reading.view != View::Reading
+            || self.reading.mode != ReadMode::Reader
+        {
+            cx.propagate();
+            return;
+        }
+        self.pick_all(cx);
     }
 
     /// ⌘A in the list: pick everything it shows.

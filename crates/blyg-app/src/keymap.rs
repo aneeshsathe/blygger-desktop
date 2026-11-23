@@ -69,7 +69,9 @@ use crate::app::discard::{DeleteDraft, DiscardChanges, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
 // --- about ---
-use crate::about::ShowAbout;
+use crate::about::{CloseAbout, ShowAbout};
+// --- read/unread ---
+use crate::app::reading::marks::PickAll;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
 // --- notes ---
@@ -126,6 +128,10 @@ pub const BROWSER: &str = "Blygger > Browser";
 pub const MACRO_SHEET: &str = crate::app::browser::automation::SHEET_CONTEXT;
 /// --- browser macros --- The Preview sheet's text box.
 pub const MACRO_SHEET_INPUT: &str = "MacroSheet > Input";
+/// --- read/unread --- The reading screen's body.
+pub const READING: &str = crate::app::reading::CONTEXT;
+/// The About window.
+pub const ABOUT: &str = crate::about::CONTEXT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -139,10 +145,16 @@ pub enum Scope {
     /// --- browser macros --- `MacroSheet > Input`: the Preview's text box
     /// (out-ranks gpui-base's and the main window's keys there).
     MacroSheetInput,
+    /// --- read/unread --- `Reading`: the reading screen's body. Its text
+    /// fields' own keys (gpui-base's `Input`, deeper) win while they have
+    /// the keyboard: ⌘A in the search field selects the query.
+    Reading,
+    /// `About`: the About window (its own window: only global keys reach it).
+    About,
 }
 
 impl Scope {
-    fn context(self) -> Option<&'static str> {
+    pub(crate) fn context(self) -> Option<&'static str> {
         match self {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
@@ -150,6 +162,8 @@ impl Scope {
             Scope::Browser => Some(BROWSER), // --- browser ---
             Scope::MacroSheet => Some(MACRO_SHEET),
             Scope::MacroSheetInput => Some(MACRO_SHEET_INPUT),
+            Scope::Reading => Some(READING),
+            Scope::About => Some(ABOUT),
         }
     }
 
@@ -160,6 +174,7 @@ impl Scope {
         match self {
             Scope::Browser => "browser pane", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::About => "about window",
             _ => "main window",
         }
     }
@@ -1127,6 +1142,15 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         // --- end browser macros ---
+        // --- read/unread --- (the search field's own ⌘A is the field's)
+        kb!(
+            "cmd-a",
+            Reading,
+            PickAll,
+            "Reader: pick every post the list shows (r marks them read, u unread)",
+            None
+        ),
+        kb!("cmd-w", About, CloseAbout, "About window: close it", None),
         // --- notes --- (esc, which closes the drawer, is the drawer's own key)
         kb!(
             "cmd-shift-n",
@@ -1901,7 +1925,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-z", "Undo", None),
     ("ctrl-y", "Redo", None),
     ("ctrl-shift-z", "Redo", None),
-    ("ctrl-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("ctrl-a", "Select all", Some("PickAll")),
     // The input-language hotkey on many setups; GPUI never sees it.
     ("ctrl-shift-0", "Switch input language", None),
 ];
@@ -1911,7 +1936,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
 #[cfg(all(test, not(target_os = "windows")))]
 pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-q", "Quit", Some("Quit")),
-    ("cmd-w", "Close window", None),
+    // The About window's own close.
+    ("cmd-w", "Close window", Some("CloseAbout")),
     ("cmd-h", "Hide app", None),
     ("cmd-alt-h", "Hide others", None),
     ("cmd-m", "Minimize", None),
@@ -1933,7 +1959,8 @@ pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-x", "Cut", None),
     ("cmd-z", "Undo", None),
     ("cmd-shift-z", "Redo", None),
-    ("cmd-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("cmd-a", "Select all", Some("PickAll")),
 ];
 
 /// Toolbar buttons with no key on purpose: Withdraw is permanent, so it's
@@ -1965,6 +1992,8 @@ pub fn list() -> String {
             Scope::MainInput => "text fields",
             Scope::Browser => "browser", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::Reading => "reader",
+            Scope::About => "about window",
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -2180,10 +2209,17 @@ mod tests {
             .iter()
             // --- browser macros --- The sheets' keys out-rank Input on
             // purpose (their own `MacroSheet > Input` rows).
+            // --- read/unread --- The Reader's ⌘A yields to its text fields'
+            // own select all on purpose; About has no text fields.
             .filter(|k| {
                 !matches!(
                     k.scope,
-                    Scope::Global | Scope::Browser | Scope::MacroSheet | Scope::MacroSheetInput
+                    Scope::Global
+                        | Scope::Browser
+                        | Scope::MacroSheet
+                        | Scope::MacroSheetInput
+                        | Scope::Reading
+                        | Scope::About
                 )
             })
         {

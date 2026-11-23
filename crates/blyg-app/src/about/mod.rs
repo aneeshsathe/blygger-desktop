@@ -22,7 +22,11 @@ use crate::prefs::Prefs;
 use crate::theme::Rule;
 use info::{BuildInfo, ConnectionInfo, Report, UpdateInfo}; // --- themes --- dividers
 
-gpui_kit::actions!(blygger, [ShowAbout]);
+gpui_kit::actions!(blygger, [ShowAbout, CloseAbout]);
+
+/// The About window's key context (keymap `Scope::About`): ⌘W (Ctrl+W on
+/// Windows) closes it.
+pub const CONTEXT: &str = "About";
 
 /// `packaging/icon.svg` at 512 px, the same bytes as the Dock icon.
 static ICON_PNG: &[u8] = include_bytes!("../../../../packaging/icon-512.png");
@@ -447,10 +451,13 @@ impl Render for AboutView {
         let version = b.version;
         div()
             .id("about")
+            .key_context(CONTEXT)
             .track_focus(&self.focus)
+            .on_action(cx.listener(|_, _: &CloseAbout, window, _| {
+                window.remove_window();
+            }))
             .on_key_down(cx.listener(|_, ev: &KeyDownEvent, window, cx| {
-                let k = &ev.keystroke;
-                if k.key == "escape" || (k.modifiers.platform && k.key == "w") {
+                if ev.keystroke.key == "escape" {
                     cx.stop_propagation();
                     window.remove_window();
                 }

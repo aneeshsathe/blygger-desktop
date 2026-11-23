@@ -5,10 +5,11 @@ section: Changed
   cross-post to Bluesky, and waits for ⇧⌘P, whose rows for the post (one on,
   two off) are the ones the caption describes. Its macros and "Open <site>"
   rows say what they would do and load nothing (`extensions/tour.rs`).
-- **Publish sheet: the "Then cross-post to" chips have keys.** ⌥1, ⌥2… (Alt+1,
-  Alt+2… on Windows) tick or untick a site while you type the version note;
-  each chip shows its key and the line under them says so
-  (`extensions/auto_crosspost.rs`).
+- **Publish sheet: the line under the "Then cross-post to" chips names the
+  keyboard's way to them.** "Or ⇧⌘P and type “automatically” to pick one by
+  keyboard" (Ctrl+Shift+P on Windows): the palette's "Cross-post
+  automatically to <site>" rows reach every site. The chips themselves are
+  clicked (`extensions/auto_crosspost.rs`).
 - **Extensions palette: a long list scrolls under its heading,** with the
   key row always in view; ↑/↓ keep the chosen row in view, and the tenth row
   has a key (0). A macro whose title names its site no longer repeats it

@@ -102,6 +102,8 @@ mod compose_tests; // --- reading compose ---
 mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod perf_tests; // the reading screens at scale
+#[cfg(test)]
+mod pick_all_keys_tests;
 mod read_mark; // opening a post marks its row, in place
 #[cfg(test)]
 mod read_mark_tests;
@@ -1034,6 +1036,7 @@ impl MainView {
                 .id("reading-body")
                 .key_context(CONTEXT)
                 .track_focus(&self.reading.focus)
+                .on_action(cx.listener(Self::on_pick_all)) // --- read/unread ---
                 .on_key_down(cx.listener(Self::reading_key_down))
                 .flex_1()
                 .min_h_0()
@@ -1091,18 +1094,6 @@ impl MainView {
             && k.key == "["
         {
             self.reader_back(window, cx);
-            cx.stop_propagation();
-            return;
-        }
-        // --- read/unread --- ⌘A picks every post the Reader's list shows
-        // (the search field's own ⌘A is the field's).
-        if self.reading.view == View::Reading
-            && self.reading.mode == stream_vm::ReadMode::Reader
-            && k.modifiers.platform
-            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
-            && k.key == "a"
-        {
-            self.pick_all(cx);
             cx.stop_propagation();
             return;
         }

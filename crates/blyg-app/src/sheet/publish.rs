@@ -42,15 +42,6 @@ impl SheetView for PublishSheet {
                     cx.stop_propagation();
                     this.close_sheet(window, cx);
                 }))
-                // --- auto cross-post --- ⌥1–⌥9 tick the chips below.
-                .capture_key_down({
-                    let id = id.clone();
-                    cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
-                        if this.auto_crosspost_key(&id, &ev.keystroke, cx) {
-                            cx.stop_propagation();
-                        }
-                    })
-                })
                 .child(kit.heading(format!("Publish “{title}” as v{next_version}")))
                 // A first publish: say it goes public, and for good.
                 .when(*next_version == 1, |d| {

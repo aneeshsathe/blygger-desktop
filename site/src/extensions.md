@@ -112,9 +112,8 @@ the top left of the window.
    site's composer didn't take the text, Burrow says so, leaves the text on
    your clipboard, and you paste it with **Ctrl+V** and click Post yourself.
 7. **Optional: start it by itself next time.** In the **Publish** sheet
-   (Ctrl+Enter), tick the sites under **Then cross-post to** (or press
-   **Alt+1**, **Alt+2**…, the key on each site's chip). Burrow
-   remembers them for that post, and each time you publish it, the
+   (Ctrl+Enter), click the sites under **Then cross-post to** to tick
+   them. Burrow remembers them for that post, and each time you publish it, the
    cross-post starts on its own, one site after another. You still check
    each one and press Enter to post it. To change it later, untick the site
    there, or press **Ctrl+Shift+P** and pick **Cross-post automatically to
@@ -224,9 +223,8 @@ extension-setting = cross-post farcaster-max-bytes=1024
 ### Cross-posting automatically, per post
 
 A post can start its cross-posts by itself when you publish it. In the
-**Publish** sheet (⌘⏎), tick the sites under **Then cross-post to** (each
-chip shows its key: ⌥1, ⌥2…, typed while you write the version note), or press
-⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
+**Publish** sheet (⌘⏎), click the sites under **Then cross-post to** to
+tick them, or, from the keyboard, press ⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
 (and the same for the other sites) to turn it on. The palette row then reads
 **on**, and choosing it again turns it off. The choice belongs to that post
 alone and is remembered: other posts are unaffected, and it lasts across

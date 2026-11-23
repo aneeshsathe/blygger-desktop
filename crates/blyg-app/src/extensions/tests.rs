@@ -1118,11 +1118,12 @@ mod macros {
     }
 
     /// --- auto cross-post --- The Publish sheet's "Then cross-post to"
-    /// chips take keys: ⌥1 (Alt+1 on Windows) ticks the first site and
-    /// again unticks it, while the note field keeps the keyboard, and the
-    /// chip and the key row say so.
+    /// chips are clicked, not keyed: the keyboard's way to a site is the
+    /// palette (⇧⌘P, "automatically", ⏎), and the line under the chips says
+    /// so, as each platform spells the key. A chip names its site and tick
+    /// only (no ⌥ digit: those keys are the reading layout's on Windows).
     #[gpui_kit::test]
-    fn the_publish_sheets_cross_post_chips_take_keys(cx: &mut TestAppContext) {
+    fn the_publish_sheets_cross_post_chips_point_to_the_palette(cx: &mut TestAppContext) {
         let v = vault();
         let (view, fake, cx) = setup(cx, &v, &config_all_sites());
         stub_pane(cx);
@@ -1139,42 +1140,53 @@ mod macros {
             let m = v.auto_crosspost_sites().into_iter().next().expect("a site");
             super::super::auto_crosspost::macro_key(&m.ext, &m.spec.id)
         });
-        assert!(cx.debug_bounds("auto-crosspost-0").is_some(), "its chip");
+        // A click ticks the chip, and again unticks it.
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
+        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).contains(&first), "on")
+        });
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
+        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty(), "off")
+        });
         assert!(
             cx.debug_bounds("auto-crosspost-keys").is_some(),
-            "the key hint"
+            "the line under the chips"
         );
-        cx.simulate_keystrokes("alt-1");
-        cx.run_until_parked();
-        view.update_in(cx, |v, _, cx| {
-            assert!(v.auto_crosspost_chosen(&post, cx).contains(&first), "on");
-            let note = v
-                .sheet
-                .get::<crate::app::sheet::publish::PublishSheet>()
-                .map(|s| s.note.read(cx).value().to_string());
-            assert_eq!(note.as_deref(), Some(""), "the key typed nothing");
-        });
-        cx.simulate_keystrokes("alt-1");
-        cx.run_until_parked();
-        view.update_in(cx, |v, _, cx| {
-            assert!(!v.auto_crosspost_chosen(&post, cx).contains(&first), "off");
-        });
-        // A key past the last site does nothing.
-        cx.simulate_keystrokes("alt-9");
-        cx.run_until_parked();
-        view.update_in(cx, |v, _, cx| {
-            assert!(v.auto_crosspost_chosen(&post, cx).is_empty())
-        });
-        // The chip names its key, as each platform spells it.
+        // The chip: its tick and its site, on both platforms.
         use crate::platform_text::{Platform, spelled_as};
-        let mac = spelled_as(Platform::Mac, || {
-            super::super::auto_crosspost::chip_label(0, "Bluesky", true)
-        });
-        assert_eq!(mac, "⌥1 ☑ Bluesky");
-        let win = spelled_as(Platform::Windows, || {
-            super::super::auto_crosspost::chip_label(1, "Bluesky", false)
-        });
-        assert_eq!(win, "Alt+2 ☐ Bluesky");
+        for p in [Platform::Mac, Platform::Windows] {
+            let on = spelled_as(p, || {
+                super::super::auto_crosspost::chip_label("Bluesky", true)
+            });
+            assert_eq!(on, "☑ Bluesky");
+            let off = spelled_as(p, || {
+                super::super::auto_crosspost::chip_label("Bluesky", false)
+            });
+            assert_eq!(off, "☐ Bluesky");
+        }
+        // The line: the palette's key, as each platform spells it.
+        let mac = spelled_as(Platform::Mac, super::super::auto_crosspost::keys_hint);
+        assert!(
+            mac.starts_with("Or ⇧⌘P and type “automatically” to pick one by keyboard."),
+            "{mac}"
+        );
+        let win = spelled_as(Platform::Windows, super::super::auto_crosspost::keys_hint);
+        assert!(
+            win.starts_with("Or Ctrl+Shift+P and type “automatically” to pick one by keyboard."),
+            "{win}"
+        );
+        // No chip keys in the keymap.
+        assert!(
+            !crate::keymap::mac_table()
+                .iter()
+                .any(|k| k.action.starts_with("CrossPostChip")),
+            "the chips have no keys"
+        );
     }
 
     /// The Extensions palette with cross-post's rows (ten here) keeps its
