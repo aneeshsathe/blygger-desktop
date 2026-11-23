@@ -1349,7 +1349,8 @@ impl MainView {
             // default browser (click modifiers and `open-links` decide). An
             // `[[id]]` link opens the post like a quote box does.
             let view = cx.entity().downgrade();
-            InteractiveText::new(("stream-text", *n), styled)
+            let nth = *n;
+            let text = InteractiveText::new(("stream-text", *n), styled)
                 .tooltip(self.hover_card_span_tips(cards)) // --- hover cards ---
                 .on_click(ranges, move |i, window, cx| {
                     let t = targets.get(i).cloned();
@@ -1363,7 +1364,10 @@ impl MainView {
                         Some(Target::Post(o, id)) => this.open_original(o, id, None, window, cx),
                         None => {}
                     });
-                })
+                });
+            div()
+                .debug_selector(|| format!("stream-text-{}-{nth}", post.remote_id))
+                .child(text)
                 .into_any_element()
         };
         match size {

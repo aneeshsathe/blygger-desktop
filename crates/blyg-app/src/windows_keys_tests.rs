@@ -6,6 +6,14 @@
 //! before the sheet saw it) only shows up when the Windows table is bound:
 //! `bind_keys_as(Platform::Windows, cx)` binds `keymap::table_for(Windows)`
 //! in place of `crate::app::bind_keys`.
+//!
+//! A ⌘-click has no binding: the click reads the held keys itself
+//! (`keymap::secondary_held`, Cmd on a Mac, Ctrl on Windows). So binding a
+//! platform's table here also makes this thread's clicks read the keys as
+//! that platform does ([`bound_as`]), and a Mac run checks Windows'
+//! Ctrl+click too.
+
+use std::cell::Cell;
 
 use gpui_kit::{App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate};
 
@@ -17,6 +25,7 @@ use crate::platform_text::Platform;
 /// layout; the dummy one reads every key as written, which is what the
 /// tests press.
 pub(crate) fn bind_keys_as(p: Platform, cx: &mut App) {
+    BOUND.with(|b| b.set(Some(p)));
     let mut out = Vec::new();
     for k in keymap::table_for(p) {
         let Some(action) = k.new_action.filter(|_| !k.key.is_empty()) else {
@@ -40,4 +49,25 @@ pub(crate) fn bind_keys_as(p: Platform, cx: &mut App) {
         );
     }
     cx.bind_keys(out);
+}
+
+thread_local! {
+    /// The platform whose table [`bind_keys_as`] bound on this thread (a
+    /// GPUI test runs its app, clicks included, on the test's thread).
+    static BOUND: Cell<Option<Platform>> = const { Cell::new(None) };
+}
+
+/// The platform whose keys this thread's test bound with [`bind_keys_as`]:
+/// its clicks read the held keys as that platform does. `None` when the
+/// test bound the app's own table (`crate::app::bind_keys`).
+pub(crate) fn bound_as() -> Option<Platform> {
+    BOUND.with(Cell::get)
+}
+
+#[gpui_kit::test]
+fn binding_a_platforms_keys_reads_its_clicks_too(cx: &mut gpui_kit::TestAppContext) {
+    for p in [Platform::Windows, Platform::Mac] {
+        cx.update(|cx| bind_keys_as(p, cx));
+        assert_eq!(bound_as(), Some(p));
+    }
 }
