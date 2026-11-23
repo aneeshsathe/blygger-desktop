@@ -8,6 +8,10 @@ section: Fixed
   the sample data, the tour) now rebuilds the reading state in one function,
   which writes the waiting seen marks first and reads the new blyg's rule
   (`crates/blyg-app/src/reading/count_read.rs`).
+- **“Count an entry as read” chosen in Studio on the web takes effect when
+  Burrow's window comes back to the front.** It was read only when Reading
+  first opened and when Settings opened, so entries went on being marked
+  read by the old rule until a restart.
 - **⌘G on the blyg: a word typed while it generates is kept, with no
   conflict.** A keystroke elsewhere in the post while the blyg wrote ended in
   the conflict sheet every time. The editor now merges the generated text

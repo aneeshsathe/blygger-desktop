@@ -419,12 +419,12 @@ impl MainView {
             this.apply_theme(window, cx);
             cx.notify();
         }));
-        // A WebView can end up holding (or dropping) the keyboard while the
-        // window is in the background; typing must work when it comes back.
-        subs.push(cx.observe_window_activation(window, |this, window, _| {
+        // Back in front: the keyboard a WebView held or dropped, a rule changed on the web.
+        subs.push(cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.studio.reclaim_keyboard();
                 this.browser.reclaim_lost_keyboard(); // --- browser ---
+                this.count_read_on_front(cx); // --- studio 0.71 --- chosen on the web
             }
         }));
 
