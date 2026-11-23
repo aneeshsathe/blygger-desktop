@@ -1349,21 +1349,27 @@ impl MainView {
             // default browser (click modifiers and `open-links` decide). An
             // `[[id]]` link opens the post like a quote box does.
             let view = cx.entity().downgrade();
-            InteractiveText::new(("stream-text", *n), styled)
+            let nth = *n;
+            let text = InteractiveText::new(("stream-text", *n), styled)
                 .tooltip(self.hover_card_span_tips(cards)) // --- hover cards ---
                 .on_click(ranges, move |i, window, cx| {
                     let t = targets.get(i).cloned();
                     let _ = view.update(cx, |this, cx| match t {
                         // --- browse --- a link that names a blyg item
-                        // opens in the reader; ⌘/⌥ keep it a link.
+                        // opens in the reader; ⌘/⌥ (Ctrl/Alt on
+                        // Windows) keep it a link.
                         Some(Target::Url(u)) => {
                             let m = window.modifiers();
-                            this.browse_link(u, m.platform || m.alt, false, window, cx)
+                            let modified = crate::keymap::secondary_held(&m) || m.alt;
+                            this.browse_link(u, modified, false, window, cx)
                         }
                         Some(Target::Post(o, id)) => this.open_original(o, id, None, window, cx),
                         None => {}
                     });
-                })
+                });
+            div()
+                .debug_selector(|| format!("stream-text-{}-{nth}", post.remote_id))
+                .child(text)
                 .into_any_element()
         };
         match size {

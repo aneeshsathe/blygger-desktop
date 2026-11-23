@@ -44,6 +44,7 @@ fn render() -> String {
             Scope::MacroSheet,
             "On a browser macro's Preview and Post sheets",
         ),
+        (Scope::SiteSheet, "On the Site sheet"),
         (Scope::Reading, "In the Reader's list"),
         (Scope::About, "In the About window"),
     ];

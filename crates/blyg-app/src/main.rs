@@ -28,6 +28,8 @@ mod dev_flags;
 mod fake;
 mod fonts;
 mod images;
+#[cfg(test)]
+mod key_handlers_tests;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;

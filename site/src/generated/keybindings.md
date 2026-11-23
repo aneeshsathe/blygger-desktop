@@ -109,6 +109,12 @@
 | ⏎ | Macro Post sheet: post |  |
 | esc | Macro Preview or Post sheet: cancel |  |
 
+### On the Site sheet
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘⏎ | Site sheet: save |  |
+
 ### In the Reader's list
 
 | Key | What it does | Menu |

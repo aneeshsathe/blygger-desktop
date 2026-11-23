@@ -3,12 +3,15 @@
 //! GPUI's `platform` modifier (the Windows key there) and refuse Ctrl, so
 //! Ctrl+A did nothing on Windows while the header's hint said Ctrl+A. The
 //! search field's own ⌘A still selects its text.
+//!
+//! ⌘-click picks one row the same way: Ctrl+click on Windows. It read
+//! `platform` too, so a Ctrl+click opened the post there instead.
 
 use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore};
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
 use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
@@ -94,4 +97,90 @@ fn select_all_in_the_search_field_picks_nothing_on_windows(cx: &mut TestAppConte
     cx.simulate_keystrokes(select_all(Platform::Windows));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.reading.picked.is_empty()));
+}
+
+/// The ⌘ of a ⌘-click as `p` holds it: Ctrl on Windows (a Mac turns a
+/// Ctrl+click into a right-click, the row's menu, before the app sees it).
+fn cmd_click(p: Platform) -> Modifiers {
+    match p {
+        Platform::Mac => Modifiers {
+            platform: true,
+            ..Default::default()
+        },
+        Platform::Windows => Modifiers {
+            control: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// Click the Reader row showing `key` (it's on screen) with `m` held.
+fn click_row(
+    view: &Entity<MainView>,
+    key: &super::vm::Key,
+    m: Modifiers,
+    cx: &mut VisualTestContext,
+) {
+    let ix = view
+        .read_with(cx, |v, _| v.shown_keys().iter().position(|k| k == key))
+        .expect("the row is shown");
+    let sel: &'static str = Box::leak(format!("reading-row-{ix}").into_boxed_str());
+    let b = crate::test_wait::still(cx, sel);
+    cx.simulate_click(b.center(), m);
+    settle(cx);
+}
+
+fn cmd_click_picks_a_row_with(p: Platform, cx: &mut TestAppContext) {
+    let (view, cx) = setup(p, cx);
+    let shown = view.read_with(cx, |v, _| v.shown_keys());
+    assert!(shown.len() >= 2, "rows to pick: {}", shown.len());
+    let opened = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            v.reading.opened.as_ref().map(|o| super::vm::key(&o.item))
+        })
+    };
+    let before = opened(&view, cx);
+    click_row(&view, &shown[1], cmd_click(p), cx);
+    view.read_with(cx, |v, _| {
+        assert!(
+            v.reading.picked.contains(&shown[1]),
+            "{p:?}: the {:?}-click picked the row",
+            cmd_click(p)
+        );
+    });
+    assert_eq!(opened(&view, cx), before, "{p:?}: picking doesn't open it");
+    // Again: let go of it.
+    click_row(&view, &shown[1], cmd_click(p), cx);
+    assert!(
+        view.read_with(cx, |v, _| !v.reading.picked.contains(&shown[1])),
+        "{p:?}: a second click lets go"
+    );
+}
+
+#[gpui_kit::test]
+fn ctrl_click_picks_a_row_on_the_windows_key_table(cx: &mut TestAppContext) {
+    cmd_click_picks_a_row_with(Platform::Windows, cx);
+}
+
+#[gpui_kit::test]
+fn cmd_click_picks_a_row_on_the_mac_key_table(cx: &mut TestAppContext) {
+    cmd_click_picks_a_row_with(Platform::Mac, cx);
+}
+
+/// On a Mac, Ctrl isn't the ⌘ of a ⌘-click: a Ctrl+click is the system's
+/// right-click (the row's menu). Should one arrive as a left click with
+/// Ctrl held, it opens the post as a plain click does, and picks nothing.
+#[gpui_kit::test]
+fn ctrl_click_picks_nothing_on_the_mac_key_table(cx: &mut TestAppContext) {
+    let (view, cx) = setup(Platform::Mac, cx);
+    let shown = view.read_with(cx, |v, _| v.shown_keys());
+    click_row(&view, &shown[1], cmd_click(Platform::Windows), cx);
+    view.read_with(cx, |v, _| {
+        assert!(v.reading.picked.is_empty(), "nothing picked");
+        assert_eq!(
+            v.reading.opened.as_ref().map(|o| super::vm::key(&o.item)),
+            Some(shown[1].clone()),
+            "opened, as a plain click"
+        );
+    });
 }

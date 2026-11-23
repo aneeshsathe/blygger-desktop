@@ -10,15 +10,27 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 use super::{Load, Section, ShowSite};
 use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
+use crate::platform_text::Platform;
 use crate::prefs::Prefs;
 
 const CONNECTED: &str = "# test config\nblyg-url = https://blyg.example.com\n";
 
 fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
+    setup_keys(None, cx)
+}
+
+/// [`setup`] with a platform's key table bound (`None`: the app's own).
+fn setup_keys(
+    keys: Option<Platform>,
+    cx: &mut TestAppContext,
+) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
     cx.update(|cx| {
         gpui_kit::init(cx);
-        crate::app::bind_keys(cx);
+        match keys {
+            Some(p) => crate::windows_keys_tests::bind_keys_as(p, cx),
+            None => crate::app::bind_keys(cx),
+        }
         crate::settings::init(
             ConfigStore::in_memory(CONNECTED),
             Arc::new(MemoryTokenStore::default()),
@@ -190,4 +202,65 @@ fn turning_update_alerts_off_hides_the_notice(cx: &mut TestAppContext) {
     });
     settle(cx);
     assert_eq!(fake.studio_update(), None);
+}
+
+/// ⌘⏎ (Ctrl+Enter on Windows) saves the sheet, from the sheet or from one
+/// of its fields. The main window binds the same key to Publish, which
+/// out-ranks a handler outside the keymap.
+fn the_save_key_saves_with(p: Platform, cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup_keys(Some(p), cx);
+    let save = match p {
+        Platform::Mac => "cmd-enter",
+        Platform::Windows => "ctrl-enter",
+    };
+    open(&view, cx);
+    view.update(cx, |v, cx| {
+        v.site_edit(cx, |s| s.form.font = Some("slab".into()))
+    });
+    settle(cx);
+    cx.simulate_keystrokes(save);
+    settle(cx);
+    assert_eq!(
+        fake.site_config().unwrap().font.as_deref(),
+        Some("slab"),
+        "{p:?}: {save} in the sheet saved it"
+    );
+    view.read_with(cx, |v, _| {
+        let s = v.site.sheet.as_ref().expect("the sheet stays open");
+        assert!(s.saved && s.error.is_none(), "{p:?}: {:?}", s.error);
+        assert!(!v.sheet.is_open(), "{p:?}: no Publish sheet");
+    });
+
+    // Typing in one of its fields.
+    view.update_in(cx, |v, window, cx| {
+        let s = v.site.sheet.as_mut().unwrap();
+        s.section = Section::HomePage;
+        s.posts_path.update(cx, |st, cx| {
+            st.set_value("writing", window, cx);
+            st.focus(window, cx);
+        });
+        cx.notify();
+    });
+    settle(cx);
+    cx.simulate_keystrokes(save);
+    settle(cx);
+    assert_eq!(
+        fake.site_config().unwrap().posts_path.as_deref(),
+        Some("writing"),
+        "{p:?}: {save} in a field saved it"
+    );
+    assert!(
+        view.read_with(cx, |v, _| !v.sheet.is_open()),
+        "{p:?}: no Publish sheet"
+    );
+}
+
+#[gpui_kit::test]
+fn the_save_key_saves_on_the_mac_key_table(cx: &mut TestAppContext) {
+    the_save_key_saves_with(Platform::Mac, cx);
+}
+
+#[gpui_kit::test]
+fn the_save_key_saves_on_the_windows_key_table(cx: &mut TestAppContext) {
+    the_save_key_saves_with(Platform::Windows, cx);
 }

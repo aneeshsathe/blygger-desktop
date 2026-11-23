@@ -1,0 +1,38 @@
+# Functions that read a keyboard or click modifier outside the keymap.
+# `<path from crates/blyg-app/src> <fn> | <class> | <reason>`, one per line.
+# Classes: guard (only rejects or ignores modified keys), mouse (a click or
+# scroll modifier), `chord <keys>` (handles its own chord, keys in keymap
+# spelling as a Mac user presses them), mac-only. Checked by
+# `src/key_handlers_tests.rs`. A `chord` the keymap also binds needs
+# `shares <context>` in its reason: the keymap binds it in <context>, and the
+# line says why the handler is never live there (or that it is unchecked).
+# A new shortcut belongs in keymap.rs, where the Windows tests see it.
+
+access.rs access_key | chord shift-backspace shift-delete | revoke every token; predates the rule; candidate to move into the keymap
+browser/view.rs open_link | mouse | the held modifiers of a link click choose where it opens; the last resort reads keymap::secondary_held (cmd, ctrl on Windows)
+browser/view.rs render_browser_pane | guard | esc closes the pane only with no modifier held
+contacts/sheet.rs contacts_key | chord shift-tab | tab backwards in the contact form; predates the rule; candidate to move into the keymap
+dictionary.rs dictionary_key | chord cmd-backspace | removes the selected word; predates the rule; candidate to move into the keymap
+extensions/reading_slots.rs slots_key | chord cmd-c | copies in the slots sheet, and cmd rejects the plain list keys; predates the rule; candidate to move into the keymap
+extensions/sheets.rs render_consent | chord cmd-backspace | turns the extension off; predates the rule; candidate to move into the keymap
+hover_card.rs hover_card_editor | mouse | cmd-click (ctrl-click on Windows) opens a hover card's target
+keymap.rs secondary_held | mouse | the cmd of a cmd-click as each platform holds it (ctrl on Windows), for the clicks above
+notes/drawer.rs render_notes_drawer | guard | esc leaves the notes pane only with no modifier held
+onboarding/mod.rs onboarding_key | guard | the tour's keys are bare keys
+onboarding/tutorial.rs tour_key | guard | the tour's keys are bare keys
+palette.rs render_cmd_palette | mouse | cmd-click (ctrl-click on Windows) on a palette row keeps the palette open
+profiles/mod.rs profile_key_down | guard | the profile sheet's keys are bare keys
+reading/catchup.rs render_catch_up_sheet | guard | the catch-up sheet's keys are bare keys
+reading/discover.rs discover_key | guard | the discover sheet's keys are bare keys
+reading/lineage.rs lineage_sheet_keys | chord shift-c | catch up from the lineage centre (capital C); the rest is a bare-key guard; predates the rule; candidate to move into the keymap
+reading/marks.rs pick_click | mouse | cmd-click (ctrl-click on Windows) toggles a post in the picked set, shift-click extends it
+reading/mod.rs reading_key_down | chord cmd-f cmd-[ shift-r shift-t shift-c | the reading list's own keys: gpui-base's inputs bind cmd-f and cmd-[ themselves; shares Browser: BrowserBack binds cmd-[ only in the browser pane, and reading/browse_tests.rs presses it in the list; predates the rule; candidate to move into the keymap
+reading/opml.rs opml_key | chord cmd-a | all or none in the OPML preview; shares Reading: PickAll binds cmd-a in the reading body, which the sheet sits outside (reading/opml_tests.rs presses it); predates the rule; candidate to move into the keymap
+reading/stream.rs render_spans | mouse | cmd-click (ctrl-click on Windows) or alt-click keeps a blyg link a link
+serendipity.rs serendipity_keys | guard | the serendipity keys are bare keys
+server_ai.rs render_server_ai_sheet | mouse | shift-click steps a setting backwards
+settings_page.rs render_settings_page | guard | the preview keys run only with no cmd, ctrl or alt held; shift reverses a step
+shelf.rs shelf_sheet_key | chord alt-up alt-down | moves a post along the shelf; shares MainInput: NearbyUp and NearbyDown bind these only while typing in the editor, and shelf_tests.rs presses alt-up in the sheet; predates the rule; candidate to move into the keymap
+trails.rs trail_publish_key | guard | the trail publish sheet's keys are bare keys
+upkeep/stale.rs stale_sheet_key | chord shift-enter | refreshes every quote; predates the rule; candidate to move into the keymap
+windows_menu.rs init | guard | esc closes the open Menu only with no modifier held

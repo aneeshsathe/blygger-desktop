@@ -71,3 +71,4 @@ goes once its mistake is a compile error):
 | a store function that deletes rows of a list table (subscriptions, hoppers, reading, items, versions, shelf) names the prune decision (`api::Prune`), is private, or is on the reviewed list | `blyg-core/tests/it/list_prune_scan.rs` + `tests/fixtures/list-prune-allow.txt` |
 | every e2e subscription is bound to a drop guard that names it (`Unsub`, `ApiUnsub`) | `blyg-core/tests/it/e2e/subscribe_guard.rs` (runs in the normal `cargo test`) |
 | a `BLYGGER_*` variable this build ignores is said at startup (a debug build refuses to start); every variable has a class | `crates/blyg-app/src/dev_flags.rs` (`ignored`, and the test `every_blygger_name_has_a_class`) |
+| a key or click modifier handled outside the keymap is on a reviewed list with its chord (checked against the Windows keymap), and none reads the platform key alone | `crates/blyg-app/src/key_handlers_tests.rs` + `crates/blyg-app/fixtures/key-handlers-allow.txt` |

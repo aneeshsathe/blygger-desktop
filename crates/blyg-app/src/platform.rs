@@ -108,9 +108,10 @@ pub fn key_button(
 /// doesn't say which keys a click carried, and GPUI's own modifier state
 /// misses keys pressed while the page has the keyboard, so this reads the
 /// keyboard itself, as macOS reads `NSEvent.modifierFlags`. `None` on
-/// macOS, where the reader's navigation delegate records them.
+/// macOS, where the reader's navigation delegate records them, and in
+/// tests, which hold keys through GPUI's events, not the real keyboard.
 pub fn held_link_modifiers() -> Option<(bool, bool)> {
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(test)))]
     #[expect(unsafe_code, reason = "Win32 FFI: GetAsyncKeyState")]
     {
         #[link(name = "user32")]
@@ -123,7 +124,7 @@ pub fn held_link_modifiers() -> Option<(bool, bool)> {
         let down = |vk| unsafe { GetAsyncKeyState(vk) } < 0;
         Some((down(VK_CONTROL), down(VK_MENU)))
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), test))]
     None
 }
 

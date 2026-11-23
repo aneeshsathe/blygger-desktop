@@ -982,6 +982,7 @@ impl MainView {
         let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
+            .debug_selector(move || format!("reading-row-{ix}"))
             .px(px(14.))
             .py(px(7.))
             .relative()
