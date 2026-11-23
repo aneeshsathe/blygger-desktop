@@ -256,6 +256,7 @@ fn render(case: &Value) -> Value {
         let p = ScopeProvenance {
             model: "conformance".into(),
             sources: job.sources,
+            pages: vec![],
             at: None,
         };
         let kept = generate::provenance_with(None, md, i, p).and_then(|v| v.get(i).cloned());

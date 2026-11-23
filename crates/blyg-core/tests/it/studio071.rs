@@ -162,6 +162,7 @@ fn generate_answers_text_or_a_checkpoint() {
         }
         other => panic!("{other:?}"),
     }
+    // generateItem's other 200 (studio 0.70): links it couldn't read.
     let c = GenerateOutcome::from_value(json!({
         "checkpoint": {
             "read": 1, "total": 2,

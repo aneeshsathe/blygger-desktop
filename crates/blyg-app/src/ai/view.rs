@@ -148,6 +148,7 @@ fn prov(model: &str, sources: Vec<blyg_core::ProvenanceSource>) -> ScopeProvenan
     ScopeProvenance {
         model: model.to_string(),
         sources,
+        pages: vec![],
         at: Some(generate::now_iso()),
     }
 }

@@ -125,6 +125,7 @@ pub fn prepare_fill(
             id: id.clone(),
             version: versions.iter().find(|(v, _)| v == id).and_then(|(_, v)| *v),
             origin: remote_origin(items, reading, id),
+            cited: None,
         })
         .collect();
     Ok(FillJob {
@@ -277,6 +278,7 @@ mod tests {
         ScopeProvenance {
             model: model.into(),
             sources: vec![],
+            pages: vec![],
             at: None,
         }
     }
@@ -349,11 +351,13 @@ mod tests {
                     id: ID.into(),
                     version: Some(2),
                     origin: None,
+                    cited: None,
                 },
                 ProvenanceSource {
                     id: "zzzzzzzzzzzzzzzzzzzzzzzzzz".into(),
                     version: None,
                     origin: None,
+                    cited: None,
                 },
             ],
             ..prov("m2")

@@ -1244,6 +1244,7 @@ impl Engine {
             .map(|p| {
                 p.clone().map(|p| ScopeProvenance {
                     sources: vec![],
+                    pages: vec![],
                     ..p
                 })
             })

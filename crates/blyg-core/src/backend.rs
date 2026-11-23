@@ -624,6 +624,22 @@ pub trait Backend: Send + Sync {
     fn tracked_tk_provenance(&self, id: &LocalId)
     -> Option<(String, Vec<Option<ScopeProvenance>>)>;
 
+    /// --- studio 0.71 --- Fill `[TK]` scope `scope` (0-based) of a synced
+    /// item with the blyg's own model (`POST /api/items/:id/generate`). The
+    /// blyg records the provenance and stores the spliced text; on
+    /// `Generated` this copy is brought up to it (text, revision), so the
+    /// caller needn't pull. Studio 0.70+ reads the draft's links first: if
+    /// any can't be read it answers `Checkpoint` and saves nothing, and the
+    /// author may send again with `proceed` to generate without them (an
+    /// older studio ignores `proceed`). `NotSynced` before the item has
+    /// reached the blyg; `RevisionConflict` when its text moved there.
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<crate::generate::GenerateOutcome>;
+
     /// False when the server can't record the AI provenance of text
     /// generated in the app (it would then publish without disclosure).
     /// Every studio Burrow supports takes it with the text; a backend that
@@ -1077,6 +1093,36 @@ pub trait Backend: Send + Sync {
     ) -> Result<crate::order::ReaderOrder> {
         let _ = order;
         Err(CoreError::Other("the reader order isn't kept here".into()))
+    }
+
+    // --- studio 0.71 --- when a reader entry counts as read
+    // (`Settings.readerMarkRead`, studio 0.70; `crate::mark_read`). The
+    // blyg's setting only: `None` means not offered (an older studio, or
+    // not read yet), and the app shows no choice.
+
+    /// The value as last read from or written to the blyg; `None` while
+    /// the blyg isn't known to have the setting. Local.
+    fn reader_mark_read(&self) -> Option<crate::mark_read::MarkRead> {
+        None
+    }
+
+    /// Read the blyg's `readerMarkRead` (and keep it). `Ok(None)`: the blyg
+    /// doesn't have the setting.
+    fn load_reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        Ok(None)
+    }
+
+    /// Write `readerMarkRead` alone (`PATCH /api/settings`); the value the
+    /// blyg kept. Refused, sending nothing, unless the blyg was read with
+    /// the setting (`load_reader_mark_read` said `Some`).
+    fn save_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        let _ = m;
+        Err(CoreError::Other(
+            "your blyg doesn't have this setting".into(),
+        ))
     }
 
     /// Every cached changelog of someone else's post, by `(origin, remote

@@ -150,4 +150,23 @@ impl Api {
         crate::order::ReaderOrder::from_settings(&v)
             .ok_or_else(|| CoreError::Other("your blyg didn't keep the reader order".into()))
     }
+
+    /// --- studio 0.71 --- The `readerMarkRead` of `GET /api/settings`
+    /// (studio 0.70, contract 6.3.0). `Ok(None)`: the studio doesn't have it.
+    pub fn reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        let v: Option<Value> = Self::optional(self.call("GET", "/api/settings", None))?;
+        Ok(v.and_then(|v| crate::mark_read::MarkRead::from_settings(&v)))
+    }
+
+    /// `PATCH /api/settings {readerMarkRead}`: that key only; the stored
+    /// value back. Sent only to a studio whose settings had the key.
+    pub fn put_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        let v = self.call("PATCH", "/api/settings", Some(m.patch()))?;
+        crate::mark_read::MarkRead::from_settings(&v).ok_or_else(|| {
+            CoreError::Other("your blyg didn't keep when an entry counts as read".into())
+        })
+    }
 }

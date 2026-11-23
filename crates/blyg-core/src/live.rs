@@ -1149,6 +1149,31 @@ impl Backend for LiveBackend {
         Some((t.keyed_to?, t.scopes?))
     }
 
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<crate::generate::GenerateOutcome> {
+        let sid = self.server_id(id)?;
+        // The blyg generates from its copy: a local edit not yet there
+        // would be overwritten by (or conflict with) the spliced text.
+        if self.row(id)?.item.pending_sync {
+            return Err(CoreError::NotSynced);
+        }
+        let _net = self.e().net_lock();
+        let out = self.command(id, &sid, |rev| {
+            self.e().api.generate(&sid, scope, Some(rev), proceed)
+        })?;
+        if let crate::generate::GenerateOutcome::Generated(g) = &out {
+            self.e().store.set_revision(id, g.revision)?;
+            // The spliced text and the provenance the blyg recorded.
+            self.refresh(id, &sid);
+            self.e().emit(CoreEvent::ItemsChanged);
+        }
+        Ok(out)
+    }
+
     fn provenance_available(&self) -> bool {
         LiveBackend::provenance_available(self)
     }
@@ -2269,6 +2294,48 @@ impl Backend for LiveBackend {
             order
         };
         store.set_meta(crate::order::READER_ORDER_META, kept.as_str())?;
+        Ok(kept)
+    }
+
+    // --- studio 0.71 --- readerMarkRead
+    fn reader_mark_read(&self) -> Option<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META, MarkRead};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return None;
+        }
+        Some(
+            store
+                .meta(MARK_READ_META)
+                .and_then(|s| MarkRead::parse(&s))
+                .unwrap_or_default(),
+        )
+    }
+
+    fn load_reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let got = self.e().track(self.e().api.reader_mark_read())?;
+        let store = &self.e().store;
+        store.set_meta(MARK_READ_SERVED_META, if got.is_some() { "1" } else { "0" })?;
+        if let Some(m) = got {
+            store.set_meta(MARK_READ_META, m.as_str())?;
+        }
+        Ok(got)
+    }
+
+    fn save_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return Err(CoreError::Other(
+                "your blyg doesn't have this setting".into(),
+            ));
+        }
+        let kept = self.e().track(self.e().api.put_reader_mark_read(m))?;
+        store.set_meta(MARK_READ_META, kept.as_str())?;
         Ok(kept)
     }
 
