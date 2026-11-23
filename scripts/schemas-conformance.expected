@@ -4,4 +4,5 @@
 # Every case not listed must pass. A listed case that now passes is reported
 # as fixed; take it out.
 #
-# None at blygger-spec fbc3f62 (Burrow 0.28.0): 28 of 28 pass.
+# None at blygger-spec fbc3f62 (Burrow 0.28.0): 28 of 28 pass. The suite is
+# unchanged at f5817bd (the pin since the 0.71.0 render re-sync).
