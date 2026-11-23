@@ -1046,3 +1046,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "palette_click_keys_tests.rs"]
+mod click_keys_tests;

@@ -14,6 +14,7 @@ use super::{
 };
 use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
+use crate::platform_text::Platform;
 use crate::prefs::Prefs;
 
 const ID: &str = "7c9wk2n4h6q1x8v0z3m5rjy2ke";
@@ -208,10 +209,22 @@ const PUBLIC: &str = "01J9PX1";
 const PUBLIC_SERVER: &str = "01j9px1abcdefghjkmnpqrstv0";
 
 fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
+    setup_with(None, cx)
+}
+
+/// `setup` with platform `p`'s key table bound (its clicks read the held
+/// keys as `p` does: Ctrl for ⌘ on Windows), or the app's own with `None`.
+fn setup_with(
+    p: Option<Platform>,
+    cx: &mut TestAppContext,
+) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
     cx.update(|cx| {
         gpui_kit::init(cx);
-        crate::app::bind_keys(cx);
+        match p {
+            Some(p) => crate::windows_keys_tests::bind_keys_as(p, cx),
+            None => crate::app::bind_keys(cx),
+        }
         crate::settings::init(
             ConfigStore::in_memory(CONNECTED),
             Arc::new(MemoryTokenStore::default()),
@@ -354,6 +367,50 @@ fn cmd_click_opens_your_post_in_the_editor_and_anothers_in_reading(cx: &mut Test
         let opened = v.reading.opened.as_ref().expect("opened in Reading");
         assert_eq!(opened.item.remote_id, crate::fake::SAMPLE_QUOTE_ID);
     });
+}
+
+/// ⌘ as platform `p` holds it for a click: Ctrl on Windows.
+fn cmd(p: Platform) -> Modifiers {
+    match p {
+        Platform::Mac => Modifiers {
+            platform: true,
+            ..Default::default()
+        },
+        Platform::Windows => Modifiers {
+            control: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// A ⌘-click on a link, as each platform presses it, opens your post in
+/// the editor. The handler read GPUI's `secondary()`, which a Mac test run
+/// can't turn into Ctrl; it reads `keymap::secondary_held` now.
+fn cmd_click_follows_a_link_with(p: Platform, cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup_with(Some(p), cx);
+    let link = format!("[[{PUBLIC_SERVER}]]");
+    with_text(&view, cx, &format!("{link} and more.\n"));
+    let at = spot(&view, cx, &link);
+    cx.simulate_mouse_down(at, MouseButton::Left, cmd(p));
+    cx.simulate_mouse_up(at, MouseButton::Left, cmd(p));
+    cx.run_until_parked();
+    let current = view.read_with(cx, |v, _| v.current.as_ref().map(|c| c.local_id.0.clone()));
+    assert_eq!(
+        current.as_deref(),
+        Some(PUBLIC),
+        "{p:?}: a {:?}-click opens the linked post",
+        cmd(p)
+    );
+}
+
+#[gpui_kit::test]
+fn ctrl_click_follows_a_link_on_the_windows_key_table(cx: &mut TestAppContext) {
+    cmd_click_follows_a_link_with(Platform::Windows, cx);
+}
+
+#[gpui_kit::test]
+fn cmd_click_follows_a_link_on_the_mac_key_table(cx: &mut TestAppContext) {
+    cmd_click_follows_a_link_with(Platform::Mac, cx);
 }
 
 #[gpui_kit::test]
