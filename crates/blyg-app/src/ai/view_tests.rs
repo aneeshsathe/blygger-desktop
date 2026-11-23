@@ -810,3 +810,29 @@ fn a_local_provider_never_stops_at_a_checkpoint(cx: &mut TestAppContext) {
     assert_eq!(p.model, "fake-model-1");
     assert!(p.pages.is_empty(), "Burrow's own provider reads no pages");
 }
+
+/// What generation read is listed up to 50 entries, then how many more:
+/// the blyg's own generate decides how many pages a scope read.
+#[gpui_kit::test]
+fn a_long_list_of_what_generation_read_shows_the_first_fifty(cx: &mut TestAppContext) {
+    let mut e = setup(cx, None);
+    let text = "[TK]sum up the news[=]A summary.[/TK]";
+    e.open_with(text);
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://news.example.com/{i}");
+            serde_json::json!({ "url": url, "cited": { "source": "News", "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let scope: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages })).unwrap();
+    e.fake
+        .save_with_provenance(&LocalId(DRAFT.into()), text, &[Some(scope)])
+        .unwrap();
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    assert!(e.cx.debug_bounds("tk-read-0-49").is_some(), "the 50th");
+    assert!(e.cx.debug_bounds("tk-read-0-50").is_none(), "no 51st");
+    assert!(e.cx.debug_bounds("tk-read-more").is_some(), "+10 more");
+}

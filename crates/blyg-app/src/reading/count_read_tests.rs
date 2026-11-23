@@ -244,6 +244,209 @@ fn only_when_i_mark_it_nothing_counts_by_itself(cx: &mut TestAppContext) {
     wait_read(&fake, ADA_FINISHED, cx);
 }
 
+/// A card seen for a second under "when I see it": its mark waits in the
+/// batch, not yet sent.
+fn seen_and_waiting(
+    view: &Entity<MainView>,
+    fake: &FakeBackend,
+    cx: &mut VisualTestContext,
+) -> Instant {
+    stream(view, cx);
+    let t0 = Instant::now();
+    view.update(cx, |v, cx| {
+        v.stream_tick(t0, true, cx);
+        v.stream_tick(t0 + Duration::from_millis(1050), true, cx);
+    });
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert!(!v.reading.count_read.batch.is_empty(), "the batch holds it")
+    });
+    assert_eq!(read_version(fake, ADA_FINISHED), None, "not sent yet");
+    t0
+}
+
+#[gpui_kit::test]
+fn quitting_sends_the_waiting_marks(app: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), app);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    seen_and_waiting(&view, &fake, cx);
+    // The app's quit: its quit handlers run, then it stops.
+    app.quit();
+    assert!(
+        read_version(&fake, ADA_FINISHED).is_some(),
+        "written before Burrow quit"
+    );
+}
+
+#[gpui_kit::test]
+fn closing_the_window_sends_the_waiting_marks(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    seen_and_waiting(&view, &fake, cx);
+    drop(view);
+    cx.update(|window, _| window.remove_window());
+    cx.run_until_parked();
+    assert!(
+        read_version(&fake, ADA_FINISHED).is_some(),
+        "written as the window closed"
+    );
+}
+
+/// Choosing another rule drops the marks "when I see it" collected: under
+/// "when I open it" a card only seen isn't read.
+#[gpui_kit::test]
+fn choosing_another_rule_drops_the_waiting_marks(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    let t0 = seen_and_waiting(&view, &fake, cx);
+    view.update(cx, |v, cx| v.set_count_read(MarkRead::Opened, cx));
+    view.read_with(cx, |v, _| {
+        assert!(v.reading.count_read.batch.is_empty(), "dropped")
+    });
+    view.update(cx, |v, cx| {
+        v.stream_tick(t0 + Duration::from_secs(5), true, cx)
+    });
+    view.update(cx, |v, cx| {
+        v.stream_tick(t0 + Duration::from_secs(6), false, cx)
+    });
+    settle(cx);
+    assert_eq!(read_version(&fake, ADA_FINISHED), None, "seen isn't read");
+}
+
+/// Offline at launch: the first read of the blyg's choice fails, and the
+/// next time Reading opens it's asked again (not only when Settings opens).
+#[gpui_kit::test]
+fn a_failed_first_read_of_the_choice_is_tried_again(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    fake.set_offline(true);
+    view.update(cx, |v, cx| v.count_read_refresh(false, cx));
+    settle(cx);
+    view.read_with(cx, |v, _| assert_eq!(v.reading.count_read.setting, None));
+    fake.set_offline(false);
+    view.update(cx, |v, cx| v.count_read_refresh(false, cx));
+    until(cx, "the choice, read again", |cx| {
+        view.read_with(cx, |v, _| {
+            v.reading.count_read.setting == Some(MarkRead::Seen)
+        })
+    });
+}
+
+// ------------------------------------------------- two blygs (the switcher)
+
+const A: &str = "https://blyg.example.com";
+const B: &str = "https://notes.example.org";
+const TWO: &str = "blyg-url = https://blyg.example.com\nblyg = https://blyg.example.com\nblyg = https://notes.example.org\n";
+
+/// Blygs `a` and `b`, each a `FakeBackend` with the same reading list,
+/// behind the app's `SwitchBackend`; `a` is active.
+struct Two {
+    a: Arc<FakeBackend>,
+    b: Arc<FakeBackend>,
+    switch: Arc<crate::connection::SwitchBackend>,
+    _dir: tempfile::TempDir,
+}
+
+fn setup_two(cx: &mut TestAppContext) -> (Entity<MainView>, Two, &mut VisualTestContext) {
+    use crate::connection::{BlygOpener, Connection, Mode, SwitchBackend};
+    use blyg_core::config::TokenStore;
+    let (a, b) = (Arc::new(fake()), Arc::new(fake()));
+    let tokens = Arc::new(MemoryTokenStore::default());
+    tokens.set(A, "tok-a").unwrap();
+    tokens.set(B, "tok-b").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let switch = SwitchBackend::new(a.clone(), Mode::Fake);
+    let backend: Arc<dyn Backend> = switch.clone();
+    let prefs = Prefs::from_config(ConfigStore::in_memory(TWO).config());
+    {
+        let (a, b, sw, data_dir) = (
+            a.clone(),
+            b.clone(),
+            switch.clone(),
+            dir.path().to_path_buf(),
+        );
+        cx.update(move |cx| {
+            gpui_kit::init(cx);
+            crate::app::bind_keys(cx);
+            crate::settings::init(ConfigStore::in_memory(TWO), tokens, None, cx);
+            cx.set_global(Connection {
+                switch: sw,
+                data_dir,
+                verify: crate::connection::fake_verifier,
+            });
+            cx.set_global(BlygOpener(Arc::new(move |url: &str| {
+                let f = if url.contains("notes.") {
+                    b.clone()
+                } else {
+                    a.clone()
+                };
+                Ok(Some((f as Arc<dyn Backend>, Mode::Fake)))
+            })));
+        });
+    }
+    let f = a.clone();
+    let (view, cx) = cx.add_window_view(move |window, cx| {
+        MainView::new(
+            backend,
+            Some(f),
+            prefs,
+            std::time::Instant::now(),
+            window,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    (
+        view,
+        Two {
+            a,
+            b,
+            switch,
+            _dir: dir,
+        },
+        cx,
+    )
+}
+
+/// Switching blygs sends the marks waiting in the batch to the blyg they
+/// were seen on, never to the one switched to.
+#[gpui_kit::test]
+fn switching_blygs_sends_the_waiting_marks_to_their_blyg(cx: &mut TestAppContext) {
+    let (view, two, cx) = setup_two(cx);
+    choose(&view, &two.a, MarkRead::Seen, cx);
+    seen_and_waiting(&view, &two.a, cx);
+    view.update_in(cx, |v, window, cx| v.switch_blyg(B.into(), window, cx));
+    settle(cx);
+    assert_eq!(
+        cx.update(|_, cx| crate::settings::blyg_url(cx)).as_deref(),
+        Some(B)
+    );
+    assert!(
+        read_version(&two.a, ADA_FINISHED).is_some(),
+        "the blyg it was seen on"
+    );
+    assert_eq!(read_version(&two.b, ADA_FINISHED), None, "not the new one");
+}
+
+/// The backend swapped without the reading state rebuilt (as connecting a
+/// blyg from sample data does): the batch still goes to the blyg its marks
+/// were seen on.
+#[gpui_kit::test]
+fn a_swapped_backend_never_gets_the_marks_seen_before(cx: &mut TestAppContext) {
+    let (view, two, cx) = setup_two(cx);
+    choose(&view, &two.a, MarkRead::Seen, cx);
+    let t0 = seen_and_waiting(&view, &two.a, cx);
+    two.switch
+        .switch(two.b.clone(), crate::connection::Mode::Fake, || {});
+    view.update(cx, |v, cx| {
+        v.stream_tick(t0 + Duration::from_secs(5), true, cx)
+    });
+    let a = two.a.clone();
+    until(cx, "the marks, on the blyg they were seen on", move |_| {
+        read_version(&a, ADA_FINISHED).is_some()
+    });
+    assert_eq!(read_version(&two.b, ADA_FINISHED), None, "not the new one");
+}
+
 #[gpui_kit::test]
 fn a_cards_date_opens_its_full_view(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(fake(), cx);
