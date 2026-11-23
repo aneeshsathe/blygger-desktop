@@ -409,6 +409,60 @@ fn an_edit_typed_while_the_blyg_generates_never_overwrites_it() {
     assert!(!b.item(&id2).unwrap().conflict);
 }
 
+/// The writer's merge of a keystroke typed while the blyg generates (the
+/// app's `server_fill`: the generated text with the typed word) is kept with
+/// `keep_generated` and pushed, with no conflict. With the sync worker
+/// running, the typed edit waits a moment for that merge rather than being
+/// pushed at the revision before the generate (150 ms after the keystroke
+/// here) and coming back as a conflict. Before 0.28.0's fix there was no
+/// such call, and every keystroke during a generate ended in the conflict
+/// sheet.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_keystroke_merged_with_the_generated_text_is_pushed_without_a_conflict() {
+    if !takes_web_sources() {
+        eprintln!("skipped: this studio predates contract 6.3.0");
+        return;
+    }
+    let _model = use_stand_in_model();
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
+    let t = tag("generate-merge");
+    let text = format!("{t}\n\n[TK]write one line[/TK]");
+    let typed = format!("{t} typed meanwhile\n\n[TK]write one line[/TK]");
+    let id = b.create_draft(Kind::Fragment, &text).unwrap();
+    b.sync_now().unwrap();
+    let sid = sid_of(&b, &id);
+    let Some(g) = generate_with_model(&b, &id, || b.save(&id, &typed).unwrap()) else {
+        return;
+    };
+    let answer = g.content_md.clone().expect("the spliced body");
+    assert!(answer.contains(GENERATED), "{answer}");
+    // The window takes the answer after the worker's debounce has passed.
+    wait::wall_clock(Duration::from_millis(600));
+    assert!(
+        !b.item(&id).unwrap().conflict,
+        "the typed edit waits for the writer's merge"
+    );
+    let merged = answer.replacen(&t, &format!("{t} typed meanwhile"), 1);
+    assert!(b.keep_generated(&id, &answer, g.revision, &merged).unwrap());
+    assert_eq!(b.item(&id).unwrap().content_md, merged);
+    wait_until(
+        "the merged text on the blyg",
+        Duration::from_secs(20),
+        || server_item(&sid)["contentMd"] == merged.as_str(),
+    );
+    wait_until("the push to settle", Duration::from_secs(20), || {
+        !b.item(&id).unwrap().pending_sync
+    });
+    let it = b.item(&id).unwrap();
+    assert!(!it.conflict, "no conflict");
+    assert_eq!(it.content_md, merged);
+    let p = server_provenance(&sid);
+    assert!(p[0].is_object(), "the generated scope's provenance: {p}");
+}
+
 // ------------------------------------------------------ provenance pushes
 
 /// A refused citation (here a post at version 0, which the contract's
