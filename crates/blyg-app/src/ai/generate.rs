@@ -19,7 +19,9 @@ use blyg_core::{Backend, Item, ProvenanceSource, ReadingItem, ScopeProvenance, t
 /// instead).
 pub fn server_fill(sent: &str, editor_now: &str, content_md: Option<String>) -> Option<String> {
     let theirs = content_md?;
-    if sent == editor_now {
+    // Nothing typed, or the text read already is the server's (a post not
+    // open is read from the store, which the generate brought up to it).
+    if sent == editor_now || editor_now == theirs {
         return Some(theirs);
     }
     let (mut g, mut g_text) = blyg_core::text::splice(sent, &theirs);

@@ -875,8 +875,12 @@ impl MainView {
                 // that goes, over the blyg's text and revision, whether the
                 // post is open or was left. Refused (the typed edit's push
                 // came back first), the conflict stands.
+                // Nothing typed (`now` is what was sent, or already the
+                // blyg's text, read from the store for a post not open): the
+                // store holds the answer, and there's nothing to keep.
                 let kept = fill.as_ref().is_some_and(|new| {
                     now == sent
+                        || now == generated
                         || self
                             .backend
                             .keep_generated(&item, &generated, revision, new)
