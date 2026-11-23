@@ -11,3 +11,4 @@ mod mentions;
 mod parity;
 mod preview;
 mod spec102;
+mod text_content;

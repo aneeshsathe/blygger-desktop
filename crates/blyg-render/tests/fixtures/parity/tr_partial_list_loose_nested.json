@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_list_loose_nested",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq3]]\n> second, loose\n>\n> nested, loose",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq3\" data-blyg-version=\"1\">\n<ul>\n<li><p>second, loose</p>\n<ul>\n<li>nested, loose</li>\n</ul></li>\n</ul>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq3/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq3",
+      "version": 1,
+      "selector": {
+        "exact": "second, loose\nnested, loose",
+        "prefix": ", loose\nwith a second paragraph\n",
+        "suffix": "\nthird"
+      }
+    }
+  ],
+  "errors": []
+}

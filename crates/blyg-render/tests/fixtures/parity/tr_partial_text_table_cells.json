@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_text_table_cells",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]\n> awl\n>\n> punching holes",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq4\" data-blyg-version=\"1\">\n<p>awl</p>\n<p>punching holes</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq4/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq4",
+      "version": 1,
+      "selector": {
+        "exact": "awl\npunching holes",
+        "prefix": "name\nuse\n",
+        "suffix": "\nbodkin\na blunt needle\nMore\nHidd"
+      }
+    }
+  ],
+  "errors": []
+}
