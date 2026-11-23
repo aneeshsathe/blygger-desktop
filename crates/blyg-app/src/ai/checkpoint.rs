@@ -375,7 +375,7 @@ pub(crate) const READ_LIST_MAX_H: f32 = 160.;
 
 /// The demo's gap: one link the fake blyg can't read (a `.invalid` host)
 /// and one it can.
-const DEMO_GAP: &str = "[TK]one line on the forecast at https://forecast.invalid/harbour \
+pub(crate) const DEMO_GAP: &str = "[TK]one line on the forecast at https://forecast.invalid/harbour \
                         and the tides at https://tides.example.org/harbour[/TK]";
 /// The same, with only the readable link.
 const DEMO_GAP_READ: &str = "[TK]one line on the tides at https://tides.example.org/harbour[/TK]";

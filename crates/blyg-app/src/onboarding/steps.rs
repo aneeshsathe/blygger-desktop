@@ -161,6 +161,9 @@ pub enum Key {
     /// --- studio 0.71 --- A Stream card's date was clicked: its post is
     /// open in the side pane.
     StreamDate,
+    /// --- studio 0.71 --- ⌘G on the blyg stopped at the checkpoint: its
+    /// sheet is up.
+    TkCheckpoint,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -247,6 +250,10 @@ pub enum Setup {
     FullEditor,
     /// The draft with a TK scope appended, caret inside it.
     Tk(&'static str),
+    /// --- studio 0.71 --- The draft with a gap naming a link the tour's
+    /// blyg can't read and one it can, caret inside, in ⌘2; ⌘G goes to the
+    /// blyg for this step only (the canned AI everywhere else).
+    TkOnBlyg,
     /// A thread draft whose generated text echoed a quote its instruction
     /// didn't name, in the full editor (⌘3).
     EchoedQuote,
@@ -592,6 +599,28 @@ pub const STEPS: &[Step] = &[
         pause_ms: 1200,
         settle: true,
         stay: false,
+    },
+    // --- 0.28.0 --- studio 0.71: ⌘G on the blyg stops at a link it can't
+    // read, and lists what it read.
+    Step {
+        id: "tk-checkpoint",
+        since: "0.28.0",
+        title: ui_text("When your blyg can't read a link"),
+        caption: ui_text(
+            "With your blyg as the AI provider (blygger-studio 0.70 or later), ⌘G has it read \
+                  every link in the gap first. One of these two can't be read, so it stops, \
+                  saves nothing and asks: “Details” (d) says which link and why, ⏎ generates \
+                  anyway, esc leaves the draft as it was. Once it fills the gap, what it read \
+                  is listed under the preview, and again in the Publish sheet. Press ⌘G.",
+        ),
+        keys: &[Key::TkCheckpoint],
+        key_label: ui_text("⌘G"),
+        region: Region::Editor,
+        button: Some("Generate"),
+        setup: Setup::TkOnBlyg,
+        pause_ms: 1200,
+        settle: false,
+        stay: true,
     },
     Step {
         id: "shorten",
@@ -2081,8 +2110,8 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "ai",
         title: "AI and TK",
-        blurb: "Fill a gap, shorten, a quote the AI added.",
-        steps: &["tk", "shorten", "echoed-quote"],
+        blurb: "Fill a gap, a link it can't read, shorten.",
+        steps: &["tk", "tk-checkpoint", "shorten", "echoed-quote"],
     },
     Tour {
         id: "publishing",
@@ -2340,8 +2369,9 @@ mod tests {
             Key::RawTab,
             Key::AgenticTab,
             Key::StreamDate, // --- studio 0.71 ---
-            Key::MoreMenu,   // --- 0.26.0 ---
-            Key::Tangle,     // --- 0.27.0 ---
+            Key::TkCheckpoint,
+            Key::MoreMenu, // --- 0.26.0 ---
+            Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,
             Key::Parts,
         ] {

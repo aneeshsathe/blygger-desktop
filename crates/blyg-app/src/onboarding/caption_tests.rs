@@ -19,7 +19,9 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         Key::ViewWrite => &["ViewWrite"],
         Key::ViewSplit => &["ViewSplit"],
         Key::ViewStudio => &["ViewStudio"],
-        Key::AiGenerate => &["AiGenerate"],
+        // --- studio 0.71 --- ⌘G, with the blyg as the provider, opens the
+        // checkpoint sheet.
+        Key::AiGenerate | Key::TkCheckpoint => &["AiGenerate"],
         Key::AiShorten => &["AiShorten"],
         Key::ShowVersions => &["ShowVersions"],
         Key::QuotePicker | Key::Picker => &["QuotePicker"],
