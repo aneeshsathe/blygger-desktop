@@ -649,28 +649,14 @@ mod tests {
                     continue;
                 }
                 let text = std::fs::read_to_string(&p).expect("read");
-                for (n, line) in text.lines().enumerate() {
-                    // The helper's own file holds the literals it hides.
-                    if p != this_file
-                        && let Some(k) = windows_edit_key(line)
-                    {
-                        let helper = windows_edit_row(k).map_or("", |r| r.2);
-                        let rel = p.strip_prefix(&root).expect("under src");
-                        edit.push(format!(
-                            "  {}:{}: {} (call {helper})",
-                            rel.display(),
-                            n + 1,
-                            line.trim()
-                        ));
-                    }
-                    for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
-                        let Some(at) = line.find(call) else { continue };
-                        let lit = line[at + call.len()..].split('"').next().unwrap_or("");
-                        if lit.split(' ').any(macos_caret_key) {
-                            let rel = p.strip_prefix(&root).expect("under src");
-                            bad.push(format!("  {}:{}: {}", rel.display(), n + 1, line.trim()));
-                        }
-                    }
+                let rel = p.strip_prefix(&root).expect("under src");
+                // The helper's own file holds the literals it hides.
+                let found = key_offenders(&text, p != this_file);
+                for (n, line, helper) in found.edit {
+                    edit.push(format!("  {}:{n}: {line} (call {helper})", rel.display()));
+                }
+                for (n, line) in found.caret {
+                    bad.push(format!("  {}:{n}: {line}", rel.display()));
                 }
             }
         }
@@ -702,6 +688,46 @@ mod tests {
         assert!(!macos_caret_key("shift-left"));
         assert!(!macos_caret_key("cmd-enter"));
         assert!(!macos_caret_key("alt-cmd-left"));
+    }
+
+    /// What `key_offenders` found in one source text: (line number, trimmed
+    /// line[, helper to call instead]).
+    struct KeyOffenders {
+        edit: Vec<(usize, String, &'static str)>,
+        caret: Vec<(usize, String)>,
+    }
+
+    /// Stub: will blank the contents of raw string literals.
+    fn blank_raw_strings(src: &str) -> String {
+        src.to_string()
+    }
+
+    /// The per-file check of `tests_dont_send_macos_only_caret_keys`, on source
+    /// text. Raw string literals are data (scan self-tests hold sample
+    /// offenders in them), so they are blanked first; ordinary string
+    /// literals are read, because the keys are ordinary string arguments.
+    /// `check_edit` is off for the file that holds the edit-key helper.
+    fn key_offenders(src: &str, check_edit: bool) -> KeyOffenders {
+        let blanked = blank_raw_strings(src);
+        let mut out = KeyOffenders {
+            edit: Vec::new(),
+            caret: Vec::new(),
+        };
+        for (i, (line, orig)) in blanked.lines().zip(src.lines()).enumerate() {
+            let n = i + 1;
+            if check_edit && let Some(k) = windows_edit_key(line) {
+                let helper = windows_edit_row(k).map_or("", |r| r.2);
+                out.edit.push((n, orig.trim().to_string(), helper));
+            }
+            for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
+                let Some(at) = line.find(call) else { continue };
+                let lit = line[at + call.len()..].split('"').next().unwrap_or("");
+                if lit.split(' ').any(macos_caret_key) {
+                    out.caret.push((n, orig.trim().to_string()));
+                }
+            }
+        }
+        out
     }
 
     /// Editing keys the text field binds per platform, where the Windows key
@@ -767,5 +793,91 @@ mod tests {
             windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-z\"));"),
             None
         );
+    }
+
+    // Sample sources below are data, so they sit in raw strings, which the
+    // scan under test skips in this file too.
+
+    #[test]
+    fn a_call_inside_a_raw_string_is_not_reported() {
+        // The collision: a scan self-test held a sample call as data.
+        let src = r####"
+fn bad() {
+    for bad in [
+        r#"cx.simulate_keystrokes("a cmd-shift-z");"#,
+        r#"cx.simulate_keystrokes("cmd-down");"#,
+    ] {}
+}
+"####;
+        let found = key_offenders(src, true);
+        assert!(found.edit.is_empty(), "{:?}", found.edit);
+        assert!(found.caret.is_empty(), "{:?}", found.caret);
+    }
+
+    #[test]
+    fn the_same_calls_outside_a_raw_string_are_reported() {
+        let src = r####"
+cx.simulate_keystrokes("a cmd-shift-z");
+cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        assert_eq!(found.edit.len(), 1, "{:?}", found.edit);
+        assert_eq!(found.edit[0].0, 2);
+        assert_eq!(found.caret.len(), 1, "{:?}", found.caret);
+        assert_eq!(found.caret[0].0, 3);
+    }
+
+    #[test]
+    fn every_raw_string_form_is_skipped_and_scanning_resumes() {
+        let src = r####"let a = r#"
+simulate_keystrokes("cmd-down")
+"#;
+let b = r##"
+simulate_keystrokes("cmd-down") and "# stays inside
+"##;
+let c = br#"
+simulate_keystrokes("cmd-down")
+"#;
+cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        assert_eq!(found.caret.len(), 1, "{:?}", found.caret);
+        assert_eq!(found.caret[0].0, 10, "{:?}", found.caret);
+        // With no hashes the literal ends at the first quote.
+        assert_eq!(
+            blank_raw_strings(r###"x r"ab" cd"###),
+            format!("x {} cd", " ".repeat(5))
+        );
+        assert_eq!(
+            blank_raw_strings(r###"br"a" b"###),
+            format!("{} b", " ".repeat(5))
+        );
+    }
+
+    #[test]
+    fn raw_identifiers_and_names_ending_in_r_are_not_raw_strings() {
+        let src = r####"
+let r#type = 1; cx.simulate_keystrokes("cmd-down");
+let bar = "x"; cx.simulate_keystrokes("cmd-up");
+let t = "r"; cx.simulate_keystrokes("cmd-end");
+let c = '"'; cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        let lines: Vec<usize> = found.caret.iter().map(|c| c.0).collect();
+        assert_eq!(lines, [2, 3, 5], "{:?}", found.caret);
+        let same = r###"bar"x" r#type"###;
+        assert_eq!(blank_raw_strings(same), same);
+    }
+
+    #[test]
+    fn an_unterminated_raw_string_blanks_to_the_end() {
+        let src = r####"ok
+let a = r#"abc
+simulate_keystrokes("cmd-down")"####;
+        let out = blank_raw_strings(src);
+        assert_eq!(out.len(), src.len());
+        assert_eq!(out.lines().count(), 3);
+        assert!(out.lines().nth(2).expect("line").trim().is_empty());
+        assert!(key_offenders(src, true).caret.is_empty());
     }
 }
