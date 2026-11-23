@@ -716,6 +716,242 @@ fn modifier_handling_outside_the_keymap_is_on_a_reviewed_list() {
 
 // ==== END SCAN ====
 
+// ==== SCAN: test code ====
+
+/// A test holding the platform key by hand fails on Windows, where `platform`
+/// is the Windows key: a "cmd-click" built as `platform: true` sent the
+/// Windows key once the product read Ctrl there (the hoppers picker test,
+/// 74ed1d0). Keystrokes go through `keymap::keys("cmd-...")`, which respells
+/// them; modifiers built by hand do not.
+///
+/// A hit is accepted when it sits in the `Platform::Mac` arm of a `match`, or
+/// carries the marker below in a `//` comment on its line or the line above.
+/// Limits: the arm is found by indentation (rustfmt's layout), so a `match`
+/// on something else nested inside the Mac arm is a false offender, and any
+/// code under the arm's lines counts as in it; `#[cfg(test)]` items that are
+/// not a `mod { }` tail are not scanned; `key(cx, "cmd-n")`-style wrappers of
+/// a test's own are not followed.
+const PLATFORM_MARKER: &str = "the platform key itself";
+
+/// `Modifiers` constructors that set `platform` whatever the OS.
+const PLATFORM_CTORS: [&str; 4] = ["command", "command_shift", "windows", "super_key"];
+
+/// Whether `rel` (a path from `src/`) is a test file as a whole.
+fn is_test_file(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    rel.split('/').rev().skip(1).any(|d| d == "tests")
+        || name == "tests.rs"
+        || name.ends_with("_tests.rs")
+        || name.ends_with("_e2e.rs")
+        || name == "test_wait.rs"
+}
+
+/// Every source of the crate, test or not, as `(path from src/, text)`.
+fn all_sources() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut out = Vec::new();
+    let mut dirs = vec![root.clone()];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).expect("read src") {
+            let p = e.expect("entry").path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+                let rel = p.strip_prefix(&root).expect("under src");
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                out.push((rel, std::fs::read_to_string(&p).expect("read")));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The position after the whitespace that starts at `at`.
+fn skip_ws(code: &[char], mut at: usize) -> usize {
+    while code.get(at).is_some_and(|c| c.is_whitespace()) {
+        at += 1;
+    }
+    at
+}
+
+/// The identifier starting at `at`.
+fn ident_at(code: &[char], at: usize) -> String {
+    code[at.min(code.len())..]
+        .iter()
+        .take_while(|&&c| is_ident(c))
+        .collect()
+}
+
+/// Whether `line` (blanked code) is a match arm for the Mac only: its pattern,
+/// the text before the first `=>`, names `Platform::Mac` as a whole path and
+/// does not name Windows.
+fn mac_arm(line: &str) -> bool {
+    let pattern = line.split("=>").next().unwrap_or("");
+    let paths: Vec<&str> = pattern
+        .split(|c: char| !is_ident(c) && c != ':')
+        .filter(|t| !t.is_empty())
+        .collect();
+    let mac = paths
+        .iter()
+        .any(|t| *t == "Platform::Mac" || t.ends_with("::Platform::Mac"));
+    let windows = paths
+        .iter()
+        .any(|t| t.rsplit("::").next() == Some("Windows"));
+    mac && !windows
+}
+
+/// Whether the hit at `pos` is in a Mac arm: the arm on the hit's own line
+/// before it, or else the nearest line above with less indentation (and so
+/// on up to the enclosing `fn`) that holds a `=>`.
+fn in_mac_arm(code: &[char], pos: usize) -> bool {
+    let text: String = code.iter().collect();
+    let lines: Vec<&str> = text.split('\n').collect();
+    let n = line_of(code, pos) - 1;
+    let start = code[..pos]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map_or(0, |p| p + 1);
+    let before: String = code[start..pos].iter().collect();
+    if before.contains("=>") {
+        return mac_arm(&before);
+    }
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let mut at = indent(lines[n]);
+    for l in lines[..n].iter().rev() {
+        let here = indent(l);
+        if l.trim().is_empty() || here >= at {
+            continue;
+        }
+        if l.contains("=>") {
+            return mac_arm(l);
+        }
+        if l.split_whitespace().any(|w| w == "fn") || here == 0 {
+            return false;
+        }
+        at = here;
+    }
+    false
+}
+
+/// Whether the `//` comment on line `line` (from 1) or the line above holds
+/// the marker.
+fn marked(lines: &[&str], line: usize) -> bool {
+    let has = |l: usize| {
+        lines
+            .get(l.wrapping_sub(1))
+            .and_then(|t| t.split_once("//"))
+            .is_some_and(|(_, c)| c.contains(PLATFORM_MARKER))
+    };
+    has(line) || has(line - 1)
+}
+
+/// Whether the string literal that opens at `orig[at]` (after blanks) holds a
+/// key with `cmd`, `super` or `win` as a part.
+fn literal_names_cmd(orig: &[char], at: usize) -> bool {
+    let at = skip_ws(orig, at);
+    if orig.get(at) != Some(&'"') {
+        return false;
+    }
+    let mut lit = String::new();
+    let mut j = at + 1;
+    while j < orig.len() && orig[j] != '"' {
+        lit.push(orig[j]);
+        j += if orig[j] == '\\' { 2 } else { 1 };
+    }
+    lit.split_whitespace()
+        .any(|k| k.split('-').any(|p| matches!(p, "cmd" | "super" | "win")))
+}
+
+/// The test code of `src` (a file called `file`, from `src/`) that holds the
+/// platform key by hand, as `file:line: the line`. Test code is a whole test
+/// file, or the `#[cfg(test)] mod ... {` tail of any other.
+fn bare_platform_hits(file: &str, src: &str) -> Vec<String> {
+    let code = blank(src);
+    let from = if is_test_file(file) {
+        0
+    } else {
+        live_len(&code)
+    };
+    let orig: Vec<char> = src.chars().collect();
+    let lines: Vec<&str> = src.lines().collect();
+    let n = code.len();
+    let mut out: Vec<String> = Vec::new();
+    let mut last = 0;
+    let mut i = from;
+    while i < n {
+        if !(code[i].is_alphabetic() || code[i] == '_') || (i > 0 && is_ident(code[i - 1])) {
+            i += 1;
+            continue;
+        }
+        let name = ident_at(&code, i);
+        let end = i + name.chars().count();
+        let after = skip_ws(&code, end);
+        let colons = code.get(after) == Some(&':') && code.get(after + 1) == Some(&':');
+        let hit = match name.as_str() {
+            // A struct literal field `platform: true`.
+            "platform" => {
+                code.get(after) == Some(&':')
+                    && !colons
+                    && ident_at(&code, skip_ws(&code, after + 1)) == "true"
+            }
+            // `Modifiers::command()` and its siblings.
+            "Modifiers" if colons => {
+                let at = skip_ws(&code, after + 2);
+                let ctor = ident_at(&code, at);
+                let paren = skip_ws(&code, at + ctor.chars().count());
+                PLATFORM_CTORS.contains(&ctor.as_str()) && code.get(paren) == Some(&'(')
+            }
+            _ => false,
+        };
+        // A key a test spells by hand, instead of through `keys(...)`.
+        let open = match name.as_str() {
+            "simulate_keystrokes" | "dispatch_keystroke" => after,
+            "Keystroke" if colons && ident_at(&code, skip_ws(&code, after + 2)) == "parse" => {
+                skip_ws(&code, skip_ws(&code, after + 2) + "parse".len())
+            }
+            _ => n,
+        };
+        let hand_keys = code.get(open) == Some(&'(') && literal_names_cmd(&orig, open + 1);
+        let line = line_of(&code, i);
+        if (hit || hand_keys)
+            && line != last
+            && !marked(&lines, line)
+            && !(hit && in_mac_arm(&code, i))
+        {
+            last = line;
+            let text = lines.get(line - 1).map_or("", |l| l.trim());
+            out.push(format!("{file}:{line}: {text}"));
+        }
+        i = end;
+    }
+    out
+}
+
+/// A test says which platform's key it holds, or goes through
+/// `Modifiers::secondary_key()` / `keymap::keys`.
+#[test]
+fn tests_dont_hold_the_platform_key_bare() {
+    let bad: Vec<String> = all_sources()
+        .iter()
+        .flat_map(|(file, src)| bare_platform_hits(file, src))
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "tests holding the platform key by hand; `platform` is the Windows key on \
+         Windows, so the test passes on the Mac and fails on Windows CI:\n{}\n\
+         For a cmd-click write `Modifiers::secondary_key()` (cmd on a Mac, ctrl \
+         elsewhere), or a `match` on `Platform` with the hit in the `Platform::Mac` \
+         arm. For keys, send `keymap::keys(\"cmd-...\")`, which respells per \
+         platform. A test that presses the Windows key on purpose, or asserts \
+         that `platform` alone does nothing, says `{PLATFORM_MARKER}` in a `//` \
+         comment on that line or the line above.",
+        bad.join("\n")
+    );
+}
+
+// ==== END SCAN: test code ====
+
 /// The handler before the chip-keys-win merge: Alt+1 to Alt+9 ticked the
 /// Publish sheet's chips (`extensions/auto_crosspost.rs`, from
 /// `capture_key_down` in `sheet/publish.rs`).
@@ -963,4 +1199,186 @@ fn the_fixture_format_is_checked() {
         Class::Chord(vec!["cmd-backspace".into(), "alt-up".into()])
     );
     assert_eq!(ok[1].class, Class::MacOnly);
+}
+
+// ---- the platform key in test code ----
+
+/// The hoppers picker test's click before 74ed1d0: the platform key is the
+/// Windows key on Windows, so `pick_click` there ignored it.
+const OLD_HOPPERS_CLICK: &str = r##"view.update(cx, |v, cx| {
+    let m = gpui_kit::Modifiers {
+        platform: true,
+        ..Default::default()
+    };
+    assert!(v.pick_click(&ada, m, cx));
+});
+"##;
+
+/// The same test after the fix.
+const NEW_HOPPERS_CLICK: &str = r##"view.update(cx, |v, cx| {
+    assert!(v.pick_click(&ada, gpui_kit::Modifiers::secondary_key(), cx));
+});
+"##;
+
+/// `cmd_click` from `reading/pick_all_keys_tests.rs`: the platform key sits in
+/// the Mac arm.
+const CMD_CLICK: &str = r##"fn cmd_click(p: Platform) -> Modifiers {
+    match p {
+        Platform::Mac => Modifiers {
+            platform: true,
+            ..Default::default()
+        },
+        Platform::Windows => Modifiers {
+            control: true,
+            ..Default::default()
+        },
+    }
+}
+"##;
+
+/// The same helper with the two arms' bodies swapped.
+const CMD_CLICK_SWAPPED: &str = r##"fn cmd_click(p: Platform) -> Modifiers {
+    match p {
+        Platform::Mac => Modifiers {
+            control: true,
+            ..Default::default()
+        },
+        Platform::Windows => Modifiers {
+            platform: true,
+            ..Default::default()
+        },
+    }
+}
+"##;
+
+const HOPPERS: &str = "reading/hoppers_tests.rs";
+
+#[test]
+fn the_old_hoppers_click_holds_the_platform_key_bare() {
+    let bad = bare_platform_hits(HOPPERS, OLD_HOPPERS_CLICK);
+    assert_eq!(bad, [format!("{HOPPERS}:3: platform: true,")], "{bad:?}");
+}
+
+#[test]
+fn the_secondary_key_passes() {
+    assert!(bare_platform_hits(HOPPERS, NEW_HOPPERS_CLICK).is_empty());
+}
+
+#[test]
+fn the_mac_arm_passes_and_the_windows_arm_fails() {
+    let file = "reading/pick_all_keys_tests.rs";
+    assert!(bare_platform_hits(file, CMD_CLICK).is_empty());
+    let bad = bare_platform_hits(file, CMD_CLICK_SWAPPED);
+    assert_eq!(bad.len(), 1, "{bad:?}");
+    assert!(bad[0].starts_with(&format!("{file}:8:")), "{bad:?}");
+    // A single-line arm, and an arm for both platforms.
+    let one = "fn f(p: Platform) -> M {\n    match p {\n        Platform::Mac => M { platform: true },\n        _ => M::default(),\n    }\n}\n";
+    assert!(bare_platform_hits(file, one).is_empty());
+    let both = "fn f(p: Platform) -> M {\n    match p {\n        Platform::Mac | Platform::Windows => M {\n            platform: true,\n        },\n    }\n}\n";
+    assert_eq!(bare_platform_hits(file, both).len(), 1);
+    // Not a `Platform` path: `MyPlatform::Mac`.
+    let other = "fn f(p: Os) -> M {\n    match p {\n        MyPlatform::Mac => M {\n            platform: true,\n        },\n    }\n}\n";
+    assert_eq!(bare_platform_hits(file, other).len(), 1);
+}
+
+#[test]
+fn constructors_that_set_the_platform_key_fail() {
+    for ctor in ["command", "command_shift", "windows", "super_key"] {
+        let src = format!("fn t() {{ let m = Modifiers::{ctor}(); }}\n");
+        assert_eq!(bare_platform_hits("a_tests.rs", &src).len(), 1, "{src}");
+        let src = format!("fn t() {{ let m = gpui_kit::Modifiers::{ctor} (); }}\n");
+        assert_eq!(bare_platform_hits("a_tests.rs", &src).len(), 1, "{src}");
+    }
+    for ok in [
+        "let m = Modifiers::secondary_key();",
+        "let m = Modifiers::control();",
+        "let m = Modifiers::none();",
+        "let m = Modifiers::command_ish();",
+        "let m = MyModifiers::command();",
+        "let m = Modifiers::command;",
+    ] {
+        let src = format!("fn t() {{ {ok} }}\n");
+        assert!(bare_platform_hits("a_tests.rs", &src).is_empty(), "{src}");
+    }
+}
+
+#[test]
+fn longer_names_comments_and_strings_are_not_hits() {
+    let src = r##"fn t() {
+    let a = M { some_platform: true };
+    let b = M { platform_key: true };
+    let c = M { platform: false };
+    let d = M { platform: truest };
+    // platform: true in a comment, and Modifiers::command()
+    /* platform: true */
+    let s = "platform: true";
+    let r = r#"Modifiers::command()"#;
+}
+"##;
+    let bad = bare_platform_hits("a_tests.rs", src);
+    assert!(bad.is_empty(), "{bad:?}");
+    // Whitespace around the colon still hits.
+    let src = "fn t() { let a = M { platform:true }; let b = M { platform :  true }; }\n";
+    assert_eq!(bare_platform_hits("a_tests.rs", src).len(), 1, "one line");
+}
+
+#[test]
+fn the_marker_makes_a_hit_pass() {
+    let same = "fn t() {\n    let m = M { platform: true }; // the platform key itself: no chord reads it alone\n}\n";
+    assert!(bare_platform_hits("a_tests.rs", same).is_empty());
+    let above = "fn t() {\n    // the platform key itself, pressed on purpose\n    let m = Modifiers::command();\n}\n";
+    assert!(bare_platform_hits("a_tests.rs", above).is_empty());
+    // Two lines above, or in code instead of a comment, does not count.
+    let far = "fn t() {\n    // the platform key itself\n    let x = 1;\n    let m = Modifiers::command();\n}\n";
+    assert_eq!(bare_platform_hits("a_tests.rs", far).len(), 1);
+    let code = "fn t() {\n    let the_platform_key_itself = M { platform: true };\n}\n";
+    assert_eq!(bare_platform_hits("a_tests.rs", code).len(), 1);
+}
+
+#[test]
+fn only_test_code_is_scanned() {
+    let product = "fn live() -> M { M { platform: true } }\n";
+    for file in ["lib.rs", "reading/hoppers.rs", "app/testsish.rs"] {
+        assert!(bare_platform_hits(file, product).is_empty(), "{file}");
+    }
+    for file in [
+        "a_tests.rs",
+        "tests.rs",
+        "update/tests.rs",
+        "tests/cli.rs",
+        "x/tests/y.rs",
+        "a_e2e.rs",
+    ] {
+        assert_eq!(bare_platform_hits(file, product).len(), 1, "{file}");
+    }
+    // The tail of a product file is test code; what is above it is not.
+    let tail = format!(
+        "{product}\n#[cfg(test)]\nmod tests {{\n    fn t() -> M {{ M {{ platform: true }} }}\n}}\n"
+    );
+    let bad = bare_platform_hits("lib.rs", &tail);
+    assert_eq!(bad.len(), 1, "{bad:?}");
+    assert!(bad[0].starts_with("lib.rs:5:"), "{bad:?}");
+}
+
+#[test]
+fn hand_built_keystrokes_with_the_platform_key_fail() {
+    for bad in [
+        r#"cx.simulate_keystrokes("cmd-n");"#,
+        r#"cx.simulate_keystrokes("a cmd-shift-z");"#,
+        r#"let k = Keystroke::parse("alt-cmd-left").unwrap();"#,
+        r#"window.dispatch_keystroke("cmd-w", cx);"#,
+    ] {
+        let src = format!("fn t() {{ {bad} }}\n");
+        assert_eq!(bare_platform_hits("a_tests.rs", &src).len(), 1, "{src}");
+    }
+    for ok in [
+        r#"cx.simulate_keystrokes(&crate::keymap::keys("cmd-n"));"#,
+        r#"cx.simulate_keystrokes("escape");"#,
+        r#"let k = Keystroke::parse(&keys("cmd-n")).unwrap();"#,
+        r#"let k = Keystroke::parse("escape").unwrap();"#,
+        r#"key(cx, "cmd-n");"#,
+    ] {
+        let src = format!("fn t() {{ {ok} }}\n");
+        assert!(bare_platform_hits("a_tests.rs", &src).is_empty(), "{src}");
+    }
 }
