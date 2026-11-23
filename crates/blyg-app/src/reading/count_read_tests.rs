@@ -547,3 +547,37 @@ fn the_reading_state_is_rebuilt_in_one_place() {
          reading_for_new_backend (reading/count_read.rs): {found:?}"
     );
 }
+
+/// The rule chosen in Studio on the web while Burrow was in the background
+/// is in force once its window comes back to the front, without Settings
+/// or a restart. Before 0.28.0's fix it was read only when Reading first
+/// opened and when Settings opened, so cards went on being marked read.
+#[gpui_kit::test]
+fn the_window_coming_to_the_front_reads_the_rule_again(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    cx.deactivate_window();
+    // Chosen in Studio meanwhile.
+    fake.save_reader_mark_read(MarkRead::Never).unwrap();
+    cx.update(|window, _| window.activate_window());
+    until(cx, "the rule chosen on the web", |cx| {
+        view.read_with(cx, |v, _| {
+            v.reading.count_read.setting == Some(MarkRead::Never)
+        })
+    });
+    assert!(
+        cx.debug_bounds("count-read").is_none(),
+        "Settings never opened"
+    );
+}
+
+/// A blyg whose rule was never asked for (Reading and Settings unopened)
+/// isn't asked each time the window comes to the front.
+#[gpui_kit::test]
+fn the_front_window_asks_only_once_the_rule_is_in_use(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(fake(), cx);
+    cx.deactivate_window();
+    cx.update(|window, _| window.activate_window());
+    settle(cx);
+    view.read_with(cx, |v, _| assert_eq!(v.reading.count_read.setting, None));
+}
