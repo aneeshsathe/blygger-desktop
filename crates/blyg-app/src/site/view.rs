@@ -71,17 +71,18 @@ impl MainView {
                 .child(
                     div()
                         .id("site-sheet")
+                        .key_context(super::SHEET_CONTEXT)
                         .occlude()
                         .track_focus(&s.focus)
                         .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                            let k = &ev.keystroke;
-                            if k.key == "escape" {
+                            if ev.keystroke.key == "escape" {
                                 cx.stop_propagation();
                                 this.close_site(window, cx);
-                            } else if k.key == "enter" && k.modifiers.secondary() {
-                                cx.stop_propagation();
-                                this.save_site(window, cx);
                             }
+                        }))
+                        // ⌘⏎ is the keymap's (`SiteSheet` rows), as Publish's is.
+                        .on_action(cx.listener(|this, _: &super::SaveSite, window, cx| {
+                            this.save_site(window, cx)
                         }))
                         .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                             cx.stop_propagation();

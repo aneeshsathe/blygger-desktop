@@ -14,6 +14,8 @@
 //!   sheets (`MacroSheet`, and `MacroSheet > Input` for the Preview's text
 //!   box). Deeper than, or as deep as and later than, the main window's
 //!   rows, so ⌘⏎ continues there instead of reaching Publish.
+//! - `SiteSheet` / `SiteSheetInput`: Blyg › Site…'s sheet, and its fields
+//!   (`SiteSheet > Input`); ⌘⏎ saves there, the same way.
 
 use gpui_kit::{
     Action, App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate,
@@ -61,7 +63,7 @@ use crate::app::reading::hoppers::{HopperPicker, NewHopper};
 use crate::app::reading::contacts::{AddAuthorToContacts, ShowContacts};
 
 // --- site ---
-use crate::app::site::ShowSite;
+use crate::app::site::{SaveSite, ShowSite};
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
@@ -128,6 +130,10 @@ pub const BROWSER: &str = "Blygger > Browser";
 pub const MACRO_SHEET: &str = crate::app::browser::automation::SHEET_CONTEXT;
 /// --- browser macros --- The Preview sheet's text box.
 pub const MACRO_SHEET_INPUT: &str = "MacroSheet > Input";
+/// --- site --- Blyg › Site…'s sheet.
+pub const SITE_SHEET: &str = crate::app::site::SHEET_CONTEXT;
+/// --- site --- A field of the Site sheet.
+pub const SITE_SHEET_INPUT: &str = "SiteSheet > Input";
 /// --- read/unread --- The reading screen's body.
 pub const READING: &str = crate::app::reading::CONTEXT;
 /// The About window.
@@ -145,6 +151,11 @@ pub enum Scope {
     /// --- browser macros --- `MacroSheet > Input`: the Preview's text box
     /// (out-ranks gpui-base's and the main window's keys there).
     MacroSheetInput,
+    /// --- site --- `SiteSheet`: Blyg › Site…'s sheet (out-ranks the main
+    /// window's ⌘⏎, Publish).
+    SiteSheet,
+    /// --- site --- `SiteSheet > Input`: a field of the Site sheet.
+    SiteSheetInput,
     /// --- read/unread --- `Reading`: the reading screen's body. Its text
     /// fields' own keys (gpui-base's `Input`, deeper) win while they have
     /// the keyboard: ⌘A in the search field selects the query.
@@ -162,6 +173,8 @@ impl Scope {
             Scope::Browser => Some(BROWSER), // --- browser ---
             Scope::MacroSheet => Some(MACRO_SHEET),
             Scope::MacroSheetInput => Some(MACRO_SHEET_INPUT),
+            Scope::SiteSheet => Some(SITE_SHEET),
+            Scope::SiteSheetInput => Some(SITE_SHEET_INPUT),
             Scope::Reading => Some(READING),
             Scope::About => Some(ABOUT),
         }
@@ -174,6 +187,7 @@ impl Scope {
         match self {
             Scope::Browser => "browser pane", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::SiteSheet | Scope::SiteSheetInput => "site sheet",
             Scope::About => "about window",
             _ => "main window",
         }
@@ -1142,6 +1156,16 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         // --- end browser macros ---
+        // --- site --- (after Publish's rows: on a tie in depth, the later
+        // binding wins)
+        kb!("cmd-enter", SiteSheet, SaveSite, "Site sheet: save", None),
+        kb!(
+            "cmd-enter",
+            SiteSheetInput,
+            SaveSite,
+            "Site sheet: save (typing in a field)",
+            None
+        ),
         // --- read/unread --- (the search field's own ⌘A is the field's)
         kb!(
             "cmd-a",
@@ -1294,6 +1318,24 @@ fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
         }
     }
     rows
+}
+
+/// The ⌘ of a ⌘-click as this platform holds it: Cmd on a Mac, Ctrl on
+/// Windows (`Modifiers::secondary`). A click has no binding, so read held
+/// keys through this, never `platform` alone (the Windows key on
+/// Windows). A Mac turns Ctrl+click into a right-click before the app
+/// sees it, so Ctrl here never clashes with the context menu. Tests that
+/// bind a platform's table (`windows_keys_tests::bind_keys_as`) read its
+/// clicks as that platform does.
+pub fn secondary_held(m: &gpui_kit::Modifiers) -> bool {
+    #[cfg(test)]
+    if let Some(p) = crate::windows_keys_tests::bound_as() {
+        return match p {
+            crate::platform_text::Platform::Mac => m.platform,
+            crate::platform_text::Platform::Windows => m.control,
+        };
+    }
+    m.secondary()
 }
 
 /// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-t` → `ctrl-alt-t`).
@@ -1992,6 +2034,7 @@ pub fn list() -> String {
             Scope::MainInput => "text fields",
             Scope::Browser => "browser", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::SiteSheet | Scope::SiteSheetInput => "site sheet",
             Scope::Reading => "reader",
             Scope::About => "about window",
         };
@@ -2208,7 +2251,8 @@ mod tests {
         for k in live()
             .iter()
             // --- browser macros --- The sheets' keys out-rank Input on
-            // purpose (their own `MacroSheet > Input` rows).
+            // purpose (their own `MacroSheet > Input` rows), as the Site
+            // sheet's do (`SiteSheet > Input`).
             // --- read/unread --- The Reader's ⌘A yields to its text fields'
             // own select all on purpose; About has no text fields.
             .filter(|k| {
@@ -2218,6 +2262,8 @@ mod tests {
                         | Scope::Browser
                         | Scope::MacroSheet
                         | Scope::MacroSheetInput
+                        | Scope::SiteSheet
+                        | Scope::SiteSheetInput
                         | Scope::Reading
                         | Scope::About
                 )

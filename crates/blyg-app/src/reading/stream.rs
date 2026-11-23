@@ -1356,10 +1356,12 @@ impl MainView {
                     let t = targets.get(i).cloned();
                     let _ = view.update(cx, |this, cx| match t {
                         // --- browse --- a link that names a blyg item
-                        // opens in the reader; ⌘/⌥ keep it a link.
+                        // opens in the reader; ⌘/⌥ (Ctrl/Alt on
+                        // Windows) keep it a link.
                         Some(Target::Url(u)) => {
                             let m = window.modifiers();
-                            this.browse_link(u, m.platform || m.alt, false, window, cx)
+                            let modified = crate::keymap::secondary_held(&m) || m.alt;
+                            this.browse_link(u, modified, false, window, cx)
                         }
                         Some(Target::Post(o, id)) => this.open_original(o, id, None, window, cx),
                         None => {}

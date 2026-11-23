@@ -445,9 +445,12 @@ impl MainView {
         }
         let (cmd, alt) = crate::app::studio::webview::take_click_modifiers()
             .or_else(crate::platform::held_link_modifiers)
+            // Last, the keys the window saw: a link followed outside a web
+            // view on a Mac (Windows reads the keyboard above, so this is
+            // never reached there in the app).
             .unwrap_or_else(|| {
                 let m = window.modifiers();
-                (m.platform, m.alt)
+                (crate::keymap::secondary_held(&m), m.alt)
             });
         match super::link_action(self.prefs.open_links, cmd, alt) {
             super::LinkAction::Pane(mode) => self.open_url_in_app(&url, mode, window, cx),

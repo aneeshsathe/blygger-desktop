@@ -67,14 +67,15 @@ impl MainView {
         self.reading.shown_rows().map(vm::key).collect()
     }
 
-    /// A row clicked with ⌘ or ⇧ (Reader mode): pick instead of opening.
-    /// False for a plain click, which lets go of the picks and opens it.
+    /// A row clicked with ⌘ (Ctrl on Windows) or ⇧ (Reader mode): pick
+    /// instead of opening. False for a plain click, which lets go of the
+    /// picks and opens it.
     pub(crate) fn pick_click(&mut self, key: &Key, m: Modifiers, cx: &mut Context<Self>) -> bool {
         if self.reading.mode != ReadMode::Reader {
             return false;
         }
         let current = self.reading.sel.clone();
-        if m.platform && !m.shift {
+        if crate::keymap::secondary_held(&m) && !m.shift {
             self.reading.picked.toggle(key, current.as_ref());
         } else if m.shift {
             let shown = self.shown_keys();
