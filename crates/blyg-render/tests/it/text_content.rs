@@ -460,3 +460,28 @@ fn selection_lines_place_each_line_in_its_list_and_item() {
         ]
     );
 }
+
+// ------------------------------------------- formulas in plain text (#105)
+
+/// markdown.ts `mathAsTex`: in an excerpt or a link's label a formula reads
+/// as its TeX in dollars (`$$` for display), never as its stripped MathML.
+/// The §2 text content has no such exception.
+#[test]
+fn plain_text_reads_a_formula_as_its_tex() {
+    let inline = "<p>Euler: <math><semantics><mrow><mi>e</mi></mrow>\
+                  <annotation encoding=\"application/x-tex\">e^{i\\pi}</annotation></semantics></math> holds.</p>";
+    assert_eq!(plain_text_from_html(inline), "Euler: $e^{i\\pi}$ holds.");
+    assert_eq!(selection_text(inline), "Euler: ee^{i\\pi} holds.");
+    let display = "<math display=\"block\"><annotation encoding=\"application/x-tex\"> a&lt;b </annotation></math>";
+    assert_eq!(plain_text_from_html(display), "$$a<b$$");
+    // No annotation, or no closer: left as it is.
+    assert_eq!(plain_text_from_html("<math><mi>y</mi></math> z"), "y z");
+    assert_eq!(plain_text_from_html("<math>x <p>y"), "x y");
+    // `<mathx>` is not a formula.
+    assert_eq!(
+        plain_text_from_html(
+            "<mathx><annotation encoding=\"application/x-tex\">q</annotation></mathx>"
+        ),
+        "q"
+    );
+}

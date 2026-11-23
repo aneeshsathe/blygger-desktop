@@ -308,5 +308,6 @@
   {"name": "tr_partial_text_dl", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]\n> bodkin\n>\n> a blunt needle"},
   {"name": "tr_partial_text_details_figure", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]\n> More\n>\n> Hidden text\n>\n> A drawing\n>\n> Fig. 1"},
   {"name": "tr_whole_text_blocks", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]"},
-  {"name": "link_label_text_blocks", "kind": "thread", "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vq5]] and [[01j9zq3k4m5n6p7q8r9s0t1vq4]]."}
+  {"name": "link_label_text_blocks", "kind": "thread", "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vq5]] and [[01j9zq3k4m5n6p7q8r9s0t1vq4]]."},
+  {"name": "link_label_math", "kind": "fragment", "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vm1]] and [[01j9zq3k4m5n6p7q8r9s0t1vm2]]."}
 ]

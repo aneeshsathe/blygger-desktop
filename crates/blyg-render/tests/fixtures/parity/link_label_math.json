@@ -1,0 +1,12 @@
+{
+  "name": "link_label_math",
+  "kind": "fragment",
+  "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vm1]] and [[01j9zq3k4m5n6p7q8r9s0t1vm2]].",
+  "html": "<p>See <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm1/\">“Euler: $e^{i\\pi}+1=0$ holds.”</a> and <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm2/\">“Shown: $$\\frac{a}{b}$$ Bare y gone, and qq_1 kept.”</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
