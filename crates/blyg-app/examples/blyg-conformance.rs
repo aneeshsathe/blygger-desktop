@@ -258,6 +258,7 @@ fn render(case: &Value) -> Value {
             sources: job.sources,
             pages: vec![],
             at: None,
+            ..Default::default()
         };
         let kept = generate::provenance_with(None, md, i, p).and_then(|v| v.get(i).cloned());
         let Some(Some(p)) = kept else { continue };

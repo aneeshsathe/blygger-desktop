@@ -1194,18 +1194,37 @@ pub struct ProvenanceSource {
     /// Kept as served, so a push never drops it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cited: Option<serde_json::Value>,
+    /// Fields Burrow doesn't know, kept as served and written back.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// A web page a generated scope's model read (studio 0.70, decision #117,
 /// spec 0.4 §16.16): `{url, cited}`, §10.6's plain-web shape. Disclosed with
 /// the scope, never a post reference: it has no version, no lineage, and
 /// tells no one (no mention).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PageSource {
     pub url: String,
     /// When and as what it was read (`Citation`: `source`, `url`,
-    /// `retrieved`, maybe `author`, `excerpt`). Kept as served.
+    /// `retrieved`, maybe `author`, `excerpt`). Kept as served. Required,
+    /// and an object: a page without one isn't read as a page (it stays a
+    /// source Burrow doesn't read, `ScopeProvenance::other`).
+    #[serde(deserialize_with = "citation")]
     pub cited: serde_json::Value,
+    /// Fields Burrow doesn't know, kept as served and written back.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A `Citation`: an object (present; a missing one fails the page).
+fn citation<'de, D: serde::Deserializer<'de>>(d: D) -> Result<serde_json::Value, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    if v.is_object() {
+        Ok(v)
+    } else {
+        Err(serde::de::Error::custom("a citation is an object"))
+    }
 }
 
 impl PageSource {
@@ -1232,10 +1251,14 @@ impl PageSource {
 ///
 /// On the wire the scope's `sources` is one array of `GenerationSource`s
 /// (contract 6.3.0): a post (`{id, version, origin?, cited?}`) or a web
-/// page (`{url, cited}`). Here the posts are `sources` and the pages
-/// `pages`; written back, posts come first, then pages (the studio gives the
-/// order no meaning).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// page (`{url, cited}`). Here the posts are `sources`, the pages `pages`,
+/// and any source Burrow can't read as either `other`, kept as served;
+/// written back, posts come first, then pages, then the others (the studio
+/// gives the order no meaning). Nothing a scope holds is dropped on the way
+/// back: a source of a new kind, or a field Burrow doesn't know, would
+/// otherwise null the scope's whole disclosure on the next push (the 0.27.3
+/// class).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(from = "WireScope", into = "WireScope")]
 pub struct ScopeProvenance {
     /// The model that answered (`GenResult::model`).
@@ -1246,6 +1269,12 @@ pub struct ScopeProvenance {
     pub pages: Vec<PageSource>,
     /// ISO-8601 generation time; `None` = now.
     pub at: Option<String>,
+    /// Sources Burrow can't read as a post or a page (a newer kind, a page
+    /// without its citation, a post whose version isn't a number), as
+    /// served.
+    pub other: Vec<serde_json::Value>,
+    /// The scope's fields Burrow doesn't know, as served.
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl ScopeProvenance {
@@ -1266,40 +1295,87 @@ impl ScopeProvenance {
         }
         serde_json::from_value(v).ok()
     }
+
+    /// Without the posts it cited (a refused citation's first retry): the
+    /// pages, which cite nothing that must resolve, and the rest stay.
+    pub fn without_posts(&self) -> ScopeProvenance {
+        ScopeProvenance {
+            sources: vec![],
+            ..self.clone()
+        }
+    }
+
+    /// With the web pages as its only sources.
+    pub fn only_pages(&self) -> ScopeProvenance {
+        ScopeProvenance {
+            sources: vec![],
+            other: vec![],
+            ..self.clone()
+        }
+    }
+
+    /// Without any source: who generated it, and when.
+    pub fn bare(&self) -> ScopeProvenance {
+        ScopeProvenance {
+            sources: vec![],
+            pages: vec![],
+            other: vec![],
+            ..self.clone()
+        }
+    }
 }
 
-/// `GenerationProvenance` as served: one `sources` array of either shape.
+/// `GenerationProvenance` as served: one `sources` array of either shape,
+/// and whatever else the scope holds.
 #[derive(Serialize, Deserialize)]
 struct WireScope {
     model: String,
     #[serde(default)]
     sources: Vec<WireSource>,
+    /// A string as the studio writes it; anything else is kept in `extra`
+    /// as served.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    at: Option<String>,
+    at: Option<serde_json::Value>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
 }
 
-/// `GenerationSource`: a post (has `id`) or a web page (`url` and `cited`).
+/// `GenerationSource`: a post (has `id`), a web page (`url` and `cited`),
+/// or anything else, kept as it came.
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum WireSource {
     Post(ProvenanceSource),
     Page(PageSource),
+    Other(serde_json::Value),
 }
 
 impl From<WireScope> for ScopeProvenance {
     fn from(w: WireScope) -> Self {
-        let (mut sources, mut pages) = (vec![], vec![]);
+        let (mut sources, mut pages, mut other) = (vec![], vec![], vec![]);
         for s in w.sources {
             match s {
                 WireSource::Post(p) => sources.push(p),
                 WireSource::Page(p) => pages.push(p),
+                WireSource::Other(v) => other.push(v),
             }
         }
+        let mut extra = w.extra;
+        let at = match w.at {
+            Some(serde_json::Value::String(s)) => Some(s),
+            Some(v) => {
+                extra.insert("at".into(), v);
+                None
+            }
+            None => None,
+        };
         ScopeProvenance {
             model: w.model,
             sources,
             pages,
-            at: w.at,
+            at,
+            other,
+            extra,
         }
     }
 }
@@ -1311,11 +1387,13 @@ impl From<ScopeProvenance> for WireScope {
             .into_iter()
             .map(WireSource::Post)
             .chain(p.pages.into_iter().map(WireSource::Page))
+            .chain(p.other.into_iter().map(WireSource::Other))
             .collect();
         WireScope {
             model: p.model,
             sources,
-            at: p.at,
+            at: p.at.map(serde_json::Value::String),
+            extra: p.extra,
         }
     }
 }

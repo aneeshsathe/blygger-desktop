@@ -191,7 +191,7 @@ impl MainView {
     /// tell another blyg. `None` when nothing was read.
     pub(crate) fn render_tk_read(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::ai::read;
-        let scopes = self.tk_read(cx);
+        let (scopes, more) = read::capped(self.tk_read(cx));
         if scopes.is_empty() {
             return None;
         }
@@ -245,6 +245,15 @@ impl MainView {
                         ),
                 );
             }
+        }
+        if more > 0 {
+            col = col.child(
+                div()
+                    .debug_selector(|| "tk-read-more".into())
+                    .pl(px(10.))
+                    .text_color(p.muted)
+                    .child(read::more(more)),
+            );
         }
         Some(col.into_any_element())
     }

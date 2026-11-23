@@ -75,6 +75,7 @@ pub fn generate(
                 "url": l,
                 "retrieved": now,
             }),
+            ..Default::default()
         })
         .collect();
     let text = "A line the fake blyg wrote.".to_string();
@@ -93,6 +94,7 @@ pub fn generate(
                 sources: vec![],
                 pages,
                 at: Some(now.into()),
+                ..Default::default()
             },
         )),
     })

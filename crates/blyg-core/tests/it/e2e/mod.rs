@@ -1540,10 +1540,12 @@ fn prov(model: &str, sources: &[&str]) -> Option<ScopeProvenance> {
                 version: None,
                 origin: None,
                 cited: None,
+                ..Default::default()
             })
             .collect(),
         pages: vec![],
         at: None,
+        ..Default::default()
     })
 }
 

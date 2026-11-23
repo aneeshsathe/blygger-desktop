@@ -1214,10 +1214,12 @@ impl Engine {
     }
 
     /// Write `content` and `scopes` together at revision `rev`. A refusal
-    /// of the provenance itself (e.g. a cited source that no longer
-    /// resolves) retries without the citations, then saves the text with no
-    /// disclosure and says so. A refused write changes nothing, so each
-    /// retry goes at the same revision.
+    /// of the provenance itself (e.g. a cited post that no longer resolves)
+    /// retries without the posts, keeping the web pages (they cite nothing
+    /// that must resolve) and the sources Burrow doesn't read; then with the
+    /// pages alone; then without any source; then saves the text with no
+    /// disclosure and says so. A refused write changes nothing, so
+    /// each retry goes at the same revision.
     fn push_provenance(
         &self,
         id: &LocalId,
@@ -1239,40 +1241,41 @@ impl Engine {
             }) => message,
             Err(e) => return Err(e),
         };
-        let bare: Vec<Option<ScopeProvenance>> = scopes
-            .iter()
-            .map(|p| {
-                p.clone().map(|p| ScopeProvenance {
-                    sources: vec![],
-                    pages: vec![],
-                    ..p
-                })
-            })
-            .collect();
-        match self.api.save_item_provenance(sid, rev, content, &bare) {
-            Ok(w) => {
-                self.store.prov_pushed(id, content, &bare)?;
-                Ok(w)
+        let mut tried = vec![scopes.to_vec()];
+        for strip in [
+            ScopeProvenance::without_posts,
+            ScopeProvenance::only_pages,
+            ScopeProvenance::bare,
+        ] {
+            let retry: Vec<Option<ScopeProvenance>> =
+                scopes.iter().map(|p| p.as_ref().map(strip)).collect();
+            if tried.contains(&retry) {
+                continue;
             }
-            Err(CoreError::Rejected { status: 400, .. }) => {
-                self.emit(CoreEvent::Error(format!(
-                    "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
-                )));
-                let none = vec![None; scopes.len()];
-                // Clear what the server held, so nothing stale stays keyed
-                // to the new text; failing that, the text alone.
-                let w = match self.api.save_item_provenance(sid, rev, content, &none) {
-                    Err(CoreError::Rejected { status: 400, .. }) => {
-                        self.api.save_item(sid, rev, content)?
-                    }
-                    r => r?,
-                };
-                // Don't retry (and re-warn) on every keystroke.
-                self.store.prov_pushed(id, content, &none)?;
-                Ok(w)
+            match self.api.save_item_provenance(sid, rev, content, &retry) {
+                Ok(w) => {
+                    self.store.prov_pushed(id, content, &retry)?;
+                    return Ok(w);
+                }
+                Err(CoreError::Rejected { status: 400, .. }) => tried.push(retry),
+                Err(e) => return Err(e),
             }
-            Err(e) => Err(e),
         }
+        self.emit(CoreEvent::Error(format!(
+            "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
+        )));
+        let none = vec![None; scopes.len()];
+        // Clear what the server held, so nothing stale stays keyed to the
+        // new text; failing that, the text alone.
+        let w = match self.api.save_item_provenance(sid, rev, content, &none) {
+            Err(CoreError::Rejected { status: 400, .. }) => {
+                self.api.save_item(sid, rev, content)?
+            }
+            r => r?,
+        };
+        // Don't retry (and re-warn) on every keystroke.
+        self.store.prov_pushed(id, content, &none)?;
+        Ok(w)
     }
 
     /// A push with provenance landed: clear an older Burrow's "the server

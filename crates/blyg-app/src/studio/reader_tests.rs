@@ -550,13 +550,16 @@ fn what_generated_text_read_is_escaped() {
             blyg_core::PageSource {
                 url: "javascript:alert(1)".into(),
                 cited: serde_json::json!({"source": "<b>x</b>"}),
+                ..Default::default()
             },
             blyg_core::PageSource {
                 url: "https://a.example.com/?q=\"><i>".into(),
                 cited: serde_json::json!({}),
+                ..Default::default()
             },
         ],
         at: None,
+        ..Default::default()
     };
     let html = super::reader::generation_read(&[p]);
     assert!(!html.contains("<i>"), "{html}");

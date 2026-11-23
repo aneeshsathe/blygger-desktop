@@ -53,11 +53,17 @@ impl MarkRead {
     }
 
     /// From `GET /api/settings`: `None` when the studio doesn't have it
-    /// (before 0.70). A value it has but Burrow doesn't know reads as the
-    /// contract's default, `seen`.
+    /// (before 0.70). A value it has but Burrow doesn't know reads as
+    /// `opened`, the safer rule, not the contract's default: a newer rule
+    /// may count less than `seen` does, and under `opened` nothing is
+    /// marked read that the reader didn't open.
     pub fn from_settings(v: &Value) -> Option<MarkRead> {
         let m = v.get("readerMarkRead")?;
-        Some(m.as_str().and_then(MarkRead::parse).unwrap_or_default())
+        Some(
+            m.as_str()
+                .and_then(MarkRead::parse)
+                .unwrap_or(MarkRead::Opened),
+        )
     }
 
     /// The partial `PATCH /api/settings` body: this key and no other.
