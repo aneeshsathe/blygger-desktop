@@ -983,3 +983,46 @@ fn an_edit_in_the_filled_scope_says_it_overlaps(cx: &mut TestAppContext) {
     );
     assert_eq!(e.text(), typed, "the typed text stays in the editor");
 }
+
+/// A post left during the generate with nothing typed: the store already
+/// holds the blyg's text, which isn't an edit. The plain toast shows, with
+/// no sync started and nothing waiting. Before the fix that text read as an
+/// edit over the generated one, and the toast said it overlapped.
+#[gpui_kit::test]
+fn a_post_left_untouched_while_the_blyg_generates_says_nothing_overlaps(cx: &mut TestAppContext) {
+    use blyg_core::generate::GenerateOutcome;
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(ASKED);
+    let Ok(GenerateOutcome::Generated(g)) =
+        e.fake.generate_on_blyg(&LocalId(DRAFT.into()), 0, true)
+    else {
+        panic!("the fake blyg generates");
+    };
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("down");
+    e.cx.run_until_parked();
+    let answer = g.content_md.clone().unwrap();
+    assert_eq!(
+        e.fake.item(&LocalId(DRAFT.into())).unwrap().content_md,
+        answer,
+        "the store holds the blyg's text"
+    );
+    e.answer(&g);
+    assert_eq!(
+        e.toast(),
+        "Generated on your blyg | It recorded the provenance itself"
+    );
+    let it = e.fake.item(&LocalId(DRAFT.into())).unwrap();
+    assert!(!it.pending_sync && !it.conflict, "nothing to push: {it:?}");
+}
+
+/// The merge reads a text that already is the blyg's answer as no edit.
+#[test]
+fn server_fill_takes_the_answer_already_held() {
+    use crate::ai::generate::server_fill;
+    assert_eq!(
+        server_fill(ASKED, ANSWERED, Some(ANSWERED.into())).as_deref(),
+        Some(ANSWERED)
+    );
+}
