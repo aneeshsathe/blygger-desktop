@@ -73,10 +73,12 @@ fn a_web_source_survives_an_edit() {
     assert_eq!(p[2]["sources"][0]["id"], src.as_str());
 
     // Published, the document discloses the page as `{url, cited}`: no id,
-    // no origin, so nothing to notify.
+    // no origin, so nothing to notify. (`generated` lists only the
+    // generated scopes, the page's first.)
     b.publish(&id, None).unwrap();
     let doc = public_json(&format!("{}/items/{sid}.json", e.url));
-    let gen_sources = &doc["generated"][1]["sources"];
+    assert_eq!(doc["generated"].as_array().map(Vec::len), Some(2), "{doc}");
+    let gen_sources = &doc["generated"][0]["sources"];
     assert_eq!(gen_sources[0]["url"], url, "{doc}");
     assert!(gen_sources[0].get("id").is_none(), "{doc}");
     assert!(gen_sources[0].get("origin").is_none(), "{doc}");
