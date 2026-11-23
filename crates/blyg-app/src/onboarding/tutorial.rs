@@ -656,6 +656,12 @@ impl MainView {
             // --- studio 0.71 --- a card's date clicked: its post open
             // beside the Stream.
             (Key::StreamDate, opened.is_some() && !reader),
+            // --- studio 0.71 --- ⌘G on the blyg stopped at its checkpoint.
+            (
+                Key::TkCheckpoint,
+                self.sheet
+                    .is::<crate::app::ai_view::checkpoint::TkCheckpointSheet>(),
+            ),
             (
                 Key::AgenticTab,
                 reader
@@ -965,7 +971,30 @@ impl MainView {
     }
 
     fn tutorial_setup(&mut self, setup: Setup, window: &mut Window, cx: &mut Context<Self>) {
+        // --- studio 0.71 --- ⌘G asks the tour's blyg in the checkpoint
+        // step only; every other step has the canned AI.
+        let provider: Arc<dyn Provider> = if setup == Setup::TkOnBlyg {
+            Arc::new(crate::app::ai_view::checkpoint::OnBlyg)
+        } else {
+            Arc::new(CannedAi)
+        };
+        if cx.has_global::<crate::ai::AiGlobal>() {
+            cx.global_mut::<crate::ai::AiGlobal>().test_provider = Some(provider);
+        }
         match setup {
+            Setup::TkOnBlyg => {
+                self.tutorial_tidy(window, cx);
+                self.studio_set_view(ViewMode::Split, cx);
+                self.tutorial_open(steps::DRAFT, window, cx);
+                let old = self.editor.read(cx).value().to_string();
+                let base = match old.find(" [TK]") {
+                    Some(i) => old[..i].to_string(),
+                    None => old.clone(),
+                };
+                let new = format!("{base} {}", crate::app::ai_view::checkpoint::DEMO_GAP);
+                let caret = new.len() - "[/TK]".len();
+                self.splice_editor(&old, &new, Some(caret), window, cx);
+            }
             Setup::Search => {
                 self.tutorial_tidy(window, cx);
                 self.studio_set_view(ViewMode::Write, cx);

@@ -1697,13 +1697,13 @@ fn the_checkpoint_step_stops_on_the_tours_blyg_then_generates_anyway(cx: &mut Te
     });
     assert_eq!(tour_step(&mut e), Some("tk-checkpoint"));
     let read = e.view.read_with(e.cx, |v, cx| v.tk_read(cx));
+    // What the preview lists under the page (headless, the preview itself
+    // isn't drawn).
     assert_eq!(read.len(), 1, "what the blyg read: {read:?}");
-    e.cx.update(|window, _| window.refresh());
-    e.cx.run_until_parked();
-    assert!(
-        e.cx.debug_bounds("preview-tk-read").is_some(),
-        "listed under the preview"
-    );
+    let split = e.view.read_with(e.cx, |v, _| {
+        v.studio.view == crate::app::studio::ViewMode::Split
+    });
+    assert!(split, "the step shows the preview, where the list goes");
     // Leaving the step puts the canned AI back: the next ⌘G never asks
     // the blyg.
     enter(&mut e, "tk");
@@ -1715,7 +1715,9 @@ fn the_checkpoint_step_stops_on_the_tours_blyg_then_generates_anyway(cx: &mut Te
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     let view = e.view.clone();
     crate::test_wait::until(e.cx, "the canned AI's words", move |cx| {
-        cx.executor().advance_clock(Duration::from_millis(500));
+        // The canned AI waits in real time: step the clock gently, or the
+        // AI's timeout fires first.
+        cx.executor().advance_clock(Duration::from_millis(30));
         cx.run_until_parked();
         view.read_with(cx, |v, cx| {
             v.editor
