@@ -1171,7 +1171,15 @@ impl Backend for LiveBackend {
         let out = self.command(id, &sid, |rev| {
             self.e().api.generate(&sid, scope, Some(rev), proceed)
         })?;
-        if let crate::generate::GenerateOutcome::Generated(_) = &out {
+        if let crate::generate::GenerateOutcome::Generated(g) = &out {
+            // That edit's push waits a moment for the writer's merge
+            // (`keep_generated`), which the window makes as it takes the
+            // answer; without one it goes, and is refused, as below. Held
+            // whether or not the blyg's copy can be read back.
+            let until = crate::util::now_ms() + GENERATE_MERGE_WAIT_MS;
+            self.e()
+                .store
+                .hold_for_merge(id, g.content_md.as_deref(), until)?;
             // The spliced text and the provenance the blyg recorded, kept
             // here so the writer shows what it read and an edit that moves
             // the scopes carries it. The answer's revision isn't stored on
@@ -1182,20 +1190,10 @@ impl Backend for LiveBackend {
             // read again with conflict detection rather than going through
             // over the generated words. Unread (offline), the old revision
             // stays too, with the same effect.
-            if let Some(w) = self.refresh(id, &sid) {
-                if let Some(p) = w.server_provenance() {
-                    self.e().store.adopt_prov(id, &w.content_md, &p)?;
-                }
-                // That edit's push waits a moment for the writer's merge
-                // (`keep_generated`), which the window makes as it takes the
-                // answer; without one it goes, and is refused, as above.
-                if self
-                    .row(id)
-                    .is_ok_and(|r| r.item.pending_sync && r.item.content_md != w.content_md)
-                {
-                    let until = crate::util::now_ms() + GENERATE_MERGE_WAIT_MS;
-                    self.e().store.hold_push(id, until)?;
-                }
+            if let Some(w) = self.refresh(id, &sid)
+                && let Some(p) = w.server_provenance()
+            {
+                self.e().store.adopt_prov(id, &w.content_md, &p)?;
             }
             self.e().emit(CoreEvent::ItemsChanged);
         }

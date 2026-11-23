@@ -516,7 +516,7 @@ fn connecting_a_blyg_puts_its_rule_in_force(cx: &mut TestAppContext) {
 #[test]
 fn the_reading_state_is_rebuilt_in_one_place() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut found = Vec::new();
+    let mut files = Vec::new();
     let mut dirs = vec![src.clone()];
     while let Some(dir) = dirs.pop() {
         for entry in std::fs::read_dir(&dir).unwrap() {
@@ -529,23 +529,102 @@ fn the_reading_state_is_rebuilt_in_one_place() {
             if !name.ends_with(".rs") || name.ends_with("_tests.rs") || name == "tests.rs" {
                 continue;
             }
+            let rel = path.strip_prefix(&src).unwrap().to_string_lossy();
             let text = std::fs::read_to_string(&path).unwrap();
-            for (i, line) in text.lines().enumerate() {
-                if line.contains("reading::State::new(") {
-                    let rel = path.strip_prefix(&src).unwrap().to_string_lossy();
-                    found.push(format!("{}:{}", rel.replace('\\', "/"), i + 1));
-                }
+            files.push((rel.replace('\\', "/"), text));
+        }
+    }
+    let stray = stray_reading_builds(&files);
+    assert!(
+        stray.is_empty(),
+        "build the reading state only in MainView::new (app.rs) and \
+         reading_for_new_backend (reading/count_read.rs); call \
+         reading_for_new_backend instead at: {stray:?}"
+    );
+    // The scan sees the two it allows (so it still finds the calls at all).
+    let all = reading_builds(&files);
+    assert!(all.iter().any(|f| f.starts_with("app.rs:")), "{all:?}");
+    assert!(
+        all.iter().any(|f| f.starts_with("reading/count_read.rs:")),
+        "{all:?}"
+    );
+}
+
+/// The files allowed to build `reading::State`.
+const READING_BUILT_IN: [&str; 2] = ["app.rs", "reading/count_read.rs"];
+
+/// Each `file:line` that builds the reading state: `State::new(&*…)` under
+/// any path (`reading::`, `super::`, `crate::app::reading::`, or none),
+/// the only `State::new` taking a backend. `InputState::new(` and the
+/// like don't count.
+fn reading_builds(files: &[(String, String)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (path, text) in files {
+        for (i, line) in text.lines().enumerate() {
+            let builds = line.match_indices("State::new(&*").any(|(at, _)| {
+                !line[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            });
+            if builds {
+                found.push(format!("{path}:{}", i + 1));
             }
         }
     }
-    found.sort();
-    let files: Vec<&str> = found.iter().map(|f| f.split(':').next().unwrap()).collect();
-    assert_eq!(
-        files,
-        vec!["app.rs", "reading/count_read.rs"],
-        "build the reading state only in MainView::new (app.rs) and \
-         reading_for_new_backend (reading/count_read.rs): {found:?}"
+    found
+}
+
+/// [`reading_builds`] outside [`READING_BUILT_IN`].
+fn stray_reading_builds(files: &[(String, String)]) -> Vec<String> {
+    reading_builds(files)
+        .into_iter()
+        .filter(|f| !READING_BUILT_IN.contains(&f.split(':').next().unwrap()))
+        .collect()
+}
+
+/// The scan fails on the shape that went wrong: `finish_connect` swapping
+/// the backend and building the state itself (as the switcher did, and the
+/// sample data with `super::State::new`), and passes the allowed files.
+#[test]
+fn the_reading_state_scan_catches_a_swap_that_builds_it_itself() {
+    let file = |path: &str, text: &str| (path.to_string(), text.to_string());
+    let old_connect = file(
+        "app/connect.rs",
+        "match crate::connection::go_live(&url, cx) {\n    Ok(true) => {\n        \
+         self.reading = reading::State::new(&*self.backend, cx);\n",
     );
+    assert_eq!(
+        stray_reading_builds(&[old_connect]),
+        vec!["app/connect.rs:3"]
+    );
+    let sample = file(
+        "onboarding/mod.rs",
+        "self.reading = super::reading::State::new(&*self.backend, cx);",
+    );
+    let in_reading = file("reading/mentions.rs", "let s = State::new(&*backend, cx);");
+    let via_super = file("reading/feed.rs", "x = super::State::new(&*b, cx);");
+    assert_eq!(
+        stray_reading_builds(&[sample, in_reading, via_super]),
+        vec![
+            "onboarding/mod.rs:1",
+            "reading/mentions.rs:1",
+            "reading/feed.rs:1"
+        ]
+    );
+    let fine = [
+        file(
+            "app.rs",
+            "let reading = reading::State::new(&*backend, cx);",
+        ),
+        file(
+            "reading/count_read.rs",
+            "self.reading = crate::app::reading::State::new(&*self.backend, cx);",
+        ),
+        file("palette.rs", "cx.new(|cx| InputState::new(window, cx));"),
+        file("app.rs", "onboarding: onboarding::State::new(cx),"),
+    ];
+    assert!(stray_reading_builds(&fine).is_empty());
 }
 
 /// The rule chosen in Studio on the web while Burrow was in the background
@@ -580,4 +659,37 @@ fn the_front_window_asks_only_once_the_rule_is_in_use(cx: &mut TestAppContext) {
     cx.update(|window, _| window.activate_window());
     settle(cx);
     view.read_with(cx, |v, _| assert_eq!(v.reading.count_read.setting, None));
+}
+
+/// Coming to the front reads the rule again at most once a minute
+/// (`FRONT_REREAD_GAP`): switching windows back and forth doesn't send a
+/// settings read each time. Before the fix every activation sent one.
+#[gpui_kit::test]
+fn the_front_window_asks_at_most_once_a_minute(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    let front = |cx: &mut VisualTestContext| {
+        cx.deactivate_window();
+        cx.update(|window, _| window.activate_window());
+        settle(cx);
+    };
+    let rule = |cx: &mut VisualTestContext| view.read_with(cx, |v, _| v.reading.count_read.setting);
+    fake.save_reader_mark_read(MarkRead::Never).unwrap();
+    front(cx);
+    assert_eq!(
+        rule(cx),
+        Some(MarkRead::Never),
+        "read on coming to the front"
+    );
+    fake.save_reader_mark_read(MarkRead::Opened).unwrap();
+    cx.executor().advance_clock(Duration::from_secs(20));
+    front(cx);
+    assert_eq!(
+        rule(cx),
+        Some(MarkRead::Never),
+        "not again within the minute"
+    );
+    cx.executor().advance_clock(Duration::from_secs(45));
+    front(cx);
+    assert_eq!(rule(cx), Some(MarkRead::Opened), "again after it");
 }

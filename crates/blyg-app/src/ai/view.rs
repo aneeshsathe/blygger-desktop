@@ -870,22 +870,23 @@ impl MainView {
                 let now = self.ai_text_of(&item, cx).unwrap_or_default();
                 let open = self.current.as_ref().is_some_and(|c| c.local_id == item);
                 let generated = content_md.clone().unwrap_or_default();
+                let fill = generate::server_fill(&sent, &now, content_md);
                 // --- studio 0.71 --- typed meanwhile: the merge is the edit
-                // that goes, over the blyg's text and revision. Refused (the
-                // typed edit's push came back first), the conflict stands.
-                let kept = |v: &mut Self, new: &str| {
+                // that goes, over the blyg's text and revision, whether the
+                // post is open or was left. Refused (the typed edit's push
+                // came back first), the conflict stands.
+                let kept = fill.as_ref().is_some_and(|new| {
                     now == sent
-                        || v.backend
+                        || self
+                            .backend
                             .keep_generated(&item, &generated, revision, new)
                             .unwrap_or(false)
-                };
-                match generate::server_fill(&sent, &now, content_md) {
+                });
+                match fill {
                     // The server's copy, straight into the editor as one
                     // undoable edit (its provenance is the server's own),
                     // with anything typed while it generated.
-                    Some(new) if open && kept(self, &new) => {
-                        self.splice_editor(&now, &new, None, window, cx)
-                    }
+                    Some(new) if kept && open => self.splice_editor(&now, &new, None, window, cx),
                     // Otherwise the pulled copy (pulled in the background
                     // when the reply had no content_md).
                     _ => {
@@ -896,11 +897,25 @@ impl MainView {
                         }
                     }
                 }
-                self.show_toast(
-                    "Generated on your blyg",
-                    Some("It recorded the provenance itself".into()),
-                    cx,
-                );
+                if now != sent && !kept {
+                    // The typed edit couldn't join the generated text: sync
+                    // now, so the conflict comes at once, not after the
+                    // push's hold (`keep_generated`).
+                    let backend = self.backend.clone();
+                    cx.background_spawn(async move { backend.sync_now() })
+                        .detach();
+                    self.show_toast(
+                        "Generated on your blyg; your edit overlaps it",
+                        Some("Both are kept: choose one when the conflict opens".into()),
+                        cx,
+                    );
+                } else {
+                    self.show_toast(
+                        "Generated on your blyg",
+                        Some("It recorded the provenance itself".into()),
+                        cx,
+                    );
+                }
             }
             Done::Checkpoint {
                 item,

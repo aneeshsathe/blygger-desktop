@@ -877,6 +877,53 @@ fn server_fill_merges_a_keystroke_outside_the_scope() {
     );
 }
 
+impl Env<'_> {
+    /// The blyg generates the draft's scope (its answer not back in the
+    /// window yet) while `typed` replaces the editor's text.
+    fn generate_while_typing(&mut self, typed: &str) -> blyg_core::generate::Generated {
+        use blyg_core::generate::GenerateOutcome;
+        self.on_the_blyg(ASKED);
+        let id = LocalId(DRAFT.into());
+        let Ok(GenerateOutcome::Generated(g)) = self.fake.generate_on_blyg(&id, 0, true) else {
+            panic!("the fake blyg generates");
+        };
+        assert!(g.content_md.as_deref().is_some_and(|c| c.contains("[=]")));
+        let typed = typed.to_string();
+        self.view.update_in(self.cx, |v, window, cx| {
+            v.splice_editor(ASKED, &typed, Some(5), window, cx)
+        });
+        self.cx.run_until_parked();
+        g
+    }
+
+    /// The answer reaches the window (`Done::Server`, as the AI job ends).
+    fn answer(&mut self, g: &blyg_core::generate::Generated) {
+        let done = super::Done::Server {
+            item: LocalId(DRAFT.into()),
+            sent: ASKED.into(),
+            content_md: g.content_md.clone(),
+            revision: g.revision,
+        };
+        self.view.update_in(self.cx, |v, window, cx| {
+            v.ai_done(done, blyg_ai::ProviderKind::BlygServer, window, cx)
+        });
+        self.cx.run_until_parked();
+    }
+
+    /// The draft as pushed: `want`, with nothing waiting and no conflict.
+    fn pushed(&mut self, want: &str) {
+        let fake = self.fake.clone();
+        let w = want.to_string();
+        crate::test_wait::until(self.cx, "the text pushed", move |cx| {
+            cx.executor().advance_clock(Duration::from_secs(2));
+            cx.run_until_parked();
+            fake.item(&LocalId(DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md == w)
+        });
+        assert!(!self.fake.item(&LocalId(DRAFT.into())).unwrap().conflict);
+    }
+}
+
 /// A word typed at the top of the post while the blyg generates ends as the
 /// generated text with the word, in the editor and in the copy that is
 /// pushed, with no conflict. Before 0.28.0's fix the editor was reloaded
@@ -884,50 +931,55 @@ fn server_fill_merges_a_keystroke_outside_the_scope() {
 /// generate) came back as a conflict sheet.
 #[gpui_kit::test]
 fn a_word_typed_while_the_blyg_generates_is_kept_with_its_text(cx: &mut TestAppContext) {
-    use blyg_core::generate::GenerateOutcome;
     let mut e = setup(cx, Some(on_blyg()));
-    e.on_the_blyg(ASKED);
-    let id = LocalId(DRAFT.into());
-    // The blyg generates and stores its text...
-    let Ok(GenerateOutcome::Generated(g)) = e.fake.generate_on_blyg(&id, 0, true) else {
-        panic!("the fake blyg generates");
-    };
-    let answer = g.content_md.clone().expect("the spliced text");
-    assert!(answer.contains("[=]"), "{answer}");
-    // ...while a word is typed at the top, before the answer is back.
-    let typed = format!("Grey. {ASKED}");
-    e.view.update_in(e.cx, |v, window, cx| {
-        v.splice_editor(ASKED, &typed, Some(5), window, cx)
-    });
-    e.cx.run_until_parked();
-    e.view.update_in(e.cx, |v, window, cx| {
-        v.ai_done(
-            super::Done::Server {
-                item: id.clone(),
-                sent: ASKED.into(),
-                content_md: Some(answer.clone()),
-                revision: g.revision,
-            },
-            blyg_ai::ProviderKind::BlygServer,
-            window,
-            cx,
-        )
-    });
-    e.cx.run_until_parked();
-    let want = format!("Grey. {answer}");
+    let g = e.generate_while_typing(&format!("Grey. {ASKED}"));
+    e.answer(&g);
+    let want = format!("Grey. {}", g.content_md.clone().unwrap());
     assert_eq!(e.text(), want, "the editor holds both");
     assert!(
         e.view.read_with(e.cx, |v, _| !v.sheet.is_open()),
         "no conflict sheet"
     );
-    let fake = e.fake.clone();
-    let w = want.clone();
-    crate::test_wait::until(e.cx, "both pushed", move |cx| {
-        cx.executor().advance_clock(Duration::from_secs(2));
-        cx.run_until_parked();
-        fake.item(&LocalId(DRAFT.into()))
-            .is_some_and(|i| !i.pending_sync && i.content_md == w)
+    let toast = e.toast();
+    assert!(toast.starts_with("Generated on your blyg |"), "{toast}");
+    e.pushed(&want);
+}
+
+/// A post left while the blyg generated gets the merge too: the generated
+/// text with the word typed before leaving, kept and pushed. Before the fix
+/// only an open post was merged, and a left one ended in a conflict.
+#[gpui_kit::test]
+fn a_post_left_while_the_blyg_generates_is_merged_too(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    let g = e.generate_while_typing(&format!("Grey. {ASKED}"));
+    // Leave it for the next post in the list.
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("down");
+    e.cx.run_until_parked();
+    let open = e.view.read_with(e.cx, |v, _| {
+        v.current.as_ref().map(|c| c.local_id.0.clone())
     });
-    let it = e.fake.item(&id).unwrap();
-    assert!(!it.conflict);
+    assert_ne!(open.as_deref(), Some(DRAFT), "the draft was left");
+    let elsewhere = e.text();
+    e.answer(&g);
+    assert_eq!(e.text(), elsewhere, "the open post is untouched");
+    e.pushed(&format!("Grey. {}", g.content_md.clone().unwrap()));
+}
+
+/// A keystroke in the scope the blyg filled can't be merged: the toast says
+/// so in plain words, the typed text stays, and the conflict comes (both
+/// texts kept).
+#[gpui_kit::test]
+fn an_edit_in_the_filled_scope_says_it_overlaps(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    let typed = ASKED.replace("one line", "two lines");
+    let g = e.generate_while_typing(&typed);
+    e.answer(&g);
+    let toast = e.toast();
+    assert!(
+        toast.contains("Generated on your blyg") && toast.contains("your edit overlaps it"),
+        "{toast}"
+    );
+    assert_eq!(e.text(), typed, "the typed text stays in the editor");
 }

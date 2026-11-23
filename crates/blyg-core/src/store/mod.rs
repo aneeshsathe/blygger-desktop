@@ -1172,18 +1172,30 @@ impl Store {
         Ok(true)
     }
 
-    /// --- studio 0.71 --- Hold `id`'s queued push until `until` (unix ms):
-    /// a keystroke landed while the blyg generated, and the writer's merge
-    /// (`keep_generated`) should land first. Without one, the push goes when
-    /// the hold ends, at the revision before the generate, and is refused
-    /// and read again as a conflict.
-    pub fn hold_push(&self, id: &LocalId, until: i64) -> Result<()> {
-        self.conn().execute(
+    /// --- studio 0.71 --- After a generate on the blyg (`answer`: the text
+    /// it answered with, when it said): an edit waiting for `id` was typed
+    /// during the request (the generate needs a synced item), so hold its
+    /// push until `until` (unix ms) for the writer's merge
+    /// (`keep_generated`) to land first. Without one, the push goes when the
+    /// hold ends, at the revision before the generate, and is refused and
+    /// read again as a conflict. Nothing is held when the edit already reads
+    /// as the answer. True when it held.
+    pub fn hold_for_merge(&self, id: &LocalId, answer: Option<&str>, until: i64) -> Result<bool> {
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let Some(row) = get_row(&tx, id)? else {
+            return Ok(false);
+        };
+        if !has_ops(&tx, id)? || answer == Some(row.item.content_md.as_str()) {
+            return Ok(false);
+        }
+        tx.execute(
             "UPDATE outbox SET not_before = MAX(not_before, ?2) \
              WHERE local_id = ?1 AND in_flight = 0 AND op <> 'delete_remote'",
             params![id.0, until],
         )?;
-        Ok(())
+        tx.commit()?;
+        Ok(true)
     }
 
     /// Make sure a push is queued for `id` (KeepMine).

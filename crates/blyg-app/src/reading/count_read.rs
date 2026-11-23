@@ -46,6 +46,11 @@ pub const SEEN_FLUSH: Duration = Duration::from_secs(3);
 /// The setting's name, as Studio words it.
 pub const COUNT_READ: &str = "Count an entry as read";
 
+/// The least time between two reads of the setting on coming to the front:
+/// switching windows back and forth sends one settings read a minute at
+/// most.
+pub const FRONT_REREAD_GAP: Duration = Duration::from_secs(60);
+
 /// The rule that says a Stream card is on screen enough to count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeenRule {
@@ -164,6 +169,8 @@ pub struct CountRead {
     loaded: bool,
     /// Bumped by each choice made here, so a slower answer can't undo it.
     chosen: u64,
+    /// When coming to the front last read it (`FRONT_REREAD_GAP`).
+    front_read: Option<Instant>,
     /// Seen marks waiting to go.
     pub batch: SeenBatch,
     /// The blyg they were seen on (set with the first of them).
@@ -238,11 +245,19 @@ impl MainView {
 
     /// The window came to the front: the rule may have been chosen
     /// elsewhere meanwhile (Studio on the web), so read it again, once it's
-    /// in use (Reading or Settings has asked for it this session).
+    /// in use (Reading or Settings has asked for it this session), and at
+    /// most once per `FRONT_REREAD_GAP`.
     pub(crate) fn count_read_on_front(&mut self, cx: &mut Context<Self>) {
-        if self.reading.count_read.loaded {
-            self.count_read_refresh(true, cx);
+        let now = cx.background_executor().now();
+        let c = &mut self.reading.count_read;
+        if !c.loaded
+            || c.front_read
+                .is_some_and(|t| now.saturating_duration_since(t) < FRONT_REREAD_GAP)
+        {
+            return;
         }
+        c.front_read = Some(now);
+        self.count_read_refresh(true, cx);
     }
 
     /// Choose: at once here, then saved on the blyg (that key alone). A

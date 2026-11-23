@@ -11,11 +11,14 @@ section: Fixed
 - **“Count an entry as read” chosen in Studio on the web takes effect when
   Burrow's window comes back to the front.** It was read only when Reading
   first opened and when Settings opened, so entries went on being marked
-  read by the old rule until a restart.
+  read by the old rule until a restart. It is read again at most once a
+  minute.
 - **⌘G on the blyg: a word typed while it generates is kept, with no
   conflict.** A keystroke elsewhere in the post while the blyg wrote ended in
   the conflict sheet every time. The editor now merges the generated text
   with what was typed, and that merge is pushed over the blyg's text
-  (`Backend::keep_generated`). A keystroke in the scope the blyg filled
-  still ends in the conflict sheet, so neither text is lost
+  (`Backend::keep_generated`), also for a post you left while it
+  generated. A keystroke in the scope the blyg filled still ends in the
+  conflict sheet, so neither text is lost: the toast says your edit overlaps
+  it, and the sheet comes at once
   (`crates/blyg-app/src/ai/generate.rs`, `crates/blyg-core/src/live.rs`).
