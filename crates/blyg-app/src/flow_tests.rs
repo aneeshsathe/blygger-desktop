@@ -632,8 +632,11 @@ fn background_rule_chips_take_tab_space_and_enter(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     open_settings_page(cx);
     assert!(rule_on(&view, cx, BURST));
-    // WRITING FONT, INTERFACE FONT, SIZE, THEME, then BACKGROUND.
-    for _ in 0..5 {
+    crate::test_wait::until(cx, "Settings to read READ MARKS", |cx| {
+        view.read_with(cx, |v, _| v.reading.count_read.setting.is_some())
+    });
+    // WRITING FONT, INTERFACE FONT, SIZE, THEME, READ MARKS, then BACKGROUND.
+    for _ in 0..6 {
         keys(cx, "tab");
     }
     frame(cx);
@@ -649,12 +652,12 @@ fn background_rule_chips_take_tab_space_and_enter(cx: &mut TestAppContext) {
     keys(cx, "space");
     assert!(!rule_on(&view, cx, "wordless"), "→ moves to the next rule");
     assert!(rule_on(&view, cx, BURST));
-    // ⇧⇥ goes back to THEME.
+    // ⇧⇥ goes back to READ MARKS.
     keys(cx, "shift-tab");
     view.read_with(cx, |v, _| {
         assert_eq!(
             v.preview.cursor.as_ref().map(|c| c.0),
-            Some(crate::app::pref_preview::Row::Theme)
+            Some(crate::app::pref_preview::Row::CountRead)
         )
     });
 }

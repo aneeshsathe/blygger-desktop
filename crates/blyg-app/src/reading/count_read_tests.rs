@@ -692,4 +692,89 @@ fn the_front_window_asks_at_most_once_a_minute(cx: &mut TestAppContext) {
     cx.executor().advance_clock(Duration::from_secs(45));
     front(cx);
     assert_eq!(rule(cx), Some(MarkRead::Opened), "again after it");
+
+// --- studio 0.71 user testing ---
+
+/// Settings, open, with the blyg's choice read.
+fn settings(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
+    until(cx, "Settings to read the blyg's choice", |cx| {
+        view.read_with(cx, |v, _| v.reading.count_read.setting.is_some())
+    });
+    settle(cx);
+}
+
+/// Finding 4: ⇥ never reached "Count an entry as read". It's a stop after
+/// THEME now: ←/→ choose, space or ⏎ save, as on the other rows.
+#[gpui_kit::test]
+fn tab_reaches_read_marks_and_space_or_enter_saves(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    settings(&view, cx);
+    assert_eq!(fake.reader_mark_read(), Some(MarkRead::Seen));
+    // WRITING FONT, INTERFACE FONT, SIZE, THEME, then READ MARKS.
+    for _ in 0..5 {
+        cx.simulate_keystrokes("tab");
+    }
+    settle(cx);
+    assert!(
+        cx.debug_bounds("count-read-focused").is_some(),
+        "a focus ring on the choice"
+    );
+    cx.simulate_keystrokes("right");
+    settle(cx);
+    assert_eq!(
+        fake.reader_mark_read(),
+        Some(MarkRead::Seen),
+        "→ only moves the ring"
+    );
+    cx.simulate_keystrokes("space");
+    let f = fake.clone();
+    until(cx, "space to save “when I open it”", move |_| {
+        f.reader_mark_read() == Some(MarkRead::Opened)
+    });
+    cx.simulate_keystrokes("right");
+    cx.simulate_keystrokes("enter");
+    let f = fake.clone();
+    until(cx, "⏎ to save “only when I mark it”", move |_| {
+        f.reader_mark_read() == Some(MarkRead::Never)
+    });
+    // ⇧⇥ goes back to THEME.
+    cx.simulate_keystrokes("shift-tab");
+    view.read_with(cx, |v, _| {
+        assert_eq!(
+            v.preview.cursor.as_ref().map(|c| c.0),
+            Some(crate::app::pref_preview::Row::Theme)
+        )
+    });
+}
+
+/// Finding 4: its own row, and what every choice means beside it.
+#[gpui_kit::test]
+fn read_marks_is_its_own_row_and_says_what_each_choice_means(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(fake(), cx);
+    settings(&view, cx);
+    assert!(cx.debug_bounds("settings-row-READ MARKS").is_some());
+    for m in MarkRead::ALL {
+        let id = format!("count-read-hint-{}", m.as_str());
+        assert!(
+            cx.debug_bounds(Box::leak(id.into_boxed_str())).is_some(),
+            "{m:?}"
+        );
+    }
+    let opened = super::count_read::hint(MarkRead::Opened);
+    assert!(
+        opened.contains("short posts stay unread until opened or marked"),
+        "{opened}"
+    );
+    let seen = super::count_read::hint(MarkRead::Seen);
+    assert!(!seen.contains("60%"), "the detail is in the guide: {seen}");
+    for (p, key) in [
+        (crate::platform_text::Platform::Mac, "⇧R"),
+        (crate::platform_text::Platform::Windows, "Shift+R"),
+    ] {
+        let never =
+            crate::platform_text::spelled_as(p, || super::count_read::hint(MarkRead::Never));
+        assert!(never.contains(key), "{p:?}: {never}");
+        assert!(never.contains("Mark All Read"), "{never}");
+    }
 }

@@ -67,8 +67,9 @@ pub struct Doc {
     pub media: Vec<RemoteMedia>,
     pub scope: Scope,
     /// --- studio 0.71 --- what its generated text read, as the publisher
-    /// disclosed it (`ReadingItem::generation`): listed under the post.
-    pub generation: Vec<blyg_core::ScopeProvenance>,
+    /// disclosed it: one slot per gap (`None`: that gap disclosed nothing),
+    /// listed under the post.
+    pub generation: Vec<Option<blyg_core::ScopeProvenance>>,
 }
 
 /// What the loaded page was made from (a new page when this changes).
@@ -333,7 +334,7 @@ blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 /// reader CSP with `<base href>` at the author's origin.
 #[cfg(test)]
 pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
-    reader_page_named(content, doc, font_px, &|_| None)
+    reader_page_named(content, doc, font_px, &|_| None, &|_| None)
 }
 
 /// [`reader_page`], naming quote origins with `name_of` (a subscription's
@@ -343,6 +344,7 @@ pub fn reader_page_named(
     doc: &Doc,
     font_px: f32,
     name_of: &dyn Fn(&str) -> Option<String>,
+    post_name: &dyn Fn(&blyg_core::ProvenanceSource) -> Option<crate::ai::read::Named>,
 ) -> String {
     let clean = sanitize(&format!("{content}\n{}", attachments_html(&doc.media)));
     let post_origin = match &doc.scope {
@@ -354,7 +356,14 @@ pub fn reader_page_named(
         None => clean,
     };
     let clean = generated_note(&clean);
-    let clean = format!("{clean}{}", generation_read(&doc.generation));
+    let clean = format!(
+        "{clean}{}",
+        generation_read(
+            &doc.generation,
+            post_name,
+            matches!(doc.scope, Scope::Own(_)),
+        )
+    );
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
     // --- themes --- the theme's colours over the fallback stylesheet, and
     // its quote-box shape last, so it wins over the reader's defaults.
@@ -395,81 +404,80 @@ pub fn generated_note(html: &str) -> String {
 
 /// --- studio 0.71 --- Under a post whose generated text the publisher
 /// disclosed: what each scope read. The posts it drew on (a post on another
-/// blyg was told, by a mention) and the web pages its model read (which
-/// tell no one), each page by its site and address. The page's own HTML is
-/// already sanitized; this is built here, every value escaped, and a link
-/// only for an http(s) address. Empty when nothing was read.
-pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
+/// blyg was told, by a mention), by title when held here (`name_of`),
+/// else by their blyg, never by id; and the web pages its model read, by
+/// address (and site, when that isn't the host). Each gap by its number
+/// among all of the post's (`generation` holds one slot per gap). The
+/// page's own HTML is already sanitized; this is built here, every value
+/// escaped, and a link only for an http(s) address. Empty when nothing was
+/// read. `yours`: the post is your own.
+pub fn generation_read(
+    generation: &[Option<blyg_core::ScopeProvenance>],
+    name_of: &dyn Fn(&blyg_core::ProvenanceSource) -> Option<crate::ai::read::Named>,
+    yours: bool,
+) -> String {
+    use crate::ai::read::{self, Open};
     use blyg_render::escape_html as esc;
-    let scopes: Vec<_> = generation
-        .iter()
-        .filter(|p| !p.sources.is_empty() || !p.pages.is_empty())
-        .collect();
+    let web = |u: &str| match url::Url::parse(u) {
+        Ok(p) if matches!(p.scheme(), "http" | "https") => Some(p.to_string()),
+        _ => None,
+    };
+    let a = |href: &str, text: &str| format!("<a href=\"{}\">{}</a>", esc(href), esc(text));
+    // Another blyg decides how long this is: the first `read::SHOWN`
+    // entries, then how many more.
+    let (scopes, more) = read::capped(read::scopes(generation, name_of, yours));
     if scopes.is_empty() {
         return String::new();
     }
-    let many = scopes.len() > 1;
-    // Another blyg decides how long this is: the first `read::SHOWN`
-    // entries, then how many more.
-    let total: usize = scopes.iter().map(|p| p.sources.len() + p.pages.len()).sum();
-    let mut left = crate::ai::read::SHOWN;
+    let many = generation.len() > 1;
     let mut out = format!(
-        "<div class=\"blyg-gen-read\"><p class=\"blyg-gen-read-h\">{}</p><ul>",
-        esc(GENERATION_READ)
+        "<div class=\"blyg-gen-read\"><p class=\"blyg-gen-read-h\">{}</p>\
+         <p class=\"blyg-gen-read-n\">{}</p><ul>",
+        esc(GENERATION_READ),
+        esc(GENERATION_TOLD_NO_ONE)
     );
-    for (n, p) in scopes.into_iter().enumerate() {
+    for (n, entries) in scopes {
         let tk = if many {
-            format!("{} · ", crate::ai::read::scope_label(n))
+            format!("{} · ", read::scope_label(n))
         } else {
             String::new()
         };
-        let told: Vec<&str> = p.notifies().map(|s| s.id.as_str()).collect();
-        for s in &p.sources {
-            if left == 0 {
-                break;
-            }
-            left -= 1;
-            let from = s
-                .origin
-                .as_deref()
-                .and_then(|o| url::Url::parse(o).ok()?.host_str().map(str::to_string));
-            let what = match &from {
-                Some(h) => format!("drew on a post from {h} ([[{}]])", s.id),
-                None => format!("drew on a post of the same blyg ([[{}]])", s.id),
-            };
-            let mark = if told.contains(&s.id.as_str()) {
-                GENERATION_TOLD
-            } else {
-                crate::ai::read::TELLS_NO_ONE
-            };
-            out.push_str(&format!(
-                "<li>{}{} <span class=\"blyg-gen-mark\">· {}</span></li>",
-                esc(&tk),
-                esc(&what),
-                esc(mark)
-            ));
-        }
-        for page in &p.pages {
-            if left == 0 {
-                break;
-            }
-            left -= 1;
-            let link = match url::Url::parse(&page.url) {
-                Ok(u) if matches!(u.scheme(), "http" | "https") => {
-                    format!("<a href=\"{}\">{}</a>", esc(u.as_str()), esc(&page.url))
+        for e in entries {
+            // The words, the post's title (or "a post") as its link.
+            let what = match (
+                &e.link,
+                e.link.as_ref().and_then(|(_, o)| match o {
+                    Open::Web(u) => web(u),
+                    Open::Own(_) => None,
+                }),
+            ) {
+                (Some((label, _)), Some(href)) if e.what.contains(label.as_str()) => {
+                    let (before, after) = e.what.split_once(label.as_str()).unwrap_or_default();
+                    format!("{}{}{}", esc(before), a(&href, label), esc(after))
                 }
-                _ => esc(&page.url),
+                _ => esc(&e.what),
+            };
+            let url = e.url.as_deref().map(|u| match web(u) {
+                Some(href) => format!(" · {}", a(&href, u)),
+                None => format!(" · {}", esc(u)),
+            });
+            let mark = if e.tells {
+                format!(
+                    " <span class=\"blyg-gen-mark\">· {}</span>",
+                    esc(GENERATION_TOLD)
+                )
+            } else {
+                String::new()
             };
             out.push_str(&format!(
-                "<li>{}read {} · {link} <span class=\"blyg-gen-mark\">· {}</span></li>",
+                "<li>{}{what}{}{mark}</li>",
                 esc(&tk),
-                esc(&page.site()),
-                esc(crate::ai::read::TELLS_NO_ONE)
+                url.unwrap_or_default()
             ));
         }
     }
-    if let Some(more) = total.checked_sub(crate::ai::read::SHOWN).filter(|n| *n > 0) {
-        out.push_str(&format!("<li>{}</li>", esc(&crate::ai::read::more(more))));
+    if more > 0 {
+        out.push_str(&format!("<li>{}</li>", esc(&read::more(more))));
     }
     out.push_str("</ul></div>\n");
     out
@@ -477,6 +485,8 @@ pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
 
 /// The heading over [`generation_read`].
 pub const GENERATION_READ: &str = "What its generated text read, as the publisher disclosed it:";
+/// Under the heading: what the entries without a mark did.
+pub const GENERATION_TOLD_NO_ONE: &str = "Web pages and the blyg's own posts tell no one.";
 /// A source on another blyg: its author was told (a mention).
 pub const GENERATION_TOLD: &str = "its author was told";
 
@@ -682,7 +692,11 @@ impl MainView {
                     generation: if tombstone {
                         Vec::new()
                     } else {
-                        item.generation()
+                        item.generated
+                            .iter()
+                            .flatten()
+                            .map(blyg_core::ScopeProvenance::from_served)
+                            .collect()
                     },
                 })
             }
@@ -703,7 +717,7 @@ impl MainView {
                         .backend
                         .tracked_tk_provenance(&item.local_id)
                         .filter(|(keyed, _)| *keyed == item.content_md)
-                        .map(|(_, s)| s.into_iter().flatten().collect())
+                        .map(|(_, s)| s)
                         .unwrap_or_default(),
                     scope: Scope::Own(item.local_id.clone()),
                 })
@@ -780,7 +794,31 @@ impl MainView {
                         .map(|s| s.title.clone())
                         .filter(|t| !t.trim().is_empty())
                 };
-                let page = reader_page_named(&content, &shown.doc, shown.font_px as f32, &name_of);
+                // --- studio 0.71 --- the posts its generated text read,
+                // by title when held here; one of yours by its page.
+                let home = match &shown.doc.scope {
+                    Scope::Remote { origin, .. } => Some(origin.as_str()),
+                    Scope::Own(_) => None,
+                };
+                let names = crate::ai::read::Names::new(&*self.backend, home);
+                let backend = self.backend.clone();
+                let post_name = |s: &blyg_core::ProvenanceSource| {
+                    let mut n = names.get(s)?;
+                    if let Some(crate::ai::read::Open::Own(id)) = &n.open {
+                        n.open = backend
+                            .item(id)
+                            .and_then(|i| i.permalink)
+                            .map(crate::ai::read::Open::Web);
+                    }
+                    Some(n)
+                };
+                let page = reader_page_named(
+                    &content,
+                    &shown.doc,
+                    shown.font_px as f32,
+                    &name_of,
+                    &post_name,
+                );
                 self.studio.reader.slot.borrow_mut().with(|s| s.load(&page));
                 self.studio.reader.selected = false; // --- selection ---
                 #[cfg(test)]

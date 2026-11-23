@@ -2,9 +2,10 @@
 //! checkpoint: studio 0.70 reads every link the author placed before it
 //! generates, and when some can't be read it stops and saves nothing
 //! (`blyg_core::generate::Checkpoint`). This sheet asks, as the studio's
-//! editor does: "n of m links in the draft could not be read. Generate
-//! anyway?", the failures (link and why) under Details. ⏎ generates without
-//! them (`proceed: true`); esc leaves the draft as it was.
+//! editor does: "n of m links in this TK could not be read. Generate
+//! anyway?", the failures (link and why) under Details (open already when
+//! there are a few; `d` shows or hides it). ⏎ generates without them
+//! (`proceed: true`); esc leaves the draft as it was and says what to do.
 //!
 //! A child of `app::ai_view` (declared there), so it works on `MainView`.
 
@@ -49,10 +50,13 @@ pub(crate) struct TkCheckpointSheet {
     pub(crate) focus: FocusHandle,
 }
 
+/// Details opens by itself up to this many failures.
+pub(crate) const DETAILS_OPEN_UP_TO: usize = 3;
+
 /// The studio's question.
 pub(crate) fn heading(c: &Checkpoint) -> String {
     format!(
-        "{} of {} {} in the draft could not be read. Generate anyway?",
+        "{} of {} {} in this TK could not be read. Generate anyway?",
         c.failed.len(),
         c.total,
         if c.total == 1 { "link" } else { "links" }
@@ -61,16 +65,47 @@ pub(crate) fn heading(c: &Checkpoint) -> String {
 
 /// Under the question: what generating anyway means.
 pub(crate) fn hint(c: &Checkpoint) -> String {
-    let read = if c.read > 0 {
-        format!(
-            "The {} that could be read will be drawn on and listed as sources. ",
-            c.read
-        )
-    } else {
-        String::new()
+    let rest = match (c.read > 0, c.failed.len()) {
+        (true, 1) => "the model sees only the address of the other and is told not to describe it."
+            .to_string(),
+        (true, n) => format!(
+            "the model sees only the addresses of the other {n} and is told not to describe them."
+        ),
+        (false, 1) => {
+            "The model sees only the link's address and is told not to describe it.".to_string()
+        }
+        (false, n) => format!(
+            "The model sees only the addresses of the {n} links and is told not to describe them."
+        ),
     };
-    format!("{read}The model sees only the address of the others, so it should not describe them.")
+    match c.read {
+        0 => rest,
+        1 => format!("Burrow will draw on the 1 readable link; {rest}"),
+        n => format!("Burrow will draw on the {n} readable links; {rest}"),
+    }
 }
+
+/// After esc: what happened, and what to do about the links.
+pub(crate) fn cancelled(c: &Checkpoint) -> (&'static str, String) {
+    let what = if c.failed.len() == 1 {
+        "the link that couldn't be read"
+    } else {
+        "the links that couldn't be read"
+    };
+    (
+        "Nothing was generated",
+        crate::keymap::hint_owned(format!("Remove or replace {what}, then ⌘G again")),
+    )
+}
+
+/// The toast's second line once the blyg has generated.
+pub(crate) const DONE_ON_BLYG: &str = "Your blyg noted what it read";
+
+/// ⏎ while another AI job runs: the sheet stays, and this says why.
+pub(crate) const BUSY: (&str, &str) = (
+    "Another AI job is still running",
+    "When it's done, press ⏎ again",
+);
 
 /// One failure under Details.
 pub(crate) fn failure_line(link: &str, reason: &str) -> String {
@@ -120,24 +155,39 @@ impl MainView {
             item,
             index,
             kind,
+            details: checkpoint.failed.len() <= DETAILS_OPEN_UP_TO,
             checkpoint,
-            details: false,
             focus,
         });
         cx.notify();
     }
 
     /// ⏎: generate without the links that couldn't be read.
+    /// While another AI job runs, the sheet stays and a toast says why.
     pub(crate) fn tk_checkpoint_generate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.sheet.is::<TkCheckpointSheet>() {
+            return;
+        }
+        if self.ai.job.is_some() {
+            self.show_toast(BUSY.0, Some(BUSY.1.into()), cx);
+            return;
+        }
         let Some(s) = self.sheet.take::<TkCheckpointSheet>() else {
             return;
         };
         self.focus_after_sheet(window, cx);
         cx.notify();
-        if self.ai_busy(cx) {
-            return;
-        }
         self.ai_on_blyg(s.kind, s.item, s.index, true, window, cx);
+    }
+
+    /// esc: nothing generated; say what to do about the links.
+    pub(crate) fn tk_checkpoint_cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(s) = self.sheet.get::<TkCheckpointSheet>() else {
+            return;
+        };
+        let (text, sub) = cancelled(&s.checkpoint);
+        self.close_sheet(window, cx);
+        self.show_toast(text, Some(sub.into()), cx);
     }
 
     /// Details: show or hide the links and why.
@@ -166,29 +216,31 @@ impl MainView {
         } else {
             blyg_core::tk::remap(&keyed, &scopes, &text).unwrap_or_default()
         };
-        // Names only when a post is among the sources (the items are read
-        // once then).
-        let items = std::cell::OnceCell::new();
-        let name_of = |s: &blyg_core::ProvenanceSource| -> Option<String> {
-            match &s.origin {
-                None => items
-                    .get_or_init(|| self.backend.items())
-                    .iter()
-                    .find(|i| i.server_id.as_ref().is_some_and(|sid| sid.0 == s.id))
-                    .map(crate::vm::item_title),
-                Some(o) => self
-                    .backend
-                    .reading_with_id(&blyg_core::RemoteId::from(s.id.as_str()))
-                    .into_iter()
-                    .find(|r| blyg_core::profile::same_origin(&r.origin, o))
-                    .map(|r| crate::app::reading::vm::post_title(&r)),
+        let names = crate::ai::read::Names::new(&*self.backend, None);
+        crate::ai::read::scopes(&scopes, &|s| names.get(s), true)
+    }
+
+    /// A post's title (or "a post") in the list: opens it, your own here
+    /// and another blyg's on its page.
+    fn tk_read_open(
+        &mut self,
+        open: crate::ai::read::Open,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match open {
+            crate::ai::read::Open::Own(id) => {
+                self.close_sheet(window, cx);
+                self.open(&id, window, cx);
             }
-        };
-        crate::ai::read::scopes(&scopes, &name_of)
+            crate::ai::read::Open::Web(url) => self.open_link(url, window, cx),
+        }
     }
 
     /// "What generation read": each scope, its posts and pages, and which
-    /// tell another blyg. `None` when nothing was read.
+    /// tell another blyg. `None` when nothing was read. The entries scroll
+    /// past [`READ_LIST_MAX_H`], so a sheet holding them keeps its keys on
+    /// screen.
     pub(crate) fn render_tk_read(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::ai::read;
         let (scopes, more) = read::capped(self.tk_read(cx));
@@ -196,58 +248,92 @@ impl MainView {
             return None;
         }
         let p = self.palette;
-        let mut col = div()
-            .id("tk-read")
-            .debug_selector(|| "tk-read".into())
-            .mb(px(8.))
+        let link = |id: String, label: String, open: read::Open, cx: &mut Context<Self>| {
+            div()
+                .id(SharedString::from(id))
+                .text_color(p.accent)
+                .cursor_pointer()
+                .hover(|s| s.underline())
+                .child(label)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.tk_read_open(open.clone(), window, cx)
+                }))
+        };
+        let mut list = div()
+            .id("tk-read-list")
+            .debug_selector(|| "tk-read-list".into())
+            .max_h(px(READ_LIST_MAX_H))
+            .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(2.))
-            .text_size(px(12.))
-            .line_height(relative(1.4))
-            .child(
-                div()
-                    .text_color(p.muted)
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(read::HEADING),
-            );
+            .gap(px(2.));
         for (scope, entries) in scopes {
-            col = col.child(div().text_color(p.muted).child(read::scope_label(scope)));
+            list = list.child(div().text_color(p.muted).child(read::scope_label(scope)));
             for (i, e) in entries.into_iter().enumerate() {
                 let id = format!("tk-read-{scope}-{i}");
-                let url = e.url.clone();
-                col = col.child(
+                // The words, with the post's title (or "a post") as its link.
+                let words: Vec<AnyElement> = match &e.link {
+                    Some((label, open)) if e.what.contains(label.as_str()) => {
+                        let (before, after) = e.what.split_once(label.as_str()).unwrap_or_default();
+                        let mut out = Vec::new();
+                        if !before.is_empty() {
+                            out.push(
+                                div()
+                                    .child(before.trim_end().to_string())
+                                    .into_any_element(),
+                            );
+                        }
+                        out.push(
+                            link(
+                                format!("tk-read-post-{scope}-{i}"),
+                                label.clone(),
+                                open.clone(),
+                                cx,
+                            )
+                            .into_any_element(),
+                        );
+                        if !after.is_empty() {
+                            out.push(
+                                div()
+                                    .child(after.trim_start().to_string())
+                                    .into_any_element(),
+                            );
+                        }
+                        out
+                    }
+                    _ => vec![div().child(e.what.clone()).into_any_element()],
+                };
+                list = list.child(
                     div()
                         .debug_selector(move || id.clone())
                         .pl(px(10.))
                         .flex()
                         .flex_wrap()
                         .gap(px(6.))
-                        .child(div().text_color(p.ink).child(e.what.clone()))
-                        .when_some(url, |d, u| {
-                            let open = u.clone();
-                            d.child(
-                                div()
-                                    .id(SharedString::from(format!("tk-read-url-{scope}-{i}")))
-                                    .text_color(p.accent)
-                                    .cursor_pointer()
-                                    .hover(|s| s.underline())
-                                    .child(u)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.open_link(open.clone(), window, cx)
-                                    })),
-                            )
-                        })
                         .child(
                             div()
-                                .text_color(if e.tells { p.warn_text() } else { p.muted })
-                                .child(format!("· {}", read::mark(&e))),
-                        ),
+                                .flex()
+                                .flex_wrap()
+                                .gap(px(4.))
+                                .text_color(p.ink)
+                                .children(words),
+                        )
+                        .when_some(e.url.clone(), |d, u| {
+                            d.child(link(
+                                format!("tk-read-url-{scope}-{i}"),
+                                u.clone(),
+                                read::Open::Web(u),
+                                cx,
+                            ))
+                        })
+                        .when_some(read::mark(&e), |d, m| {
+                            d.child(div().text_color(p.warn_text()).child(format!("· {m}")))
+                        }),
                 );
             }
         }
         if more > 0 {
-            col = col.child(
+            list = list.child(
                 div()
                     .debug_selector(|| "tk-read-more".into())
                     .pl(px(10.))
@@ -255,9 +341,37 @@ impl MainView {
                     .child(read::more(more)),
             );
         }
-        Some(col.into_any_element())
+        Some(
+            div()
+                .id("tk-read")
+                .debug_selector(|| "tk-read".into())
+                .mb(px(8.))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .text_size(px(12.))
+                .line_height(relative(1.4))
+                .child(
+                    div()
+                        .text_color(p.muted)
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(read::HEADING),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "tk-read-tells-no-one".into())
+                        .text_color(p.muted)
+                        .child(read::TELLS_NO_ONE),
+                )
+                .child(list)
+                .into_any_element(),
+        )
     }
 }
+
+/// The most height the list of what generation read takes (as the
+/// preview's pane under the page): longer lists scroll.
+pub(crate) const READ_LIST_MAX_H: f32 = 160.;
 
 /// The demo's gap: one link the fake blyg can't read (a `.invalid` host)
 /// and one it can.
@@ -308,7 +422,12 @@ impl MainView {
                                 return false;
                             }
                             match scene {
-                                Scene::AiCheckpointDetails => v.tk_checkpoint_details(cx),
+                                Scene::AiCheckpointDetails => {
+                                    if let Some(s) = v.sheet.get_mut::<TkCheckpointSheet>() {
+                                        s.details = true;
+                                        cx.notify();
+                                    }
+                                }
                                 Scene::AiTkRead => v.publish(window, cx),
                                 _ => {}
                             }
@@ -355,7 +474,8 @@ impl SheetView for TkCheckpointSheet {
                 .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
                     match ev.keystroke.key.as_str() {
                         "enter" => this.tk_checkpoint_generate(window, cx),
-                        "escape" => this.close_sheet(window, cx),
+                        "escape" => this.tk_checkpoint_cancel(window, cx),
+                        "d" if !ev.keystroke.modifiers.modified() => this.tk_checkpoint_details(cx),
                         _ => return,
                     }
                     cx.stop_propagation();
@@ -396,10 +516,18 @@ impl SheetView for TkCheckpointSheet {
                             }),
                         ))
                         .child(crate::platform::key_button(
+                            kit.key_hint("d", "details")
+                                .debug_selector(|| "tk-checkpoint-details-key".into()),
+                            "tk-checkpoint-details-key",
+                            cx.listener(|this, _, _, cx| this.tk_checkpoint_details(cx)),
+                        ))
+                        .child(crate::platform::key_button(
                             kit.key_hint("esc", "cancel")
                                 .debug_selector(|| "tk-checkpoint-cancel".into()),
                             "tk-checkpoint-cancel",
-                            cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                            cx.listener(|this, _, window, cx| {
+                                this.tk_checkpoint_cancel(window, cx)
+                            }),
                         )),
                 )
                 .into_any_element(),
@@ -408,33 +536,5 @@ impl SheetView for TkCheckpointSheet {
 }
 
 #[cfg(test)]
-mod tests {
-    use blyg_core::generate::{Checkpoint, UnreadLink};
-
-    #[test]
-    fn the_question_is_the_studios() {
-        let c = Checkpoint {
-            read: 1,
-            total: 2,
-            failed: vec![UnreadLink {
-                link: "https://gone.invalid/a".into(),
-                reason: "HTTP 404".into(),
-            }],
-        };
-        assert_eq!(
-            super::heading(&c),
-            "1 of 2 links in the draft could not be read. Generate anyway?"
-        );
-        assert!(super::hint(&c).starts_with("The 1 that could be read will be drawn on"));
-        let one = Checkpoint {
-            read: 0,
-            total: 1,
-            ..c
-        };
-        assert_eq!(
-            super::heading(&one),
-            "1 of 1 link in the draft could not be read. Generate anyway?"
-        );
-        assert!(super::hint(&one).starts_with("The model sees only"));
-    }
-}
+#[path = "checkpoint_tests.rs"]
+mod checkpoint_tests;

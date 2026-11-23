@@ -1131,7 +1131,8 @@ impl MainView {
             }
             Setup::Stream => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
-                self.stream_move(1, window, cx);
+                // The newest, whatever an earlier step left selected.
+                self.stream_select(0, window, cx);
             }
             Setup::StreamLead => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
@@ -2144,6 +2145,17 @@ impl MainView {
             );
 
         let rect = self.tutorial_ring(step.region, window, cx);
+        // A step entered before the Stream's list filled (the window just
+        // opened) selected nothing: select the newest card once it's there,
+        // so the ring has a card to go round.
+        if rect.is_none()
+            && step.region == Region::StreamPost
+            && step.setup == Setup::Stream
+            && self.reading.sel.is_none()
+            && self.reading.shown_rows().next().is_some()
+        {
+            self.stream_select(0, window, cx);
+        }
         // The stream's post has bounds only once the list has laid it out:
         // ask for a few more frames.
         if rect.is_none()

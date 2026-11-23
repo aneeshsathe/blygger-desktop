@@ -2425,3 +2425,58 @@ fn the_extensions_tour_teaches_automatic_cross_posting() {
         tour.steps
     );
 }
+
+/// User testing of 0.71: "Click this card's date" while the ring sat on a
+/// card the step's own panel covered (the selection an earlier step left,
+/// one down). The step selects the newest card, says to click the date on
+/// the highlighted card, and doesn't ask for "fully" on screen.
+#[gpui_kit::test]
+fn the_date_step_highlights_the_newest_card(cx: &mut TestAppContext) {
+    let mut e = setup_ext(cx);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
+    enter(&mut e, "count-read");
+    settle(&mut e);
+    let newest = |e: &mut Env| {
+        e.view.read_with(e.cx, |v, _| {
+            let first = v
+                .reading
+                .shown_rows()
+                .next()
+                .map(crate::app::reading::vm::key);
+            first.is_some() && v.reading.sel == first
+        })
+    };
+    // Entered straight away, before the Stream's list has filled.
+    assert!(newest(&mut e), "the newest card is selected");
+    // An earlier step's selection, further down.
+    e.view
+        .update_in(e.cx, |v, window, cx| v.stream_move(2, window, cx));
+    settle(&mut e);
+    enter(&mut e, "count-read");
+    settle(&mut e);
+    let (sel, first) = e.view.read_with(e.cx, |v, _| {
+        (
+            v.reading.sel.clone(),
+            v.reading
+                .shown_rows()
+                .next()
+                .map(crate::app::reading::vm::key),
+        )
+    });
+    assert!(first.is_some());
+    assert_eq!(sel, first, "the newest card is selected");
+    let step = &STEPS[steps::index("count-read").unwrap()];
+    for p in [
+        crate::platform_text::Platform::Mac,
+        crate::platform_text::Platform::Windows,
+    ] {
+        let caption = step.caption.on(p);
+        assert!(
+            caption.contains("Click the date on the highlighted card"),
+            "{caption}"
+        );
+        assert!(!caption.contains("fully on screen"), "{caption}");
+    }
+}

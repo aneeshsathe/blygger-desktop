@@ -48,19 +48,24 @@ provider.
 With **your blyg server** as the provider, ⌘G asks your blyg to fill the gap
 (blygger-studio 0.70 and later). Your blyg first reads every link in the
 gap, posts and web pages alike. If some can't be read, it stops and saves
-nothing, and Burrow asks: "1 of 2 links in the draft could not be read.
-Generate anyway?" **Details** lists each link and why it failed. **⏎**
+nothing, and Burrow asks: "1 of 2 links in this TK could not be read.
+Generate anyway?" **Details** lists each link and why it failed; it is open
+already when three or fewer failed, and **d** shows or hides it. **⏎**
 generates anyway: what could be read is drawn on, and the model sees only
-the address of the rest. **esc** cancels and leaves the draft as it was.
-Burrow's other providers never stop here.
+the address of the rest and is told not to describe it. **esc** cancels,
+leaves the draft as it was, and reminds you to remove or replace the link
+before you try again. Burrow's other providers never stop here.
 
 ### What each generation read
 
-After your blyg fills a gap, Burrow lists what it read, gap by gap: the
-posts it drew on and the web pages it read (site and address). A post on
-another blyg is marked "tells its author when you publish"; your own posts
-and web pages tell no one. The list is under the preview (⌘2 or ⌘3) and in
-the Publish sheet, so you can check it before you publish.
+After your blyg fills a gap, Burrow lists what it read, gap by gap (each
+gap by its number in the post): the posts it drew on, by title when Burrow
+holds them (click one to open it) and otherwise by their blyg, and the web
+pages it read, by address (and site, when that isn't the address's host). A
+post on another blyg is marked "tells its author when you publish"; your own
+posts and web pages tell no one. The list is under the preview (⌘2 or ⌘3)
+and in the Publish sheet, so you can check it before you publish; a long
+one scrolls. It shows the first 50 entries, then how many more there are.
 
 The config keys `ai-model` and `ai-provider-model` pick models, and
 `ai-style-prompt` adds your own instructions to every prompt ("Write plainly.

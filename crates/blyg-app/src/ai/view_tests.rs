@@ -726,21 +726,32 @@ fn a_link_the_blyg_cant_read_stops_at_the_checkpoint_and_esc_keeps_the_draft(
     let (heading, details, failed) = e.checkpoint().unwrap();
     assert_eq!(
         heading,
-        "1 of 2 links in the draft could not be read. Generate anyway?"
+        "1 of 2 links in this TK could not be read. Generate anyway?"
     );
     assert_eq!(failed, vec!["https://gone.invalid/a".to_string()]);
-    // The keys are shown; the failures wait under Details.
+    // The keys are shown, and with one failure Details is open already.
     assert!(e.cx.debug_bounds("tk-checkpoint-generate").is_some());
     assert!(e.cx.debug_bounds("tk-checkpoint-cancel").is_some());
-    assert!(!details);
+    assert!(e.cx.debug_bounds("tk-checkpoint-details-key").is_some());
+    assert!(details, "Details opens by itself for a few failures");
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_some());
+    // d hides it and shows it again; so does a click.
+    e.cx.simulate_keystrokes("d");
+    e.cx.run_until_parked();
+    assert!(!e.checkpoint().unwrap().1, "d closed Details");
     assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_none());
     e.click("tk-checkpoint-details");
     assert!(e.checkpoint().unwrap().1, "Details opened");
     assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_some());
-    // esc: nothing generated, nothing changed.
+    // esc: nothing generated, nothing changed, and it says what to do.
     e.cx.simulate_keystrokes("escape");
     e.cx.run_until_parked();
     assert!(e.checkpoint().is_none(), "the sheet closed");
+    let toast = e.toast();
+    assert!(
+        toast.starts_with("Nothing was generated | Remove or replace the link"),
+        "{toast}"
+    );
     assert_eq!(e.text(), UNREAD);
     assert_eq!(
         e.fake.item(&LocalId(DRAFT.into())).unwrap().content_md,
@@ -762,6 +773,10 @@ fn enter_generates_anyway_and_lists_what_it_read(cx: &mut TestAppContext) {
     e.wait("the text the blyg generated", |v| {
         v.ai.job.is_none() && !v.sheet.is_open()
     });
+    assert_eq!(
+        e.toast(),
+        "Generated on your blyg | Your blyg noted what it read"
+    );
     let view = e.view.clone();
     crate::test_wait::until(e.cx, "the spliced text in the editor", move |cx| {
         cx.run_until_parked();
@@ -781,7 +796,8 @@ fn enter_generates_anyway_and_lists_what_it_read(cx: &mut TestAppContext) {
     assert_eq!(read.len(), 1, "{read:?}");
     let (scope, entries) = &read[0];
     assert_eq!(*scope, 0);
-    assert_eq!(entries[0].what, "read news.example.com");
+    // The page's site is its host: said once, as its address.
+    assert_eq!(entries[0].what, "read");
     assert_eq!(
         entries[0].url.as_deref(),
         Some("https://news.example.com/b")
@@ -1025,4 +1041,147 @@ fn server_fill_takes_the_answer_already_held() {
         server_fill(ASKED, ANSWERED, Some(ANSWERED.into())).as_deref(),
         Some(ANSWERED)
     );
+
+// --- studio 0.71 user testing ---
+
+/// Finding 3: ⏎ while another AI job runs did nothing. The sheet stays,
+/// and a toast says why.
+#[gpui_kit::test]
+fn enter_while_another_ai_job_runs_keeps_the_checkpoint_and_says_why(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    e.view.update(e.cx, |v, _| {
+        v.ai.job = Some(super::Job {
+            id: 999,
+            provider: blyg_ai::ProviderKind::BlygServer,
+            cancel: Default::default(),
+            verb: "generating",
+        })
+    });
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(e.checkpoint().is_some(), "the sheet stays");
+    assert_eq!(
+        e.toast(),
+        "Another AI job is still running | When it's done, press ⏎ again"
+    );
+    e.view.update(e.cx, |v, _| v.ai.job = None);
+}
+
+/// Sixty pages read, in a 720 px window.
+fn a_long_list(cx: &mut TestAppContext) -> Env<'_> {
+    let mut e = setup(cx, None);
+    e.cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(720.)));
+    let text = "[TK]sum up the news[=]A summary.[/TK]";
+    e.open_with(text);
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://site{i}.example.org/harbour/tides/{i}");
+            serde_json::json!({ "url": url, "cited": { "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let scope: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages })).unwrap();
+    e.fake
+        .save_with_provenance(&LocalId(DRAFT.into()), text, &[Some(scope)])
+        .unwrap();
+    e.cx.run_until_parked();
+    e
+}
+
+fn window_h(e: &mut Env) -> f32 {
+    e.cx.update(|window, _| f32::from(window.viewport_size().height))
+}
+
+/// The BLOCKER: fourteen or more entries pushed the note field and the
+/// keys off the window. The list scrolls inside a fixed height now.
+#[gpui_kit::test]
+fn a_long_list_scrolls_and_the_publish_keys_stay_on_screen(cx: &mut TestAppContext) {
+    let mut e = a_long_list(cx);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    let list = e.cx.debug_bounds("tk-read-list").expect("the list");
+    assert!(
+        f32::from(list.size.height) <= super::checkpoint::READ_LIST_MAX_H + 0.5,
+        "{list:?}"
+    );
+    let keys = e.cx.debug_bounds("publish-keys").expect("the keys");
+    let h = window_h(&mut e);
+    assert!(f32::from(keys.bottom()) <= h, "{keys:?} in {h}");
+    assert!(e.cx.debug_bounds("tk-read-tells-no-one").is_some());
+}
+
+/// Any tall sheet stops short of the window's bottom and scrolls.
+#[gpui_kit::test]
+fn a_tall_sheet_stops_short_of_the_window_bottom(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(600.)));
+    e.open_with(UNREAD);
+    let failed = (0..40)
+        .map(|i| blyg_core::generate::UnreadLink {
+            link: format!("https://gone{i}.invalid/a"),
+            reason: "HTTP 404".into(),
+        })
+        .collect();
+    let checkpoint = blyg_core::generate::Checkpoint {
+        read: 0,
+        total: 40,
+        failed,
+    };
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.tk_checkpoint_open(
+            LocalId(DRAFT.into()),
+            0,
+            blyg_ai::ProviderKind::BlygServer,
+            checkpoint,
+            window,
+            cx,
+        )
+    });
+    e.cx.run_until_parked();
+    assert!(
+        !e.checkpoint().unwrap().1,
+        "Details waits for a click with this many"
+    );
+    e.cx.simulate_keystrokes("d");
+    e.cx.run_until_parked();
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-39").is_some());
+    let sheet = e.cx.debug_bounds("sheet").expect("the sheet");
+    let h = window_h(&mut e);
+    assert!(f32::from(sheet.bottom()) <= h, "{sheet:?} in {h}");
+}
+
+/// Finding 2: a post of yours that generation drew on is named by its
+/// title and opens here, never by its id; one not held, by its blyg.
+#[gpui_kit::test]
+fn a_post_held_here_is_listed_by_its_title(cx: &mut TestAppContext) {
+    let e = setup(cx, None);
+    let own = e
+        .fake
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.is_some() && i.local_id.0 != DRAFT)
+        .expect("a published post");
+    let source = |id: &str, origin: Option<&str>| blyg_core::ProvenanceSource {
+        id: id.into(),
+        origin: origin.map(str::to_string),
+        ..Default::default()
+    };
+    let names = crate::ai::read::Names::new(&*e.fake, None);
+    let mine = source(&own.server_id.as_ref().unwrap().0, None);
+    let entry = crate::ai::read::post(&mine, names.get(&mine), true);
+    let title = crate::vm::item_title(&own);
+    assert_eq!(entry.what, format!("drew on your post “{title}”"));
+    assert_eq!(
+        entry.link.as_ref().map(|(_, o)| o.clone()),
+        Some(crate::ai::read::Open::Own(own.local_id.clone()))
+    );
+    let far = source("01kunheld", Some("https://kit.blyg.example.com"));
+    assert_eq!(names.get(&far), None);
+    let entry = crate::ai::read::post(&far, None, true);
+    assert_eq!(entry.what, "drew on a post on kit.blyg.example.com");
 }

@@ -36,14 +36,15 @@ revised leads with its latest changelog note,
 
 ### Count an entry as read
 
-On a blyg with blygger-studio 0.70 or later, **Settings › READER ORDER** has
-**Count an entry as read**, kept on your blyg and shared with Studio:
+On a blyg with blygger-studio 0.70 or later, **Settings › READ MARKS** has
+**Count an entry as read**, kept on your blyg and shared with Studio. ⇥
+reaches it from the top of Settings; ←/→ choose and space or ⏎ saves.
 
 | Choice | What marks a post read |
 |---|---|
-| when I see it (the default) | In the stream, a card that has been fully on screen for about a second, short posts included. Opening a post marks it too. |
-| when I open it | Opening the post: Read more, ⏎, a click on its date, or a row in the Reader. |
-| only when I mark it | Nothing by itself: only marking it read by hand. |
+| when I see it (the default) | In the stream, a card that has been on screen for about a second, short posts included. Opening a post marks it too. |
+| when I open it | Opening the post: Read more, ⏎, a click on its date, or a row in the Reader. A short post shown whole in the stream stays unread until you open it or mark it. |
+| only when I mark it | Nothing by itself: only r, the post menu, ⇧R or Mark All Read. |
 
 How "on screen" is measured, as Studio does it: about four times a second
 while the window is in front, Burrow checks each card it has drawn. A card

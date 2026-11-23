@@ -1639,6 +1639,7 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
     ("while macOS is dark", "while Windows is dark"),
     ("your other Macs", "your other PCs"),
     ("this Mac", "this PC"),
+    ("This Mac", "This PC"),
     ("your Mac", "your PC"),
     ("another Mac", "another PC"),
     // Windows has no menu bar; the Menu button lists the same items.
