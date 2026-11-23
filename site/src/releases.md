@@ -7,8 +7,9 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 
 ## Burrow 0.28.0
 
-Burrow catches up with blygger-studio 0.68's reading, and 0.69's Agentic
-feed, dictionary and text helpers.
+Burrow catches up with blygger-studio 0.71: 0.68's reading, 0.69's Agentic
+feed, dictionary and text helpers, and 0.70–0.71's links read while
+generating and choice of what counts as read.
 
 ### Reading in the studio's tabs
 
@@ -66,12 +67,14 @@ per post](extensions.md#cross-posting-automatically-per-post).
 ### Generating on your blyg: links it can't read, and what it read
 
 With your blyg as the AI provider (blygger-studio 0.70 and later), ⌘G reads
-every link in the gap first. When some can't be read, Burrow asks "**n of m
-links in the draft could not be read. Generate anyway?**", the failures under
-**Details**: ⏎ generates anyway, esc leaves the draft alone. Afterwards the
-preview and the Publish sheet list what each gap read: the posts it drew on
-(marked when publishing tells their author) and the web pages, by site and
-address. Posts you read list the same, when their publisher disclosed it. See
+every link in the gap first. When some can't be read, Burrow asks whether
+to **generate anyway**, naming the links that failed under **Details** (open
+when there are a few; **d** opens and closes it): ⏎ generates anyway, esc
+leaves the draft alone. Afterwards the preview and the Publish sheet list
+what each gap read: the posts it drew on, by title, and the web pages, marking
+the ones publishing tells. Posts you read list the same, when their publisher
+disclosed it. Keep typing while your blyg generates: what you type elsewhere
+in the post is kept with the generated text. See
 [When your blyg can't read a link](ai.md#when-your-blyg-cant-read-a-link).
 
 ### Count an entry as read
@@ -79,7 +82,8 @@ address. Posts you read list the same, when their publisher disclosed it. See
 On blygger-studio 0.70 and later, Settings › READ MARKS has **Count an
 entry as read**: when I see it (a card on screen for about a second,
 sent to your blyg in batches), when I open it, or only when I mark it. Your
-blyg keeps the choice. A card's **date** now opens the post, in the stream
+blyg keeps the choice, shared with Studio: change it there and Burrow follows
+when you come back to it. A card's **date** now opens the post, in the stream
 and the Reader. See [Count an entry as read](reading.md#count-an-entry-as-read).
 
 ### Windows
