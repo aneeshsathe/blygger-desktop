@@ -66,6 +66,9 @@ impl SheetView for PublishSheet {
                         .text_color(p.warn_text())
                         .child(w)
                 }))
+                // --- studio 0.71 --- what the generated text read, and
+                // which of it tells another blyg.
+                .children(v.render_tk_read(cx))
                 .child(kit.input_box(gpui_kit::base::input::Input::new(note).into_any_element()))
                 .children(v.render_note_ai(cx)) // --- access-ai ---
                 .children(v.render_auto_crosspost(id, cx)) // --- auto cross-post ---

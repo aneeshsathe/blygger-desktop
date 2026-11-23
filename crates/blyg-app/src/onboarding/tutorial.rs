@@ -653,6 +653,9 @@ impl MainView {
                             crate::app::reading::sources_vm::Smart::Raw,
                         ),
             ),
+            // --- studio 0.71 --- a card's date clicked: its post open
+            // beside the Stream.
+            (Key::StreamDate, opened.is_some() && !reader),
             (
                 Key::AgenticTab,
                 reader
@@ -1464,6 +1467,12 @@ impl MainView {
                 ),
                 cx,
             ),
+            "count-read" => {
+                let k = self.reading.sel.clone();
+                if let Some(k) = k {
+                    self.stream_read_more(k, window, cx);
+                }
+            }
             "agentic-edition" => self.select_source(
                 crate::app::reading::sources_vm::Source::Smart(
                     crate::app::reading::sources_vm::Smart::Agentic,

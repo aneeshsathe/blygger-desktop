@@ -196,6 +196,11 @@ fn generate_stops_at_a_checkpoint_until_told_to_proceed() {
             let body = g.content_md.expect("the spliced body");
             assert!(body.contains(&g.text));
             assert_eq!(b.item(&id).unwrap().content_md, body, "held here too");
+            // What the blyg recorded is kept here too: the writer lists what
+            // the scope read, and an edit that moves the scopes carries it.
+            let (keyed, scopes) = b.tracked_tk_provenance(&id).expect("its provenance");
+            assert_eq!(keyed, body);
+            assert!(scopes.first().is_some_and(Option::is_some), "{scopes:?}");
         }
         // The local Worker has no Workers AI binding (nothing billed).
         Err(err) => eprintln!("past the checkpoint; no AI on this local Worker ({err})"),

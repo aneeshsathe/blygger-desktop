@@ -239,6 +239,8 @@ struct State {
     /// whether this computer has read it (until then, not offered).
     mark_read: blyg_core::mark_read::MarkRead,
     mark_read_served: bool,
+    /// False: the blyg predates the setting (studio before 0.70).
+    mark_read_offered: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -448,6 +450,7 @@ impl FakeBackend {
                 reader_order: FakeReaderOrder::default(), // --- reader order ---
                 mark_read: blyg_core::mark_read::MarkRead::Seen, // --- studio 0.71 ---
                 mark_read_served: false,
+                mark_read_offered: true,
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
@@ -552,6 +555,15 @@ impl FakeBackend {
                 hash_mismatch: false,
             },
         );
+    }
+
+    /// --- studio 0.71 --- Tests: a blyg without "Count an entry as read"
+    /// (`readerMarkRead`, before studio 0.70), so Burrow's earlier read
+    /// marks hold.
+    #[cfg(test)]
+    pub fn without_reader_mark_read(self) -> Self {
+        self.lock().mark_read_offered = false;
+        self
     }
 
     /// Tests: keep uploads in memory only (don't touch the data dir).
@@ -3049,6 +3061,9 @@ impl Backend for FakeBackend {
     fn load_reader_mark_read(&self) -> Result<Option<blyg_core::mark_read::MarkRead>> {
         self.remote_guard()?;
         let mut s = self.lock();
+        if !s.mark_read_offered {
+            return Ok(None);
+        }
         s.mark_read_served = true;
         Ok(Some(s.mark_read))
     }

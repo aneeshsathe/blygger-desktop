@@ -1092,7 +1092,7 @@ impl Render for MainView {
                                         // whose body is the reader's WebView); --- side ---
                                         // the divider between them drags.
                                         if preview_beside {
-                                            let preview = self.studio_pane(&p);
+                                            let preview = self.studio_pane(&p, cx);
                                             row.child(
                                                 self.side_preview_row(editor, preview, rest, cx),
                                             )

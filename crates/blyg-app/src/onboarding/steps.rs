@@ -158,6 +158,9 @@ pub enum Key {
     RawTab,
     /// Reading's Agentic feed is the source (studio 0.69's edition).
     AgenticTab,
+    /// --- studio 0.71 --- A Stream card's date was clicked: its post is
+    /// open in the side pane.
+    StreamDate,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -1382,6 +1385,28 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.28.0 --- studio 0.71: a card's date opens it; when an entry
+    // counts as read.
+    Step {
+        id: "count-read",
+        since: "0.28.0",
+        title: ui_text("A date opens its post; what counts as read"),
+        caption: ui_text(
+            "A card's date opens its post in full beside the Stream (in the Reader, a row's \
+                  date opens it too). On a blyg with blygger-studio 0.70 or later, Settings \
+                  (⌘,) › READER ORDER has “Count an entry as read”: when a card has been fully \
+                  on screen for about a second, when you open it, or only when you mark it. \
+                  Click this card's date.",
+        ),
+        keys: &[Key::StreamDate],
+        key_label: ui_text("click"),
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
     // --- 0.28.0 --- studio 0.69: the Agentic feed's edition.
     Step {
         id: "agentic-edition",
@@ -2089,6 +2114,7 @@ pub const TOURS: &[Tour] = &[
             "reader",
             "feed-order",
             "raw-tab",
+            "count-read",
             "agentic-edition",
             "background",
             "parts",
@@ -2313,8 +2339,9 @@ mod tests {
             Key::FeedOrder, // --- 0.28.0 ---
             Key::RawTab,
             Key::AgenticTab,
-            Key::MoreMenu, // --- 0.26.0 ---
-            Key::Tangle,   // --- 0.27.0 ---
+            Key::StreamDate, // --- studio 0.71 ---
+            Key::MoreMenu,   // --- 0.26.0 ---
+            Key::Tangle,     // --- 0.27.0 ---
             Key::Formula,
             Key::Parts,
         ] {

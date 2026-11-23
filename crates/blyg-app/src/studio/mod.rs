@@ -1016,7 +1016,7 @@ impl MainView {
     }
 
     /// The preview pane: the WebView is placed over this element's bounds.
-    pub(super) fn studio_pane(&self, p: &Palette) -> AnyElement {
+    pub(super) fn studio_pane(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let base = div()
             .id("preview-pane")
             .flex_1()
@@ -1038,14 +1038,32 @@ impl MainView {
                 .into_any_element();
         }
         let slot = self.studio.slot.clone();
-        base.child(
-            canvas(
-                |bounds, _, _| bounds,
-                move |_, bounds, _, _| slot.borrow_mut().place(bounds),
-            )
-            .size_full(),
-        )
-        .into_any_element()
+        let page = canvas(
+            |bounds, _, _| bounds,
+            move |_, bounds, _, _| slot.borrow_mut().place(bounds),
+        );
+        // --- studio 0.71 --- under the page, what its generated text read
+        // (the studio's TK panel lists it; the page itself never shows it).
+        match self.render_tk_read(cx) {
+            None => base.child(page.size_full()).into_any_element(),
+            Some(read) => base
+                .flex()
+                .flex_col()
+                .child(page.w_full().flex_1().min_h_0())
+                .child(
+                    div()
+                        .id("preview-tk-read")
+                        .flex_none()
+                        .max_h(px(160.))
+                        .overflow_y_scroll()
+                        .px(px(16.))
+                        .pt(px(8.))
+                        .rule_t(p)
+                        .font_family(self.theme.chrome_font(&self.prefs))
+                        .child(read),
+                )
+                .into_any_element(),
+        }
     }
 
     /// The status bar's preview segment (preview modes only).

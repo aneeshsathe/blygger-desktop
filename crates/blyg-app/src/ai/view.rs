@@ -13,9 +13,7 @@
 use std::sync::Arc;
 
 use blyg_ai::prompts::{self, Suggestion};
-use blyg_ai::{
-    AccountRow, CancelFlag, GenRequest, Provider, ProviderKind, ProviderStatus, ServerScope,
-};
+use blyg_ai::{AccountRow, CancelFlag, Provider, ProviderKind, ProviderStatus};
 use blyg_core::{Item, Kind, LocalId, ReadingItem, ScopeProvenance};
 use gpui_kit::base::input::{Escape, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -31,6 +29,9 @@ use crate::theme::Rule; // --- themes --- dividers
 #[cfg(test)]
 #[path = "view_tests.rs"]
 mod tests;
+// --- studio 0.71 --- ⌘G on the blyg, its checkpoint and what it read.
+#[path = "checkpoint.rs"]
+pub(crate) mod checkpoint;
 use crate::scenes::Scene;
 
 /// Per-window AI state (a field of `MainView`).
@@ -114,6 +115,13 @@ enum Done {
         item: LocalId,
         sent: String,
         content_md: Option<String>,
+    },
+    /// --- studio 0.71 --- the blyg couldn't read some links and saved
+    /// nothing: ask (`checkpoint.rs`).
+    Checkpoint {
+        item: LocalId,
+        index: usize,
+        checkpoint: blyg_core::generate::Checkpoint,
     },
     Shorten {
         item: LocalId,
@@ -393,6 +401,15 @@ impl MainView {
             (Scene::AiFill | Scene::AiPalette, 1) => self.ai_generate(&AiGenerate, window, cx),
             (Scene::AiShorten, 1) => self.ai_shorten(&AiShorten, window, cx),
             (Scene::AiSettings, 0) => self.ai_open_settings(window, cx),
+            // --- studio 0.71 --- ⌘G on the (fake) blyg, once the draft
+            // has synced (step 2).
+            (
+                Scene::AiCheckpoint
+                | Scene::AiCheckpointDetails
+                | Scene::AiTkRead
+                | Scene::AiTkReadPreview,
+                n,
+            ) => self.checkpoint_demo(scenario, n, window, cx),
             _ => {}
         }
     }
@@ -454,6 +471,17 @@ impl MainView {
 
         let (tx, rx) = async_channel::bounded(1);
         let provider: Arc<dyn Provider> = picked.provider;
+        // --- studio 0.71 --- the blyg's own generation is a Backend call
+        // (`generate_on_blyg`), which may tell the UI the item changed: it
+        // runs where every other Backend call does.
+        if kind == ProviderKind::BlygServer {
+            cx.background_spawn(async move {
+                let r = work(provider.as_ref(), &cancel);
+                let _ = tx.try_send(r);
+            })
+            .detach();
+            return self.ai_watch(id, kind, rx, window, cx);
+        }
         let spawned = std::thread::Builder::new()
             .name("blygger-ai".into())
             .spawn(move || {
@@ -465,6 +493,18 @@ impl MainView {
             self.show_toast(format!("Couldn't start the AI helper: {e}"), None, cx);
             return;
         }
+        self.ai_watch(id, kind, rx, window, cx);
+    }
+
+    /// Wait for job `id`'s answer on `rx`, and time it out.
+    fn ai_watch(
+        &mut self,
+        id: usize,
+        kind: ProviderKind,
+        rx: async_channel::Receiver<blyg_ai::Result<Done>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Poll rather than await the channel: the provider thread never has
         // to wake the UI executor (which GPUI's deterministic test
         // scheduler forbids), and a cancelled job just stops polling.
@@ -522,7 +562,7 @@ impl MainView {
             return;
         };
         if picked.kind == ProviderKind::BlygServer {
-            return self.ai_fill_on_server(picked, item, index, window, cx);
+            return self.ai_fill_on_server(picked, item, index, false, window, cx);
         }
         let style = ai::style_prompt(cx);
         let items = self.backend.items();
@@ -552,52 +592,78 @@ impl MainView {
     }
 
     /// The blyg builds the prompt, splices and records provenance itself
-    /// (`POST /api/items/:id/generate`); afterwards the item is re-pulled.
+    /// (`Backend::generate_on_blyg`, `POST /api/items/:id/generate`); the
+    /// item here is brought up to what it stored. Studio 0.70+ may stop at
+    /// a checkpoint first (links it couldn't read): the sheet asks, and
+    /// `proceed` goes on without them.
     fn ai_fill_on_server(
         &mut self,
         picked: Picked,
         item: Item,
         index: usize,
+        proceed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(sid) = item.server_id.clone().filter(|_| !item.pending_sync) else {
+        // What the store holds now: the editor's last keystroke may have
+        // synced since `item` was read.
+        let item = self.backend.item(&item.local_id).unwrap_or(item);
+        if item.server_id.is_none() || item.pending_sync {
             self.show_toast(
                 "The blyg doesn't have this version yet",
                 Some(crate::keymap::hint("Wait for it to sync, then ⌘G again").into()),
                 cx,
             );
             return;
-        };
+        }
         let backend = self.backend.clone();
         let sent = item.content_md.clone();
         let local = item.local_id.clone();
         self.ai_spawn(
             picked,
             "generating on the blyg",
-            move |p, cancel| {
-                let mut req = GenRequest::new("", "").with_cancel(cancel.clone());
-                req.server_scope = Some(ServerScope {
-                    item_id: sid.0,
-                    scope: index,
-                });
-                let r = p.generate(req, &mut |_| {})?;
-                let content_md = generate::server_content_md(&r);
-                // Without the server's copy, pull it (the fallback).
-                if content_md.is_none() {
-                    backend
-                        .sync_now()
-                        .map_err(|e| blyg_ai::AiError::Provider(e.to_string()))?;
+            move |_, _| {
+                use blyg_core::generate::GenerateOutcome;
+                match backend
+                    .generate_on_blyg(&local, index as u32, proceed)
+                    .map_err(checkpoint::on_blyg_error)?
+                {
+                    GenerateOutcome::Generated(g) => Ok(Done::Server {
+                        item: local,
+                        sent,
+                        content_md: g.content_md,
+                    }),
+                    GenerateOutcome::Checkpoint(c) => Ok(Done::Checkpoint {
+                        item: local,
+                        index,
+                        checkpoint: c,
+                    }),
                 }
-                Ok(Done::Server {
-                    item: local,
-                    sent,
-                    content_md,
-                })
             },
             window,
             cx,
         );
+    }
+
+    /// Go on with ⌘G on the blyg for `item` (the checkpoint's ⏎).
+    pub(crate) fn ai_on_blyg(
+        &mut self,
+        kind: ProviderKind,
+        item: LocalId,
+        index: usize,
+        proceed: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(it) = self.backend.item(&item) else {
+            return;
+        };
+        // The blyg generates: no provider of Burrow's runs.
+        let picked = Picked {
+            kind,
+            provider: Arc::new(checkpoint::OnBlyg),
+        };
+        self.ai_fill_on_server(picked, it, index, proceed, window, cx);
     }
 
     fn ai_run(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
@@ -818,6 +884,11 @@ impl MainView {
                     cx,
                 );
             }
+            Done::Checkpoint {
+                item,
+                index,
+                checkpoint,
+            } => self.tk_checkpoint_open(item, index, kind, checkpoint, window, cx),
             Done::Shorten {
                 item,
                 before,

@@ -1167,8 +1167,14 @@ impl Backend for LiveBackend {
         })?;
         if let crate::generate::GenerateOutcome::Generated(g) = &out {
             self.e().store.set_revision(id, g.revision)?;
-            // The spliced text and the provenance the blyg recorded.
-            self.refresh(id, &sid);
+            // The spliced text and the provenance the blyg recorded, kept
+            // here so the writer shows what it read and an edit that moves
+            // the scopes carries it.
+            if let Some(w) = self.refresh(id, &sid)
+                && let Some(p) = w.server_provenance()
+            {
+                self.e().store.adopt_prov(id, &w.content_md, &p)?;
+            }
             self.e().emit(CoreEvent::ItemsChanged);
         }
         Ok(out)

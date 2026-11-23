@@ -103,6 +103,11 @@ scenes! {
         AiPalette = "ai-palette",
         AiShorten = "ai-shorten",
         AiSettings = "ai-settings",
+        // --- studio 0.71 --- ⌘G on the blyg: the checkpoint, what it read.
+        AiCheckpoint = "ai-checkpoint",
+        AiCheckpointDetails = "ai-checkpoint-details",
+        AiTkRead = "ai-tk-read",
+        AiTkReadPreview = "ai-tk-read-preview",
     }
     /// reading/demo.rs (rd-browse*, rd-stream-nested: reading/browse.rs)
     Reading {
@@ -124,6 +129,10 @@ scenes! {
         RdStreamLineage = "rd-stream-lineage",
         RdStreamLineageRing = "rd-stream-lineage-ring",
         RdThreePane = "rd-three-pane",
+        // --- studio 0.71 --- a card's date opens the post; what a post's
+        // generated text read, at the end of the post in the Reader.
+        RdStreamDate = "rd-stream-date",
+        RdGenRead = "rd-gen-read",
         RdHoppers = "rd-hoppers",
         RdHopperPicker = "rd-hopper-picker",
         RdPicks = "rd-picks",
@@ -326,6 +335,8 @@ scenes! {
     Main {
         Newer = "newer",
         SettingsBackgroundLocked = "settings-background-locked",
+        // --- studio 0.71 --- READER ORDER's "Count an entry as read".
+        SettingsCountRead = "settings-count-read",
     }
     /// extensions/mod.rs (--- ux 0.28 ---): cross-post on and allowed, a
     /// published post edited, ⌘⏎: the Publish sheet's "Then cross-post to";
