@@ -190,6 +190,9 @@ struct State {
     prov: HashMap<LocalId, (String, Vec<Option<ScopeProvenance>>)>,
     /// Every `save_with_provenance`: the item and its scope count (tests).
     prov_saves: Vec<(LocalId, usize)>,
+    /// --- syndication --- copies elsewhere, by local id: this fake's own
+    /// (a process-wide list leaked between parallel tests' fakes).
+    syndication: HashMap<LocalId, Vec<blyg_core::syndication::SyndicationEntry>>,
     /// Simulate a Worker without the provenance extension (404).
     prov_unavailable: bool,
     /// Reading, subscriptions, mentions, site settings (see `fake_reading.rs`).
@@ -426,6 +429,7 @@ impl FakeBackend {
                 offline: false,
                 sink: None,
                 next_id: 1,
+                syndication: HashMap::new(),
                 prov: HashMap::new(),
                 prov_saves: Vec::new(),
                 prov_unavailable: false,
@@ -1135,12 +1139,7 @@ impl Backend for FakeBackend {
     // --- syndication --- for looking (BLYGGER_FAKE=1): kept in memory, and
     // one sample post you read lists a copy elsewhere.
     fn syndication(&self, id: &LocalId) -> Vec<blyg_core::syndication::SyndicationEntry> {
-        fake_syndication()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&id.0)
-            .cloned()
-            .unwrap_or_default()
+        self.lock().syndication.get(id).cloned().unwrap_or_default()
     }
     fn set_syndication(
         &self,
@@ -1151,10 +1150,7 @@ impl Backend for FakeBackend {
             return Err(CoreError::Other("Publish the post first".into()));
         }
         let kept = blyg_core::syndication::normalize(entries);
-        fake_syndication()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id.0.clone(), kept.clone());
+        self.lock().syndication.insert(id.clone(), kept.clone());
         Ok(kept)
     }
     fn syndication_served(&self) -> bool {
@@ -3786,15 +3782,6 @@ fn fake_withdrawn(st: &State, s: &blyg_core::TrailStop) -> bool {
                 && r.state == "tombstone"
         })
     }
-}
-
-/// --- syndication --- the fake's copies-elsewhere lists, by local id.
-fn fake_syndication()
--> &'static Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>> {
-    static M: std::sync::OnceLock<
-        Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>>,
-    > = std::sync::OnceLock::new();
-    M.get_or_init(Default::default)
 }
 
 #[cfg(test)]
