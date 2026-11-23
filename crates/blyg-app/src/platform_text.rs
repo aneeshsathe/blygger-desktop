@@ -697,9 +697,100 @@ mod tests {
         caret: Vec<(usize, String)>,
     }
 
-    /// Stub: will blank the contents of raw string literals.
+    fn is_ident_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    /// Where the raw string literal starting at `s[i]` ends (`r"…"`, `r#"…"#`,
+    /// `br#"…"#`, any number of hashes), if one starts there; the end of the
+    /// text when it is never closed. The close is a quote followed by as many
+    /// hashes as the opening had (none: the first quote), with no escapes.
+    /// `r#type` (a raw identifier) is not a string.
+    fn raw_string_end(s: &[char], i: usize) -> Option<usize> {
+        let mut j = i;
+        if s[j] == 'b' {
+            j += 1;
+        }
+        if s.get(j) != Some(&'r') {
+            return None;
+        }
+        j += 1;
+        let hashes = s[j..].iter().take_while(|&&c| c == '#').count();
+        j += hashes;
+        if s.get(j) != Some(&'"') {
+            return None;
+        }
+        let close = (j + 1..s.len())
+            .find(|&k| s[k] == '"' && (1..=hashes).all(|h| s.get(k + h) == Some(&'#')));
+        Some(close.map_or(s.len(), |k| k + 1 + hashes))
+    }
+
+    /// `src` with every raw string literal (delimiters and contents) replaced
+    /// by spaces, newlines kept so line numbers stay right. Ordinary string
+    /// literals are left as they are. A raw string starts at `r` or `br` not
+    /// preceded by an identifier character. To keep a `r"` inside an ordinary
+    /// string, a char literal (`'"'`) or a comment from starting one, those
+    /// are stepped over (unchanged); a raw string is not looked for in them.
     fn blank_raw_strings(src: &str) -> String {
-        src.to_string()
+        let s: Vec<char> = src.chars().collect();
+        let n = s.len();
+        let mut out = s.clone();
+        let mut i = 0;
+        while i < n {
+            let next = s.get(i + 1).copied();
+            match s[i] {
+                '/' if next == Some('/') => {
+                    while i < n && s[i] != '\n' {
+                        i += 1;
+                    }
+                }
+                '/' if next == Some('*') => {
+                    let mut depth = 1;
+                    i += 2;
+                    while i < n && depth > 0 {
+                        match (s[i], s.get(i + 1).copied()) {
+                            ('/', Some('*')) => {
+                                depth += 1;
+                                i += 2;
+                            }
+                            ('*', Some('/')) => {
+                                depth -= 1;
+                                i += 2;
+                            }
+                            _ => i += 1,
+                        }
+                    }
+                }
+                '"' => {
+                    i += 1;
+                    while i < n && s[i] != '"' {
+                        i += if s[i] == '\\' { 2 } else { 1 };
+                    }
+                    i += 1;
+                }
+                '\'' => {
+                    i = match (next, s.get(i + 2).copied()) {
+                        (Some('\\'), _) => (i + 2..n).find(|&j| s[j] == '\'').map_or(n, |j| j + 1),
+                        (Some(x), Some('\'')) if x != '\'' => i + 3,
+                        _ => i + 1, // a lifetime
+                    };
+                }
+                'b' | 'r' if i == 0 || !is_ident_char(s[i - 1]) => {
+                    if let Some(end) = raw_string_end(&s, i) {
+                        for c in &mut out[i..end] {
+                            if *c != '\n' {
+                                *c = ' ';
+                            }
+                        }
+                        i = end;
+                    } else {
+                        i += 1;
+                    }
+                }
+                _ => i += 1,
+            }
+        }
+        out.into_iter().collect()
     }
 
     /// The per-file check of `tests_dont_send_macos_only_caret_keys`, on source
