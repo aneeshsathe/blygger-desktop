@@ -658,3 +658,155 @@ fn the_palette_reply_row_follows_the_open_reading_item(cx: &mut TestAppContext) 
         stubs[0].content_md
     );
 }
+
+// --- studio 0.71 --- ⌘G on the blyg: a link it can't read stops it at a
+// checkpoint (the fake blyg can't read a `.invalid` host), and what it read
+// is listed.
+
+/// The blyg's own generation, as ⌘G picks it.
+fn on_blyg() -> FakeProvider {
+    FakeProvider {
+        kind: blyg_ai::ProviderKind::BlygServer,
+        ..FakeProvider::replying(&["never asked"])
+    }
+}
+
+const UNREAD: &str = "Fog. [TK]sum up https://gone.invalid/a and https://news.example.com/b[/TK]";
+
+impl Env<'_> {
+    /// The draft holds `text` on the blyg too, the caret inside its gap.
+    fn on_the_blyg(&mut self, text: &str) {
+        self.open_with(text);
+        self.view.update_in(self.cx, |v, _, cx| {
+            v.editor
+                .update(cx, |s, cx| s.set_selected_range(10..10, cx));
+        });
+        let fake = self.fake.clone();
+        let want = text.to_string();
+        crate::test_wait::until(self.cx, "the draft to reach the blyg", move |cx| {
+            cx.executor().advance_clock(Duration::from_secs(2));
+            cx.run_until_parked();
+            fake.item(&LocalId(DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md == want)
+        });
+    }
+
+    fn checkpoint(&mut self) -> Option<(String, bool, Vec<String>)> {
+        self.view.read_with(self.cx, |v, _| {
+            v.sheet
+                .get::<super::checkpoint::TkCheckpointSheet>()
+                .map(|s| {
+                    (
+                        super::checkpoint::heading(&s.checkpoint),
+                        s.details,
+                        s.checkpoint.failed.iter().map(|f| f.link.clone()).collect(),
+                    )
+                })
+        })
+    }
+
+    fn click(&mut self, selector: &'static str) {
+        let at = crate::test_wait::still(self.cx, selector);
+        self.cx
+            .simulate_click(at.center(), gpui_kit::Modifiers::none());
+        self.cx.run_until_parked();
+    }
+}
+
+#[gpui_kit::test]
+fn a_link_the_blyg_cant_read_stops_at_the_checkpoint_and_esc_keeps_the_draft(
+    cx: &mut TestAppContext,
+) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    let (heading, details, failed) = e.checkpoint().unwrap();
+    assert_eq!(
+        heading,
+        "1 of 2 links in the draft could not be read. Generate anyway?"
+    );
+    assert_eq!(failed, vec!["https://gone.invalid/a".to_string()]);
+    // The keys are shown; the failures wait under Details.
+    assert!(e.cx.debug_bounds("tk-checkpoint-generate").is_some());
+    assert!(e.cx.debug_bounds("tk-checkpoint-cancel").is_some());
+    assert!(!details);
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_none());
+    e.click("tk-checkpoint-details");
+    assert!(e.checkpoint().unwrap().1, "Details opened");
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_some());
+    // esc: nothing generated, nothing changed.
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    assert!(e.checkpoint().is_none(), "the sheet closed");
+    assert_eq!(e.text(), UNREAD);
+    assert_eq!(
+        e.fake.item(&LocalId(DRAFT.into())).unwrap().content_md,
+        UNREAD,
+        "the blyg saved nothing"
+    );
+    assert!(e.tracked().is_none(), "no provenance");
+}
+
+#[gpui_kit::test]
+fn enter_generates_anyway_and_lists_what_it_read(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    e.cx.simulate_keystrokes("enter");
+    e.wait("the text the blyg generated", |v| {
+        v.ai.job.is_none() && !v.sheet.is_open()
+    });
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the spliced text in the editor", move |cx| {
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            v.editor
+                .read(cx)
+                .value()
+                .contains("[=]A line the fake blyg wrote.[/TK]")
+        })
+    });
+    // The page it read is recorded with the scope, and listed.
+    let (_, scopes) = e.tracked().expect("the blyg's provenance");
+    let p = scopes[0].as_ref().expect("the scope's");
+    assert_eq!(p.pages.len(), 1);
+    assert_eq!(p.pages[0].url, "https://news.example.com/b");
+    let read = e.view.read_with(e.cx, |v, cx| v.tk_read(cx));
+    assert_eq!(read.len(), 1, "{read:?}");
+    let (scope, entries) = &read[0];
+    assert_eq!(*scope, 0);
+    assert_eq!(entries[0].what, "read news.example.com");
+    assert_eq!(
+        entries[0].url.as_deref(),
+        Some("https://news.example.com/b")
+    );
+    assert!(!entries[0].tells, "a web page tells no one");
+    // The publish sheet shows it before anything is sent.
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    assert!(
+        e.cx.debug_bounds("tk-read").is_some(),
+        "listed in the sheet"
+    );
+    assert!(e.cx.debug_bounds("tk-read-0-0").is_some());
+}
+
+#[gpui_kit::test]
+fn a_local_provider_never_stops_at_a_checkpoint(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(FakeProvider::replying(&["Grey all day."])));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait_idle();
+    assert!(e.checkpoint().is_none());
+    assert!(e.text().contains("[=]Grey all day.[/TK]"), "{}", e.text());
+    let (_, scopes) = e.tracked().expect("tracked");
+    let p = scopes[0].as_ref().unwrap();
+    assert_eq!(p.model, "fake-model-1");
+    assert!(p.pages.is_empty(), "Burrow's own provider reads no pages");
+}

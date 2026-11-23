@@ -510,3 +510,59 @@ fn the_reader_takes_the_themes_writing_font() {
         assert!(reader.contains(rule), "{rule}");
     }
 }
+
+// --- studio 0.71 --- A post whose generated text the publisher disclosed
+// says what it read: Lin's sentence drew on Kit's post (Kit was told) and
+// read a web page (no one was).
+#[gpui_kit::test]
+fn a_posts_generated_text_lists_what_it_read(cx: &mut TestAppContext) {
+    let (view, _, log, cx) = setup(cx);
+    reading(&view, cx);
+    open_row(&view, LIN_FORK, cx);
+    let page = last(&log, Which::Reader);
+    assert!(page.contains("class=\"blyg-gen-read\""), "{page}");
+    assert!(page.contains(super::reader::GENERATION_READ), "{page}");
+    assert!(
+        page.contains("drew on a post from kit.blyg.example.net"),
+        "{page}"
+    );
+    assert!(page.contains(super::reader::GENERATION_TOLD), "{page}");
+    assert!(page.contains("read Harbour tide tables"), "{page}");
+    assert!(
+        page.contains(&format!("<a href=\"{TIDE_PAGE}\">{TIDE_PAGE}</a>")),
+        "{page}"
+    );
+    // The list comes after the post's own text.
+    assert!(page.find(LIN_FORK_GENERATED).unwrap() < page.find("blyg-gen-read\"").unwrap());
+    // A post that disclosed nothing lists nothing.
+    open_row(&view, LIN_GARDENS, cx);
+    assert!(!last(&log, Which::Reader).contains("class=\"blyg-gen-read\""));
+}
+
+/// The list is built from what another blyg sent: every value escaped,
+/// and only an http(s) address becomes a link.
+#[test]
+fn what_generated_text_read_is_escaped() {
+    let p = blyg_core::ScopeProvenance {
+        model: "m".into(),
+        sources: vec![],
+        pages: vec![
+            blyg_core::PageSource {
+                url: "javascript:alert(1)".into(),
+                cited: serde_json::json!({"source": "<b>x</b>"}),
+            },
+            blyg_core::PageSource {
+                url: "https://a.example.com/?q=\"><i>".into(),
+                cited: serde_json::json!({}),
+            },
+        ],
+        at: None,
+    };
+    let html = super::reader::generation_read(&[p]);
+    assert!(!html.contains("<i>"), "{html}");
+    assert!(!html.contains("<b>"), "{html}");
+    assert!(!html.contains("href=\"javascript"), "{html}");
+    assert!(html.contains("&lt;b&gt;x&lt;/b&gt;"), "{html}");
+    assert_eq!(html.matches("<a href=").count(), 1, "{html}");
+    assert_eq!(super::reader::generation_read(&[]), "");
+}

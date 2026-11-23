@@ -32,6 +32,9 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     let fake = Arc::new(
         FakeBackend::with_timing(Timing::instant())
             .chronological() // the list these tests read is newest first
+            // Burrow's own read marks: a blyg without "Count an entry as
+            // read" (count_read_tests.rs has the blyg's three choices).
+            .without_reader_mark_read()
             .without_media_cache(),
     );
     let backend: Arc<dyn Backend> = fake.clone();
