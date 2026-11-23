@@ -28,6 +28,8 @@ mod dev_flags;
 mod fake;
 mod fonts;
 mod images;
+#[cfg(test)]
+mod key_handlers_tests;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;
@@ -45,8 +47,6 @@ mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
-#[cfg(test)]
-mod key_handlers_tests;
 #[cfg(test)]
 mod windows_keys_tests;
 // The WebView2 hosting shared by the preview and the browser pane.
