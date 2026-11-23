@@ -190,3 +190,7 @@ mod tests {
         assert_eq!(scope_label(listed[0].0), "TK 3");
     }
 }
+
+#[cfg(test)]
+#[path = "read_tests.rs"]
+mod read_tests;

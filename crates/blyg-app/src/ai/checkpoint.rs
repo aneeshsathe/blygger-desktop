@@ -438,3 +438,7 @@ mod tests {
         assert!(super::hint(&one).starts_with("The model sees only"));
     }
 }
+
+#[cfg(test)]
+#[path = "checkpoint_tests.rs"]
+mod checkpoint_tests;
