@@ -14,7 +14,10 @@ Fragments show in full; threads show a few lines and **Read more** (⏎ or
 Space) opens the whole post in a side pane. j/k (or ↑/↓) move; esc closes
 the pane and the stream keeps its place.
 
-A post counts as read after a second on screen. A post you haven't read, or
+A post counts as read after a second on screen (see [Count an entry as
+read](#count-an-entry-as-read) for the choice blygger-studio 0.70 adds). A
+card's date opens the post in the side pane, as Read more does; it underlines
+when you point at it. A post you haven't read, or
 that changed since you read it, gets a dot; the reading header and the status
 bar say how many posts are to read, and All unread lists them, all by that
 one rule. That count is private to you, about your own reading list: Burrow
@@ -30,6 +33,30 @@ revised leads with its latest changelog note,
 "V3: No changelog entry available" when they left none.
 
 ![The stream](screenshots/stream.png)
+
+### Count an entry as read
+
+On a blyg with blygger-studio 0.70 or later, **Settings › READER ORDER** has
+**Count an entry as read**, kept on your blyg and shared with Studio:
+
+| Choice | What marks a post read |
+|---|---|
+| when I see it (the default) | In the stream, a card that has been fully on screen for about a second, short posts included. Opening a post marks it too. |
+| when I open it | Opening the post: Read more, ⏎, a click on its date, or a row in the Reader. |
+| only when I mark it | Nothing by itself: only marking it read by hand. |
+
+How "on screen" is measured, as Studio does it: about four times a second
+while the window is in front, Burrow checks each card it has drawn. A card
+counts when all of it is visible, or when the part that's visible is at least
+60% of the card or of the window's height, whichever is smaller (so a long
+post counts once it fills most of the window). After a second of that, it is
+seen. Seen posts are sent to your blyg together, three seconds after the first
+of them, or at once when you leave the stream or the window goes to the
+background. In the Reader, rows are titles, so only opening a post counts
+there.
+
+On an older blyg the setting isn't offered, and Burrow keeps its own rule: a
+card half on screen for a second is read, and so is a post you open.
 
 ## The Reader
 
@@ -623,6 +650,11 @@ and the Reader, marked text is tinted, hovering it says it's marked as
 generated, and the post ends with a short note: the mark is the publisher's
 own disclosure, and Burrow can't verify it. Text without a mark may have been
 generated too; a mark only says what the publisher chose to disclose.
+
+When the publisher also disclosed what the generation read (blygger-studio
+0.70 and later), the post then lists it: each post it drew on (with "its
+author was told" when that post is on another blyg) and each web page it
+read, by site and address. Like the mark, this is the publisher's word.
 
 ## Formulas
 

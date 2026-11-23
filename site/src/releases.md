@@ -63,6 +63,25 @@ post on this computer. It only starts the run: each one still shows you the
 text and posts only when you click Post. See [Cross-posting automatically,
 per post](extensions.md#cross-posting-automatically-per-post).
 
+### Generating on your blyg: links it can't read, and what it read
+
+With your blyg as the AI provider (blygger-studio 0.70 and later), ⌘G reads
+every link in the gap first. When some can't be read, Burrow asks "**n of m
+links in the draft could not be read. Generate anyway?**", the failures under
+**Details**: ⏎ generates anyway, esc leaves the draft alone. Afterwards the
+preview and the Publish sheet list what each gap read: the posts it drew on
+(marked when publishing tells their author) and the web pages, by site and
+address. Posts you read list the same, when their publisher disclosed it. See
+[When your blyg can't read a link](ai.md#when-your-blyg-cant-read-a-link).
+
+### Count an entry as read
+
+On blygger-studio 0.70 and later, Settings › READER ORDER has **Count an
+entry as read**: when I see it (a card fully on screen for about a second,
+sent to your blyg in batches), when I open it, or only when I mark it. Your
+blyg keeps the choice. A card's **date** now opens the post, in the stream
+and the Reader. See [Count an entry as read](reading.md#count-an-entry-as-read).
+
 ### Windows
 
 **Esc** closes the open sheet, palette, Menu or browser pane even after a

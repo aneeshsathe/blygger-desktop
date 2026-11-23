@@ -78,6 +78,7 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         | Key::FeedOrder // clicks (`feed::render_feed_controls`, the sources)
         | Key::RawTab
         | Key::AgenticTab
+        | Key::StreamDate // a click on a card's date (`stream::render_card`)
         | Key::MoreMenu
         | Key::Parts // `p`: reading_key_down
         | Key::ConflictAnswered => &[],

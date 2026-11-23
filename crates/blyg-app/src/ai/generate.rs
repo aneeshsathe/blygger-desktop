@@ -10,13 +10,6 @@ use blyg_ai::AiError;
 use blyg_ai::prompts::{self, Prompt};
 use blyg_core::{Backend, Item, ProvenanceSource, ReadingItem, ScopeProvenance, tk};
 
-/// Studio 0.27.2: `POST /api/items/:id/generate` also returns `content_md`,
-/// the whole working copy with the scope's output spliced in, as the
-/// server saved it (`None` from an older server: then the item is pulled).
-pub fn server_content_md(r: &blyg_ai::GenResult) -> Option<String> {
-    r.content_md.clone()
-}
-
 /// The editor's text after a server generate: the server's `content_md`
 /// when it has one and the editor still holds `sent` (what the server
 /// spliced into), else `None` (pull instead).

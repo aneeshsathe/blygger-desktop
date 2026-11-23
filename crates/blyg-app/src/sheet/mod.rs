@@ -100,6 +100,8 @@ sheets! {
     AltText(super::upkeep::AltSheet),
     // --- syndication ---
     Copies(super::syndication::CopiesSheet),
+    /// --- studio 0.71 --- ⌘G on the blyg: links it couldn't read.
+    TkCheckpoint(super::ai_view::checkpoint::TkCheckpointSheet),
 }
 
 /// What a sheet draws.

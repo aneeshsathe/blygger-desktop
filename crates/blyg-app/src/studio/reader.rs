@@ -66,6 +66,9 @@ pub struct Doc {
     pub base: Option<String>,
     pub media: Vec<RemoteMedia>,
     pub scope: Scope,
+    /// --- studio 0.71 --- what its generated text read, as the publisher
+    /// disclosed it (`ReadingItem::generation`): listed under the post.
+    pub generation: Vec<blyg_core::ScopeProvenance>,
 }
 
 /// What the loaded page was made from (a new page when this changes).
@@ -305,6 +308,10 @@ article.thread > .item-content > p:first-child {{
   margin-top: 1.6em; color: var(--muted, #888);
   font: 11.5px Inter, -apple-system, system-ui, sans-serif;
 }}
+.blyg-gen-read {{ color: var(--muted, #888); font: 11.5px Inter, -apple-system, system-ui, sans-serif; }}
+.blyg-gen-read-h {{ margin: 0.4em 0 0.2em; }}
+.blyg-gen-read ul {{ margin: 0; padding-left: 1.2em; }}
+.blyg-gen-read a {{ color: inherit; word-break: break-all; }}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
 blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 .blyg-qfoot {{
@@ -347,6 +354,7 @@ pub fn reader_page_named(
         None => clean,
     };
     let clean = generated_note(&clean);
+    let clean = format!("{clean}{}", generation_read(&doc.generation));
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
     // --- themes --- the theme's colours over the fallback stylesheet, and
     // its quote-box shape last, so it wins over the reader's defaults.
@@ -384,6 +392,78 @@ pub fn generated_note(html: &str) -> String {
     let titled = html.replace(MARK, &format!("{MARK} title=\"{GENERATED_NOTE}\""));
     format!("{titled}<p class=\"blyg-gen-note\">{GENERATED_NOTE}</p>\n")
 }
+
+/// --- studio 0.71 --- Under a post whose generated text the publisher
+/// disclosed: what each scope read. The posts it drew on (a post on another
+/// blyg was told, by a mention) and the web pages its model read (which
+/// tell no one), each page by its site and address. The page's own HTML is
+/// already sanitized; this is built here, every value escaped, and a link
+/// only for an http(s) address. Empty when nothing was read.
+pub fn generation_read(generation: &[blyg_core::ScopeProvenance]) -> String {
+    use blyg_render::escape_html as esc;
+    let scopes: Vec<_> = generation
+        .iter()
+        .filter(|p| !p.sources.is_empty() || !p.pages.is_empty())
+        .collect();
+    if scopes.is_empty() {
+        return String::new();
+    }
+    let many = scopes.len() > 1;
+    let mut out = format!(
+        "<div class=\"blyg-gen-read\"><p class=\"blyg-gen-read-h\">{}</p><ul>",
+        esc(GENERATION_READ)
+    );
+    for (n, p) in scopes.into_iter().enumerate() {
+        let tk = if many {
+            format!("{} · ", crate::ai::read::scope_label(n))
+        } else {
+            String::new()
+        };
+        let told: Vec<&str> = p.notifies().map(|s| s.id.as_str()).collect();
+        for s in &p.sources {
+            let from = s
+                .origin
+                .as_deref()
+                .and_then(|o| url::Url::parse(o).ok()?.host_str().map(str::to_string));
+            let what = match &from {
+                Some(h) => format!("drew on a post from {h} ([[{}]])", s.id),
+                None => format!("drew on a post of the same blyg ([[{}]])", s.id),
+            };
+            let mark = if told.contains(&s.id.as_str()) {
+                GENERATION_TOLD
+            } else {
+                crate::ai::read::TELLS_NO_ONE
+            };
+            out.push_str(&format!(
+                "<li>{}{} <span class=\"blyg-gen-mark\">· {}</span></li>",
+                esc(&tk),
+                esc(&what),
+                esc(mark)
+            ));
+        }
+        for page in &p.pages {
+            let link = match url::Url::parse(&page.url) {
+                Ok(u) if matches!(u.scheme(), "http" | "https") => {
+                    format!("<a href=\"{}\">{}</a>", esc(u.as_str()), esc(&page.url))
+                }
+                _ => esc(&page.url),
+            };
+            out.push_str(&format!(
+                "<li>{}read {} · {link} <span class=\"blyg-gen-mark\">· {}</span></li>",
+                esc(&tk),
+                esc(&page.site()),
+                esc(crate::ai::read::TELLS_NO_ONE)
+            ));
+        }
+    }
+    out.push_str("</ul></div>\n");
+    out
+}
+
+/// The heading over [`generation_read`].
+pub const GENERATION_READ: &str = "What its generated text read, as the publisher disclosed it:";
+/// A source on another blyg: its author was told (a mention).
+pub const GENERATION_TOLD: &str = "its author was told";
 
 // --- quote targets ---
 
@@ -562,6 +642,7 @@ impl MainView {
                         base,
                         media: Vec::new(), // a pin document has no media[]
                         scope,
+                        generation: Vec::new(), // disclosed for the current version
                     });
                 }
                 let tombstone = item.state == "tombstone";
@@ -583,6 +664,11 @@ impl MainView {
                     base,
                     media,
                     scope,
+                    generation: if tombstone {
+                        Vec::new()
+                    } else {
+                        item.generation()
+                    },
                 })
             }
             View::Posts => {
@@ -596,6 +682,14 @@ impl MainView {
                     kind: render_kind(item.kind),
                     base: self.backend.base_url().as_deref().and_then(origin_base),
                     media: Vec::new(),
+                    // Your own: what Burrow and your blyg recorded for
+                    // this text.
+                    generation: self
+                        .backend
+                        .tracked_tk_provenance(&item.local_id)
+                        .filter(|(keyed, _)| *keyed == item.content_md)
+                        .map(|(_, s)| s.into_iter().flatten().collect())
+                        .unwrap_or_default(),
                     scope: Scope::Own(item.local_id.clone()),
                 })
             }
@@ -909,6 +1003,7 @@ mod tests {
                 origin: "https://ada.blyg.example.com/".into(),
                 id: "01k2x".into(),
             },
+            generation: Vec::new(),
         }
     }
 

@@ -34,6 +34,7 @@ pub(crate) mod site_view;
 mod site_view_tests;
 // --- reading compose --- the compose box along the reading screen's foot.
 pub(crate) mod compose;
+pub(crate) mod count_read; // --- studio 0.71 --- when an entry counts as read
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
 #[cfg(test)]
@@ -99,7 +100,7 @@ pub(crate) mod vm;
 #[cfg(test)]
 mod compose_tests; // --- reading compose ---
 #[cfg(test)]
-mod count_read_tests;
+mod count_read_tests; // --- studio 0.71 --- when an entry counts as read
 #[cfg(test)]
 mod link_click_keys_tests;
 #[cfg(test)]
@@ -492,6 +493,8 @@ pub struct State {
     pub background: background::Background,
     /// --- reader order --- the Feed's order and each row's place in it.
     pub feed: feed::Feed,
+    /// --- studio 0.71 --- when an entry counts as read (`readerMarkRead`).
+    pub count_read: count_read::CountRead,
 }
 
 impl State {
@@ -571,6 +574,7 @@ impl State {
             changelogs: Default::default(),
             background: Default::default(),
             feed,
+            count_read: count_read::CountRead::new(backend.reader_mark_read()), // --- studio 0.71 ---
         }
         .refiltered()
     }
@@ -905,6 +909,7 @@ impl MainView {
                 r.background.set_rows(&r.rows); // --- background --- "+N parts"
                 self.feed_rebuild(cx); // --- reader order ---
                 self.reader_order_refresh(false, cx);
+                self.count_read_refresh(false, cx); // --- studio 0.71 ---
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);

@@ -886,6 +886,11 @@ fn do_step(e: &mut Env, id: &str) {
                 cx,
             )
         }),
+        // --- studio 0.71 --- a click on the selected card's date.
+        "count-read" => {
+            let at = crate::test_wait::still(e.cx, "stream-date-0");
+            e.cx.simulate_click(at.center(), gpui_kit::Modifiers::none());
+        }
         "agentic-edition" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(

@@ -40,6 +40,8 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 | `rd-stream-copies` | Kit's tides opened from the stream: "the author says it is also at …" under its source line |
 | `rd-stream-catchup-summary` | Catch up on Rue's thread, then `s`: the blyg's summary first |
 | `newer` | the toast sync shows for a blyg on a newer studio ("Your blyg runs a newer studio") |
+| `rd-stream-date` | the first card's date clicked: its post open in the side pane (studio 0.71) |
+| `rd-gen-read` | Lin's post in the Reader, scrolled to its end: what its generated sentence read (Kit's post, told; a web page) |
 | `settings-background-locked` | Settings › BACKGROUND for a sign-in that can't change the rules: greyed, with the reason; ⇥ ×5, →, space |
 
 Journeys (0.27.0):

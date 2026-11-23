@@ -43,6 +43,25 @@ provider.
    `generating… (codex)`; **esc** cancels. The answer is written in place as
    `[TK]instruction[=]output[/TK]`. Press ⌘G inside it again to regenerate.
 
+### When your blyg can't read a link
+
+With **your blyg server** as the provider, ⌘G asks your blyg to fill the gap
+(blygger-studio 0.70 and later). Your blyg first reads every link in the
+gap, posts and web pages alike. If some can't be read, it stops and saves
+nothing, and Burrow asks: "1 of 2 links in the draft could not be read.
+Generate anyway?" **Details** lists each link and why it failed. **⏎**
+generates anyway: what could be read is drawn on, and the model sees only
+the address of the rest. **esc** cancels and leaves the draft as it was.
+Burrow's other providers never stop here.
+
+### What each generation read
+
+After your blyg fills a gap, Burrow lists what it read, gap by gap: the
+posts it drew on and the web pages it read (site and address). A post on
+another blyg is marked "tells its author when you publish"; your own posts
+and web pages tell no one. The list is under the preview (⌘2 or ⌘3) and in
+the Publish sheet, so you can check it before you publish.
+
 The config keys `ai-model` and `ai-provider-model` pick models, and
 `ai-style-prompt` adds your own instructions to every prompt ("Write plainly.
 British spelling."). See [Configuration](config.md#ai-provider).

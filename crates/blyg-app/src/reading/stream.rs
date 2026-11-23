@@ -8,10 +8,10 @@
 //! - j/k (↑/↓) select; ⏎ / Space / "Read more" open the post in a side pane
 //!   (the sanitized WebView reader, with its version pill and actions); esc
 //!   closes it. The stream keeps its place.
-//! - A post counts as read after it has been at least half on screen for a
-//!   second (`stream_vm::ReadTracker`), through `Backend::mark_read`; a
-//!   thread opened in the pane is read too. Unread posts get a dot, never a
-//!   count.
+//! - A post counts as read as the blyg's "Count an entry as read" says
+//!   (`count_read`): on screen for a second (`stream_vm::ReadTracker`), or
+//!   when opened in the pane, or only by hand. Unread posts get a dot, never
+//!   a count.
 //! - The search (⌘F, `/`) filters the stream like the list.
 
 use std::cell::RefCell;
@@ -33,6 +33,9 @@ gpui_kit::actions!(blygger, [StreamMode, ReaderMode]);
 
 /// How often the stream checks what's on screen.
 const TICK: Duration = Duration::from_millis(250);
+
+/// A card's date: what a click on it does (studio 0.70).
+pub const OPEN_ENTRY: &str = "Open this post";
 
 /// A drag over a post in the stream: the toast once it's open in the pane.
 pub const SELECT_HERE: &str = "Select the passage in the post here";
@@ -485,7 +488,12 @@ impl MainView {
         }
     }
 
-    fn stream_read_more(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn stream_read_more(
+        &mut self,
+        key: Key,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.stream_click(key.clone(), window, cx);
         self.open_reading(key, window, cx);
     }
@@ -511,9 +519,11 @@ impl MainView {
         self.reading.stream.timer = Some(task);
     }
 
-    /// One look at the screen: unread posts at least half visible for a
-    /// second are marked read. Nothing counts while the window is in the
-    /// background or something covers the stream.
+    /// One look at the screen: unread posts on screen enough for a second
+    /// are marked read, by the rule `count_read` says (the blyg's "Count an
+    /// entry as read", else Burrow's earlier half-on-screen rule). Nothing
+    /// counts while the window is in the background or something covers
+    /// the stream; the seen marks waiting then go at once.
     pub(crate) fn stream_tick(&mut self, now: Instant, active: bool, cx: &mut Context<Self>) {
         let r = &self.reading;
         let watching = active
@@ -523,8 +533,9 @@ impl MainView {
             && r.sheet.is_none()
             && !self.sheet.is_open()
             && !self.profile_sheet_open();
+        let rule = r.count_read.seen_rule();
         let mut on_screen = Vec::new();
-        if watching {
+        if watching && let Some(rule) = rule {
             let list = &r.stream.list;
             let vp = list.viewport_bounds();
             let first = list.logical_scroll_top().item_ix;
@@ -538,7 +549,7 @@ impl MainView {
                 let unread = row.is_unread() || row.edited_since_read();
                 if unread
                     && row.state != "tombstone"
-                    && stream_vm::seen_enough(
+                    && rule.counts(
                         f32::from(b.top()),
                         f32::from(b.bottom()),
                         f32::from(vp.top()),
@@ -550,13 +561,14 @@ impl MainView {
             }
         }
         let due = self.reading.stream.tracker.observe(&on_screen, now);
-        // --- own posts --- never unread, and never marked.
-        for (sub, rid) in due.into_iter().filter(|k| !super::own::is_own(k)) {
-            let backend = self.backend.clone();
-            cx.background_spawn(async move {
-                let _ = backend.mark_read(&sub, &rid);
-            })
-            .detach();
+        // --- studio 0.71 --- the studio's seen marks go in batches.
+        if rule.is_some_and(super::count_read::SeenRule::batched) {
+            self.reading.count_read.batch.add(due, now);
+            self.flush_seen(now, !watching, cx);
+        } else {
+            self.flush_seen(now, true, cx);
+            // --- own posts --- never unread, and never marked.
+            self.send_marks(due, cx);
         }
     }
 
@@ -702,7 +714,22 @@ impl MainView {
             )
             .child(vm::host(&r.origin))
             .child("·")
-            .child(vm::when_label(r, self.now))
+            // --- studio 0.71 --- the date opens the full view (the
+            // studio's permalink convention), short posts included.
+            .child({
+                let k = key.clone();
+                div()
+                    .id("stream-date")
+                    .debug_selector(move || format!("stream-date-{ix}"))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(p.accent).underline())
+                    .tooltip(|_, cx| cx.new(|_| super::Tip(OPEN_ENTRY.into())).into())
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.stream_read_more(k.clone(), window, cx)
+                    }))
+                    .child(vm::when_label(r, self.now))
+            })
             .child("·")
             .child(stream_vm::kind_word(r.kind))
             // --- lineage --- which kinds of relation, and how many.

@@ -319,6 +319,9 @@ impl MainView {
         }
         let backend = self.backend.clone();
         let (sub, rid) = key.clone();
+        // --- studio 0.71 --- opening counts as reading it, unless the
+        // blyg's "Count an entry as read" is "only when I mark it".
+        let mark = self.reading.count_read.on_open();
         let task = cx.background_spawn(async move {
             let fetched = (!tombstone).then(|| {
                 let base = backend.pinned_diff_base(&sub, &rid);
@@ -326,7 +329,9 @@ impl MainView {
                 let shown = backend.remote_shown_versions(&sub, &rid);
                 (base, log, shown)
             });
-            let _ = backend.mark_read(&sub, &rid);
+            if mark {
+                let _ = backend.mark_read(&sub, &rid);
+            }
             fetched
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -1089,7 +1094,21 @@ impl MainView {
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
-                    .child(div().flex_none().whitespace_nowrap().child(when)),
+                    // --- studio 0.71 --- the date opens the post (the row
+                    // does): it looks it, as in the Stream.
+                    .child(
+                        div()
+                            .id("reading-row-date")
+                            .debug_selector(move || format!("reading-row-date-{ix}"))
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .hover(|s| s.text_color(p.accent).underline())
+                            .tooltip(|_, cx| {
+                                cx.new(|_| super::Tip(super::stream::OPEN_ENTRY.into()))
+                                    .into()
+                            })
+                            .child(when),
+                    ),
             )
             .child(
                 div()
