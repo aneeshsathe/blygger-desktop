@@ -396,3 +396,67 @@ fn a_bakes_text_is_its_selectors_exact_for_every_selection() {
     assert!(checked > 100, "{checked}");
     assert!(lists > 50, "{lists} of {checked} bakes held a list");
 }
+
+// ------------------------------------------------------- selection_lines
+
+/// The studio's `selectionLines` tests: the same lines as `selectionText`,
+/// for every source and for markup that isn't Markdown's.
+#[test]
+fn selection_lines_read_the_lines_selection_text_reads() {
+    let mut htmls: Vec<String> = [TIGHT, LOOSE, ORDERED, STARTED, MIXED]
+        .iter()
+        .map(|md| md_html(md))
+        .collect();
+    htmls.extend(
+        [
+            "a<div>b</div>c<br>d<hr/>e",
+            "<ol start=\"x\"><li>a</li></ol><ul><li>b<ol start=-2><li>c</li></ol></li></ul>",
+            "a < b <> c <span>&amp;lt;</span><script>x</script><td>d</td>",
+            "<li>stray</li></ol></li>tail",
+        ]
+        .map(String::from),
+    );
+    for html in &htmls {
+        let joined = blyg_render::selection_lines(html)
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(joined, selection_text(html), "{html}");
+    }
+}
+
+#[test]
+fn selection_lines_place_each_line_in_its_list_and_item() {
+    let levels = |html: &str| -> Vec<(String, Vec<(&'static str, i64)>)> {
+        blyg_render::selection_lines(html)
+            .into_iter()
+            .map(|l| (l.text, l.lists.iter().map(|x| (x.tag, x.ordinal)).collect()))
+            .collect()
+    };
+    assert_eq!(
+        levels(&md_html(STARTED)),
+        [
+            ("seventh".into(), vec![("ol", 7)]),
+            ("eighth".into(), vec![("ol", 8)]),
+            ("ninth".into(), vec![("ol", 9)]),
+        ]
+    );
+    assert_eq!(
+        levels(&md_html("- tools\n  - a pencil\n- patience")),
+        [
+            ("tools".into(), vec![("ul", 1)]),
+            ("a pencil".into(), vec![("ul", 1), ("ul", 1)]),
+            ("patience".into(), vec![("ul", 2)]),
+        ]
+    );
+    // A start that isn't an integer counts from 1; a negative one is kept.
+    assert_eq!(
+        levels("<ol start=\"x\"><li>a</li></ol><ol start='-2'><li>b</li><li>c</li></ol>"),
+        [
+            ("a".into(), vec![("ol", 1)]),
+            ("b".into(), vec![("ol", -2)]),
+            ("c".into(), vec![("ol", -1)]),
+        ]
+    );
+}

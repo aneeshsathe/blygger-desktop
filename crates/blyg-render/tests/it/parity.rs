@@ -264,7 +264,7 @@ fn parity_with_worker() {
         }
     }
     eprintln!(
-        "parity: {matched}/{} match ({exact} byte-identical, {rewritten} rewritten to the spec (r15, r21), {formulas} with formulas compared by shape); {expected_fails} expected to fail ({} known, {} pending WP1/WP2, {} to adopt)",
+        "parity: {matched}/{} match ({exact} byte-identical, {rewritten} rewritten to the spec (r15), {formulas} with formulas compared by shape); {expected_fails} expected to fail ({} known, {} pending WP1/WP2, {} to adopt)",
         fixtures.len(),
         KNOWN_DIVERGENCES.len(),
         PENDING.len(),

@@ -609,16 +609,29 @@ fn script_re() -> &'static Regex {
     })
 }
 
-/// markdown.ts `BLOCK_BOUNDARY`.
+/// markdown.ts `BLOCK_BOUNDARY`: spec §2 "Text content" (decision #118,
+/// studio 0.71). A boundary at the start tag and the end tag of each listed
+/// block element, and at every `br` and `hr`, so text on either side of a
+/// block's edge is on different lines (a tight list item and its nested
+/// list, two table cells). Names match as JavaScript's `/i` does, ASCII
+/// only, and JavaScript's `\b` (ASCII word characters) ends them.
+const BOUNDARY: &str = concat!(
+    r"</?(?i-u:p|h[1-6]|li|ul|ol|dl|dt|dd|blockquote|pre|div|table|thead|tbody|tfoot|tr|td|th",
+    r"|figure|figcaption|section|article|aside|header|footer|details|summary)",
+    r"(?:[^A-Za-z0-9_>][^>]*)?>",
+    r"|<(?i-u:br|hr)(?:[^A-Za-z0-9_>][^>]*)?>",
+);
+
 fn boundary_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(&format!(
-            r"(?i)</(?:p|h[1-6]|li|blockquote|pre|div|tr|section|article)>|<br[{}]*/?>",
-            crate::embeds::JS_WS
-        ))
-        .expect("boundary re")
-    })
+    RE.get_or_init(|| Regex::new(BOUNDARY).expect("boundary re"))
+}
+
+/// A whole token that is a boundary (`selectionLines`' anchored test).
+fn is_boundary(tag: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(&format!("^(?:{BOUNDARY})$")).expect("anchored boundary re"))
+        .is_match(tag)
 }
 
 /// `s.replace(/\s+/g, " ").trim()`, with JavaScript's `\s`.
@@ -661,8 +674,9 @@ fn normalize_blocks<'a>(segments: impl Iterator<Item = &'a str>) -> String {
 }
 
 /// markdown.ts `selectionText` (protocol 0.3 §16.4), the selection
-/// normalizer for partial quotes. Like [`plain_text_from_html`], except that
-/// a block boundary (`</p>`, `</li>`, `<br>`, …) becomes a line break instead
+/// normalizer for partial quotes, spec §2's text content. Like
+/// [`plain_text_from_html`], except that a block boundary (the start or end
+/// tag of a `p`, `li`, `td`, …, or a `br`/`hr`) becomes a line break instead
 /// of a space. Whitespace inside a block collapses to single spaces, so an
 /// author's soft wraps never matter, and empty blocks drop. A partial quote
 /// resolves when the quote's `selection_text` is a substring of the target's.
@@ -671,6 +685,181 @@ pub fn selection_text(html: &str) -> String {
     let s = boundary_re().replace_all(&s, BLOCK_SEP);
     let s = decode_entities(&strip_nonempty_tags(&s));
     normalize_blocks(s.split(BLOCK_SEP))
+}
+
+/// Where a line of [`selection_text`] sits in a list (markdown.ts
+/// `ListLevel`): one per enclosing list, outermost first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListLevel {
+    /// Tells two lists of one document apart (their order of opening).
+    pub list: usize,
+    /// `"ul"` or `"ol"`.
+    pub tag: &'static str,
+    /// The item's number as the source shows it: an `ol`'s `start` counted
+    /// in, from 1 in a `ul`.
+    pub ordinal: i64,
+}
+
+/// A line of [`selection_text`] with the lists it starts in (markdown.ts
+/// `SelectionLine`); `lists` is empty outside any list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionLine {
+    pub text: String,
+    pub lists: Vec<ListLevel>,
+}
+
+/// markdown.ts `selectionLines` (decision #114): the lines of
+/// [`selection_text`], same boundaries, stripping and whitespace rule, each
+/// with the list structure where its first character is. Their texts joined
+/// with `\n` are `selection_text(html)`. Under §2 (decision #118) a tight
+/// list item's own text and its nested list are two lines.
+pub fn selection_lines(html: &str) -> Vec<SelectionLine> {
+    enum Open {
+        List {
+            list: usize,
+            tag: &'static str,
+            next: i64,
+        },
+        Item(i64),
+    }
+    let chain = |stack: &[Open]| -> Vec<ListLevel> {
+        stack
+            .windows(2)
+            .filter_map(|w| match w {
+                [Open::List { list, tag, .. }, Open::Item(ordinal)] => Some(ListLevel {
+                    list: *list,
+                    tag,
+                    ordinal: *ordinal,
+                }),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut stack: Vec<Open> = Vec::new();
+    let mut lists = 0;
+    let mut lines = Vec::new();
+    let mut raw = String::new();
+    let mut at: Option<Vec<ListLevel>> = None;
+    let close = |raw: &mut String, at: &mut Option<Vec<ListLevel>>, lines: &mut Vec<_>| {
+        let text = collapse_ws(&decode_entities(raw));
+        if !text.is_empty() {
+            lines.push(SelectionLine {
+                text,
+                lists: at.take().unwrap_or_default(),
+            });
+        }
+        raw.clear();
+        *at = None;
+    };
+    let html = script_re().replace_all(html, " ");
+    // Tags exactly as selection_text strips them (`<[^>]+>`); a lone `<` is text.
+    for token in html_tokens(&html) {
+        if token.len() > 1 && token.starts_with('<') {
+            if let Some((closing, name)) = tag_name(token) {
+                match (closing, name.as_str()) {
+                    (false, "ul" | "ol") => {
+                        let tag = if name == "ul" { "ul" } else { "ol" };
+                        let next = if tag == "ol" { ol_start(token) } else { 1 };
+                        stack.push(Open::List {
+                            list: lists,
+                            tag,
+                            next,
+                        });
+                        lists += 1;
+                    }
+                    (false, "li") => {
+                        let list = stack.iter_mut().rev().find_map(|o| match o {
+                            Open::List { next, .. } => Some(next),
+                            Open::Item(_) => None,
+                        });
+                        if let Some(next) = list {
+                            let ordinal = *next;
+                            *next += 1;
+                            stack.push(Open::Item(ordinal));
+                        }
+                    }
+                    (true, "li") => {
+                        if let Some(i) = stack.iter().rposition(|o| matches!(o, Open::Item(_))) {
+                            stack.truncate(i);
+                        }
+                    }
+                    (true, "ul" | "ol") => {
+                        if let Some(i) = stack.iter().rposition(|o| matches!(o, Open::List { .. }))
+                        {
+                            stack.truncate(i);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // A line's place was fixed at its first character, so closing
+            // it after the tag has changed the stack is safe.
+            if is_boundary(token) {
+                close(&mut raw, &mut at, &mut lines);
+            }
+            continue;
+        }
+        if at.is_none() && !decode_entities(token).chars().all(is_js_ws) {
+            at = Some(chain(&stack));
+        }
+        raw.push_str(token);
+    }
+    close(&mut raw, &mut at, &mut lines);
+    lines
+}
+
+/// `/<[^>]+>|<|[^<]+/g`: tags (anything from a `<` to the next `>`, at
+/// least one character between), a lone `<`, and the text between.
+fn html_tokens(s: &str) -> impl Iterator<Item = &str> {
+    let mut rest = s;
+    std::iter::from_fn(move || {
+        if rest.is_empty() {
+            return None;
+        }
+        let len = if let Some(after) = rest.strip_prefix('<') {
+            match after.find('>') {
+                Some(gt) if gt > 0 => gt + 2,
+                _ => 1,
+            }
+        } else {
+            rest.find('<').unwrap_or(rest.len())
+        };
+        let (token, tail) = rest.split_at(len);
+        rest = tail;
+        Some(token)
+    })
+}
+
+/// `/^<\s*(\/?)\s*([a-z0-9]+)/i`: whether a tag closes, and its name in
+/// lowercase.
+fn tag_name(token: &str) -> Option<(bool, String)> {
+    let s = token[1..].trim_start_matches(is_js_ws);
+    let (closing, s) = match s.strip_prefix('/') {
+        Some(rest) => (true, rest.trim_start_matches(is_js_ws)),
+        None => (false, s),
+    };
+    let end = s
+        .find(|c: char| !c.is_ascii_alphanumeric())
+        .unwrap_or(s.len());
+    (end > 0).then(|| (closing, s[..end].to_ascii_lowercase()))
+}
+
+/// An `ol`'s first number as selectionLines reads it
+/// (`/\bstart\s*=\s*["']?(-?\d+)/i`, kept when a safe integer), else 1.
+fn ol_start(token: &str) -> i64 {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        let ws = crate::embeds::JS_WS;
+        Regex::new(&format!(
+            r#"(?:^|[^A-Za-z0-9_])(?i-u:start)[{ws}]*=[{ws}]*["']?(-?[0-9]+)"#
+        ))
+        .expect("start re")
+    });
+    const SAFE: i64 = (1 << 53) - 1;
+    re.captures(token)
+        .and_then(|c| c[1].parse::<i64>().ok())
+        .filter(|n| n.abs() <= SAFE)
+        .unwrap_or(1)
 }
 
 /// markdown.ts `normalizeSelection`: [`selection_text`]'s rule for text that
