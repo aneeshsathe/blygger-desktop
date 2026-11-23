@@ -15,12 +15,10 @@ contacts/sheet.rs contacts_key | chord shift-tab | tab backwards in the contact 
 dictionary.rs dictionary_key | chord cmd-backspace | removes the selected word; predates the rule; candidate to move into the keymap
 extensions/reading_slots.rs slots_key | chord cmd-c | copies in the slots sheet, and cmd rejects the plain list keys; predates the rule; candidate to move into the keymap
 extensions/sheets.rs render_consent | chord cmd-backspace | turns the extension off; predates the rule; candidate to move into the keymap
-hover_card.rs hover_card_editor | mouse | cmd-click (ctrl-click on Windows) opens a hover card's target
 keymap.rs secondary_held | mouse | the cmd of a cmd-click as each platform holds it (ctrl on Windows), for the clicks above
 notes/drawer.rs render_notes_drawer | guard | esc leaves the notes pane only with no modifier held
 onboarding/mod.rs onboarding_key | guard | the tour's keys are bare keys
 onboarding/tutorial.rs tour_key | guard | the tour's keys are bare keys
-palette.rs render_cmd_palette | mouse | cmd-click (ctrl-click on Windows) on a palette row keeps the palette open
 profiles/mod.rs profile_key_down | guard | the profile sheet's keys are bare keys
 reading/catchup.rs render_catch_up_sheet | guard | the catch-up sheet's keys are bare keys
 reading/discover.rs discover_key | guard | the discover sheet's keys are bare keys

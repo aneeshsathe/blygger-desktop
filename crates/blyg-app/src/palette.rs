@@ -757,7 +757,7 @@ impl MainView {
                     .when(on, |d| d.bg(p.pick()))
                     .when(!on, |d| d.hover(|s| s.bg(p.hover())))
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        let keep = ev.modifiers().secondary();
+                        let keep = crate::keymap::secondary_held(&ev.modifiers());
                         if let Some(e) = this
                             .cmd_palette
                             .open
@@ -1046,3 +1046,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "palette_click_keys_tests.rs"]
+mod click_keys_tests;

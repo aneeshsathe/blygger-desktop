@@ -1258,9 +1258,64 @@ mod macros {
                 message: "Posted".into(),
                 via: crate::app::browser::automation::insert::Via::Paste,
             };
-            v.auto_crosspost_after_run(&posted, false, window, cx);
+            let ran = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: NOTE_MACRO,
+            };
+            v.auto_crosspost_after_run(ran, &posted, false, window, cx);
             assert!(v.auto_crosspost_chosen(&post, cx).is_empty());
         });
+    }
+
+    /// --- auto cross-post --- A queued run is taken as running from the
+    /// moment it's handed over, while its text is still being prepared and
+    /// no macro runs in the pane yet. A manual run that ends in that gap
+    /// (it posted, unrecorded) is not the queued one: the queued post keeps
+    /// its choice, and the queued run's own end still counts.
+    #[gpui_kit::test]
+    fn a_manual_run_ending_while_a_queued_one_prepares_leaves_its_choice(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        let first = super::super::auto_crosspost::macro_key(XP, NOTE_MACRO);
+        view.update_in(cx, |v, window, cx| {
+            v.toggle_auto_crosspost(&post, XP, NOTE_MACRO, cx);
+            v.auto_crosspost_after_publish(&post, window, cx);
+            // The queued run is handed over: its text is being prepared.
+            v.auto_crosspost_next(window, cx);
+            assert!(
+                !v.browser.automation.running(),
+                "the gap: nothing in the pane yet"
+            );
+            // A manual run (another site) ends in the gap, having posted
+            // with no copy recorded on the queued post.
+            let posted = crate::app::browser::automation::Outcome::Posted {
+                message: "Posted".into(),
+                via: crate::app::browser::automation::insert::Via::Paste,
+            };
+            let manual = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: "another-site",
+            };
+            v.auto_crosspost_after_run(manual, &posted, false, window, cx);
+            assert!(
+                v.auto_crosspost_chosen(&post, cx).contains(&first),
+                "the queued site stays on for the post"
+            );
+            // The queued run's own end (posted, unrecorded) turns it off.
+            let queued = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: NOTE_MACRO,
+            };
+            v.auto_crosspost_after_run(queued, &posted, false, window, cx);
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty());
+        });
+        cx.run_until_parked();
     }
 
     /// --- auto cross-post --- Deleting a draft forgets its choices.
