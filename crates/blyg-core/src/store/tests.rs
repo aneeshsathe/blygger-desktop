@@ -458,6 +458,7 @@ fn generated(model: &str) -> Option<ScopeProvenance> {
     Some(ScopeProvenance {
         model: model.into(),
         sources: vec![],
+        pages: vec![],
         at: None,
     })
 }

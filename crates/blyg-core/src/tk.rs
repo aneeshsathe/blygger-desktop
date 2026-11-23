@@ -209,6 +209,7 @@ mod tests {
         Some(ScopeProvenance {
             model: model.into(),
             sources: vec![],
+            pages: vec![],
             at: None,
         })
     }
@@ -287,7 +288,9 @@ mod tests {
                 id: "0123456789abcdefghjkmnpqrs".into(),
                 version: None,
                 origin: None,
+                cited: None,
             }],
+            pages: vec![],
             at: None,
         });
         assert!(

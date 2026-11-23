@@ -741,6 +741,17 @@ fn add_ref(out: &mut Vec<PostRef>, r: PostRef) {
 }
 
 impl ReadingItem {
+    /// --- studio 0.71 --- The post's generation disclosure (`generated`),
+    /// one entry per generated scope, its posts and web pages read apart.
+    /// An entry that doesn't parse is left out; none served, empty.
+    pub fn generation(&self) -> Vec<ScopeProvenance> {
+        self.generated
+            .iter()
+            .flatten()
+            .filter_map(ScopeProvenance::from_served)
+            .collect()
+    }
+
     /// The posts this one points at, one reference per target (see
     /// [`add_ref`]). A quote without an origin is from the quoting post's
     /// own blyg; a `stub_of` that's only a URL is left out.
@@ -1178,19 +1189,135 @@ pub struct ProvenanceSource {
     /// 0.41+, protocol §16.3). `None` for this blyg's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// A remote source's frozen human half (`Citation`: source, author,
+    /// url, retrieved), composed by the studio when the scope was generated.
+    /// Kept as served, so a push never drops it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cited: Option<serde_json::Value>,
+}
+
+/// A web page a generated scope's model read (studio 0.70, decision #117,
+/// spec 0.4 §16.16): `{url, cited}`, §10.6's plain-web shape. Disclosed with
+/// the scope, never a post reference: it has no version, no lineage, and
+/// tells no one (no mention).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageSource {
+    pub url: String,
+    /// When and as what it was read (`Citation`: `source`, `url`,
+    /// `retrieved`, maybe `author`, `excerpt`). Kept as served.
+    pub cited: serde_json::Value,
+}
+
+impl PageSource {
+    /// The `cited.source` the studio recorded (the site's name), else the
+    /// URL's host.
+    pub fn site(&self) -> String {
+        self.cited
+            .get("source")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                url::Url::parse(&self.url)
+                    .ok()?
+                    .host_str()
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| self.url.clone())
+    }
 }
 
 /// Who generated one TK scope's output, recorded when the app generates it
-/// (docs/SPEC.md § Client-recorded provenance). Never holds the instruction.
+/// (docs/SPEC.md § Client-recorded provenance), or as the blyg recorded it.
+/// Never holds the instruction.
+///
+/// On the wire the scope's `sources` is one array of `GenerationSource`s
+/// (contract 6.3.0): a post (`{id, version, origin?, cited?}`) or a web
+/// page (`{url, cited}`). Here the posts are `sources` and the pages
+/// `pages`; written back, posts come first, then pages (the studio gives the
+/// order no meaning).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "WireScope", into = "WireScope")]
 pub struct ScopeProvenance {
     /// The model that answered (`GenResult::model`).
     pub model: String,
-    #[serde(default)]
+    /// The posts it drew on (`![[id]]` in the scope).
     pub sources: Vec<ProvenanceSource>,
+    /// --- studio 0.71 --- The web pages its model read (studio 0.70+).
+    pub pages: Vec<PageSource>,
     /// ISO-8601 generation time; `None` = now.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<String>,
+}
+
+impl ScopeProvenance {
+    /// The sources the blyg tells when it publishes (a mention, relation
+    /// `source`): the posts on other blygs. A web page, or a post of your
+    /// own, tells no one.
+    pub fn notifies(&self) -> impl Iterator<Item = &ProvenanceSource> {
+        self.sources.iter().filter(|s| s.origin.is_some())
+    }
+
+    /// One served `generated[]` / `provenance[]` entry. An entry without a
+    /// model reads as `"unknown"`; one that doesn't parse is `None`.
+    pub fn from_served(v: &serde_json::Value) -> Option<ScopeProvenance> {
+        let mut v = v.clone();
+        let o = v.as_object_mut()?;
+        if !o.get("model").is_some_and(serde_json::Value::is_string) {
+            o.insert("model".into(), "unknown".into());
+        }
+        serde_json::from_value(v).ok()
+    }
+}
+
+/// `GenerationProvenance` as served: one `sources` array of either shape.
+#[derive(Serialize, Deserialize)]
+struct WireScope {
+    model: String,
+    #[serde(default)]
+    sources: Vec<WireSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at: Option<String>,
+}
+
+/// `GenerationSource`: a post (has `id`) or a web page (`url` and `cited`).
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum WireSource {
+    Post(ProvenanceSource),
+    Page(PageSource),
+}
+
+impl From<WireScope> for ScopeProvenance {
+    fn from(w: WireScope) -> Self {
+        let (mut sources, mut pages) = (vec![], vec![]);
+        for s in w.sources {
+            match s {
+                WireSource::Post(p) => sources.push(p),
+                WireSource::Page(p) => pages.push(p),
+            }
+        }
+        ScopeProvenance {
+            model: w.model,
+            sources,
+            pages,
+            at: w.at,
+        }
+    }
+}
+
+impl From<ScopeProvenance> for WireScope {
+    fn from(p: ScopeProvenance) -> Self {
+        let sources = p
+            .sources
+            .into_iter()
+            .map(WireSource::Post)
+            .chain(p.pages.into_iter().map(WireSource::Page))
+            .collect();
+        WireScope {
+            model: p.model,
+            sources,
+            at: p.at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Blygger Studio API",
-    "version": "6.2.0",
+    "version": "6.3.0",
     "description": "Private authoring and reading API. Protocol files remain a separate public interface."
   },
   "servers": [
@@ -469,26 +469,48 @@
         "additionalProperties": {}
       },
       "GenerationSource": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "origin": {
+                "type": "string",
+                "description": "Present for a remote source (0.4, §5.7); omitted for this blyg's own."
+              },
+              "cited": {
+                "$ref": "#/components/schemas/Citation"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ]
           },
-          "version": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "origin": {
-            "type": "string",
-            "description": "Present for a remote source (0.4, §5.7); omitted for this blyg's own."
-          },
-          "cited": {
-            "$ref": "#/components/schemas/Citation"
+          {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "A web page the generator read (decision #117)."
+              },
+              "cited": {
+                "$ref": "#/components/schemas/Citation"
+              }
+            },
+            "required": [
+              "url",
+              "cited"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "id",
-          "version"
         ]
       },
       "Syndication": {
@@ -663,6 +685,15 @@
           "agenticTitle": {
             "type": "string",
             "description": "The owner's name for the Agentic feed tab (\"Daily digest\", \"My briefing\"), at most 40 characters; also the heading of each edition's thread. Empty restores \"Agentic feed\"."
+          },
+          "readerMarkRead": {
+            "type": "string",
+            "enum": [
+              "seen",
+              "opened",
+              "never"
+            ],
+            "description": "When a reader entry counts as read: seen (on screen about a second while scrolling, the default), opened (its full view), or never (marked by hand only)."
           },
           "readerOrder": {
             "type": "string",
@@ -897,6 +928,7 @@
           "readerChangelogDisplay",
           "changelogSummaryPrompt",
           "agenticTitle",
+          "readerMarkRead",
           "readerOrder",
           "backgroundRules",
           "acceptMentions",
@@ -6968,6 +7000,10 @@
                   "scope": {
                     "type": "integer",
                     "minimum": 0
+                  },
+                  "proceed": {
+                    "type": "boolean",
+                    "description": "Generate even if some links in the draft could not be read."
                   }
                 },
                 "required": [
@@ -6985,28 +7021,78 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "contentMd": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "model",
+                        "contentMd",
+                        "revision"
+                      ]
                     },
-                    "model": {
-                      "type": "string"
-                    },
-                    "contentMd": {
-                      "type": "string"
-                    },
-                    "revision": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "checkpoint": {
+                          "type": "object",
+                          "properties": {
+                            "read": {
+                              "type": "integer",
+                              "description": "Links read."
+                            },
+                            "total": {
+                              "type": "integer",
+                              "description": "Links found in the instruction and the draft."
+                            },
+                            "failed": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "link": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "link",
+                                  "reason"
+                                ]
+                              },
+                              "description": "Links that could not be read, and why."
+                            }
+                          },
+                          "required": [
+                            "read",
+                            "total",
+                            "failed"
+                          ],
+                          "description": "Nothing was generated: some links could not be read. Send `proceed: true` to generate without them (decision #117)."
+                        }
+                      },
+                      "required": [
+                        "checkpoint"
+                      ]
                     }
-                  },
-                  "required": [
-                    "text",
-                    "model",
-                    "contentMd",
-                    "revision"
                   ]
                 }
               }
@@ -8736,6 +8822,15 @@
                   "agenticTitle": {
                     "type": "string",
                     "description": "The owner's name for the Agentic feed tab (\"Daily digest\", \"My briefing\"), at most 40 characters; also the heading of each edition's thread. Empty restores \"Agentic feed\"."
+                  },
+                  "readerMarkRead": {
+                    "type": "string",
+                    "enum": [
+                      "seen",
+                      "opened",
+                      "never"
+                    ],
+                    "description": "When a reader entry counts as read: seen (on screen about a second while scrolling, the default), opened (its full view), or never (marked by hand only)."
                   },
                   "readerOrder": {
                     "type": "string",

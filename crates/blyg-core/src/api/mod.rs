@@ -55,6 +55,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
+use crate::generate::GenerateOutcome;
 use crate::model::{
     Hopper, HopperEdit, Kind, Mention, RemoteId, RemoteRef, ResponsesMode, ScopeProvenance,
     Settings, SubId, SubscribePreview, Subscription, SubscriptionKind, Version,
@@ -903,33 +904,27 @@ impl Api {
     /// fills that TK scope with its own model, records the provenance and
     /// stores the spliced text. `revision`: `None` reads the item first and
     /// uses its current revision (for a caller that holds none).
-    pub fn generate(&self, id: &str, scope: u32, revision: Option<u64>) -> Result<Generated> {
+    ///
+    /// Studio 0.70+ reads the draft's links first and may answer a
+    /// checkpoint instead, saving nothing; `proceed` generates past one
+    /// (`crate::generate`).
+    pub fn generate(
+        &self,
+        id: &str,
+        scope: u32,
+        revision: Option<u64>,
+        proceed: bool,
+    ) -> Result<GenerateOutcome> {
         let revision = match revision {
             Some(r) => r,
             None => self.get_item(id)?.revision,
         };
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct R {
-            text: String,
-            #[serde(default)]
-            model: Option<String>,
-            #[serde(default)]
-            content_md: Option<String>,
-            #[serde(default)]
-            revision: u64,
-        }
-        let r: R = self.call_as(
+        let v: Value = self.call_as(
             "POST",
             &format!("/api/items/{}/generate", enc(id)),
-            Some(json!({ "scope": scope, "expectedRevision": revision })),
+            Some(crate::generate::request_body(scope, revision, proceed)),
         )?;
-        Ok(Generated {
-            text: r.text,
-            model: r.model.unwrap_or_else(|| "unknown".into()),
-            content_md: r.content_md,
-            revision: r.revision,
-        })
+        GenerateOutcome::from_value(v)
     }
 
     /// `GET /api/changes`: the blyg's change epoch and one revision counter
@@ -1993,24 +1988,11 @@ pub fn is_transient(e: &CoreError) -> bool {
     ) || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
 }
 
-/// Upstream's `GenerationProvenance` array: `{sources: [{id, version}],
-/// model?, at?}` or `null` per scope.
+/// Upstream's `GenerationProvenance` array: `{sources, model?, at?}` or
+/// `null` per scope, its sources posts (`{id, version, origin?, cited?}`)
+/// and web pages (`{url, cited}`, studio 0.70) as the blyg recorded them.
 fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
-    Value::Array(
-        scopes
-            .iter()
-            .map(|p| match p {
-                None => Value::Null,
-                Some(p) => {
-                    let mut e = json!({ "model": p.model, "sources": p.sources });
-                    if let Some(at) = &p.at {
-                        e["at"] = json!(at);
-                    }
-                    e
-                }
-            })
-            .collect(),
-    )
+    serde_json::to_value(scopes).unwrap_or_else(|_| Value::Array(vec![]))
 }
 
 #[cfg(test)]

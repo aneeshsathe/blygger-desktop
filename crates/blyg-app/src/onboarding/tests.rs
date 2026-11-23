@@ -236,6 +236,15 @@ impl Backend for Recording {
         self.rec("provenance_available");
         self.inner.provenance_available()
     }
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> blyg_core::Result<blyg_core::generate::GenerateOutcome> {
+        self.rec("generate_on_blyg");
+        self.inner.generate_on_blyg(id, scope, proceed)
+    }
     fn tracked_tk_provenance(
         &self,
         id: &LocalId,

@@ -27,6 +27,9 @@ pub mod access_ai_seed;
 // --- studio 0.69 --- the Agentic feed's edition, the dictionary, Catch up's summary
 #[path = "fake_studio069.rs"]
 pub mod studio069;
+// --- studio 0.71 --- generate on the blyg, its checkpoint
+#[path = "fake_studio071.rs"]
+pub mod studio071;
 // --- contacts ---
 #[path = "fake_contacts.rs"]
 pub mod contacts_seed;
@@ -232,6 +235,10 @@ struct State {
     bg_rules: Vec<(String, bool)>,
     /// --- reader order --- the Feed's order (`Settings.readerOrder`).
     reader_order: FakeReaderOrder,
+    /// --- studio 0.71 --- `readerMarkRead` as the blyg holds it, and
+    /// whether this computer has read it (until then, not offered).
+    mark_read: blyg_core::mark_read::MarkRead,
+    mark_read_served: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -439,7 +446,9 @@ impl FakeBackend {
                 bg_blygs: Vec::new(),
                 bg_rules: background_seed::rules(),
                 reader_order: FakeReaderOrder::default(), // --- reader order ---
-                trails: Vec::new(),                       // --- trails ---
+                mark_read: blyg_core::mark_read::MarkRead::Seen, // --- studio 0.71 ---
+                mark_read_served: false,
+                trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
                 dictionary: studio069::dictionary(),        // --- dictionary ---
@@ -1512,6 +1521,52 @@ impl Backend for FakeBackend {
 
     fn provenance_available(&self) -> bool {
         !self.lock().prov_unavailable
+    }
+
+    // --- studio 0.71 --- generate on the fake blyg (`studio071::generate`).
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<blyg_core::generate::GenerateOutcome> {
+        self.remote_guard()?;
+        let sink = {
+            let mut st = self.lock();
+            let it = st
+                .items
+                .iter_mut()
+                .find(|i| &i.local_id == id)
+                .ok_or(CoreError::NotFound)?;
+            if it.server_id.is_none() || it.pending_sync {
+                return Err(CoreError::NotSynced);
+            }
+            let now = Utc::now().to_rfc3339();
+            let old = it.content_md.clone();
+            let filled = studio071::generate(&old, scope as usize, proceed, 0, &now)?;
+            let Some((md, p)) = filled.spliced else {
+                return Ok(filled.outcome);
+            };
+            it.content_md = md.clone();
+            it.updated = now;
+            if it.status == Status::Public {
+                it.dirty = true;
+            }
+            let n = blyg_core::tk::scope_count(&md).unwrap_or(0);
+            let mut scopes = st
+                .prov
+                .get(id)
+                .and_then(|(k, v)| blyg_core::tk::remap(k, v, &md))
+                .unwrap_or_else(|| vec![None; n]);
+            if let Some(slot) = scopes.get_mut(scope as usize) {
+                *slot = Some(p);
+            }
+            st.prov.insert(id.clone(), (md.clone(), scopes));
+            st.synced.insert(id.clone(), md);
+            (st.sink.clone(), filled.outcome)
+        };
+        Self::emit(&sink.0, CoreEvent::ItemsChanged);
+        Ok(sink.1)
     }
 
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>) {
@@ -2982,6 +3037,34 @@ impl Backend for FakeBackend {
         o.blyg = o.keeps.unwrap_or(order);
         o.local = Some(o.blyg);
         Ok(o.blyg)
+    }
+
+    // --- studio 0.71 --- readerMarkRead, gated as LiveBackend's: offered
+    // once read from the blyg.
+    fn reader_mark_read(&self) -> Option<blyg_core::mark_read::MarkRead> {
+        let s = self.lock();
+        s.mark_read_served.then_some(s.mark_read)
+    }
+
+    fn load_reader_mark_read(&self) -> Result<Option<blyg_core::mark_read::MarkRead>> {
+        self.remote_guard()?;
+        let mut s = self.lock();
+        s.mark_read_served = true;
+        Ok(Some(s.mark_read))
+    }
+
+    fn save_reader_mark_read(
+        &self,
+        m: blyg_core::mark_read::MarkRead,
+    ) -> Result<blyg_core::mark_read::MarkRead> {
+        if !self.lock().mark_read_served {
+            return Err(CoreError::Other(
+                "your blyg doesn't have this setting".into(),
+            ));
+        }
+        self.remote_guard()?;
+        self.lock().mark_read = m;
+        Ok(m)
     }
 
     // --- hoppers --- the store's rules: membership is local and instant;
