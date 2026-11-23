@@ -54,11 +54,14 @@ Known differences that the suite accepts:
 - **No `links[]`** (35 reader cases "unreported"): the studio computes
   `links[]` at publish. Burrow's anchors, hrefs and text are checked and
   pass.
-- **Partial quotes of lists are flattened** (reader cases 104–109, #114):
-  Burrow's preview bakes the selected items as paragraphs, as studio 0.64.1
-  did. Studio 0.69 keeps their list structure. The suite accepts both, and
-  the wire document is the studio's. Adopt this with the next render
-  re-sync to 0.69 (`docs/RENDER.md`).
+- **Partial quotes of lists keep their structure** since the studio 0.71.0
+  render re-sync (reader cases 104–109, #114): Burrow's preview bakes the
+  quoted items as list items, matching the fixtures' `content_html` apart
+  from its final newline. Before, it flattened them to paragraphs, which the
+  suite also accepts. Upstream `main` (`f5817bd`, which has #38 merged) adds
+  the twenty-third revision's cases 111 and 112 (§2 text content, #118);
+  Burrow passes all 112 there too, but the pin stays here for now
+  (`docs/RENDER.md`).
 
 Not reached by any fixture (`docs/CONFORMANCE-READER.md`, findings): the
 AI crate's TK parser doesn't skip code, and it takes source ids from a
