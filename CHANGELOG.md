@@ -81,6 +81,10 @@ lets you keep typing while your blyg generates.
   Burrow's earlier marks hold. `crates/blyg-app/src/reading/count_read.rs`.
 - **Reading: a card's date opens its post** in the stream's side pane, and a
   Reader row's date opens it too; both underline on hover.
+- **Tour: "When your blyg can't read a link"** in the AI and TK tour, the
+  first step What's new shows: ⌘G on the tour's sample blyg stops at the
+  checkpoint sheet, with Details (d), ⏎ and esc live, and lists what it read
+  under the preview (`crates/blyg-app/src/onboarding/tutorial.rs`).
 - **Tour: "Open a post from its date"** in the reading tour highlights a
   card, has you click its date, and points to READ MARKS.
 - **Reading: blygger-studio 0.68's tabs.** The Reader's sources now have the
