@@ -1118,10 +1118,70 @@ impl Store {
     }
 
     /// A command on the item landed and the blyg reported its new revision.
+    /// Only after a command that leaves the text alone; a command that
+    /// rewrites the text lets the merge store the revision (see
+    /// `generate_on_blyg`).
     pub fn set_revision(&self, id: &LocalId, revision: u64) -> Result<()> {
         self.conn().execute(
             "UPDATE items SET revision = ?2 WHERE local_id = ?1",
             params![id.0, nonzero(revision)],
+        )?;
+        Ok(())
+    }
+
+    /// --- studio 0.71 --- A keystroke landed while the blyg generated, and
+    /// the writer merged it with the generated text: the blyg's text
+    /// (`generated`) and the revision it answered with become the base, and
+    /// the queued save carries `merged`, so it goes through at that revision
+    /// with neither side lost. False, changing nothing, once the item is in
+    /// conflict (the typed edit's push was refused first): the writer
+    /// chooses there.
+    pub fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let merged = &*crate::text::for_save(merged);
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let row = get_row(&tx, id)?.ok_or(CoreError::NotFound)?;
+        if row.item.conflict {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE items SET base_content = ?2, revision = ?3 WHERE local_id = ?1",
+            params![id.0, generated, nonzero(revision)],
+        )?;
+        if row.item.content_md != merged {
+            provenance::follow_tx(&tx, id, merged)?;
+            tx.execute(
+                "UPDATE items SET content_md = ?2, dirty = 1, updated = ?3 WHERE local_id = ?1",
+                params![id.0, merged, max_str(&now_iso(), &row.item.updated)],
+            )?;
+        }
+        if merged != generated {
+            Self::ensure_push(&tx, id, row.item.server_id.is_some())?;
+            tx.execute(
+                "UPDATE outbox SET not_before = ?2 WHERE local_id = ?1 AND in_flight = 0 AND op <> 'delete_remote'",
+                params![id.0, now_ms()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// --- studio 0.71 --- Hold `id`'s queued push until `until` (unix ms):
+    /// a keystroke landed while the blyg generated, and the writer's merge
+    /// (`keep_generated`) should land first. Without one, the push goes when
+    /// the hold ends, at the revision before the generate, and is refused
+    /// and read again as a conflict.
+    pub fn hold_push(&self, id: &LocalId, until: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE outbox SET not_before = MAX(not_before, ?2) \
+             WHERE local_id = ?1 AND in_flight = 0 AND op <> 'delete_remote'",
+            params![id.0, until],
         )?;
         Ok(())
     }

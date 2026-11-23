@@ -323,6 +323,7 @@ impl MainView {
         match crate::connection::go_live(&url, cx) {
             Ok(true) => {
                 self.sheet.close();
+                self.reading_for_new_backend(cx);
                 self.base_url = self.backend.base_url();
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
@@ -409,6 +410,9 @@ impl MainView {
                 {
                     self.blyg_switched(window, cx);
                 } else {
+                    // No blyg's rows, folders or rule stay in the reading
+                    // state (`blyg_switched` does this for the next blyg).
+                    self.reading_for_new_backend(cx);
                     self.open_connect(window, cx);
                 }
             }

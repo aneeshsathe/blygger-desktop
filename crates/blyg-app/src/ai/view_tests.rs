@@ -836,3 +836,98 @@ fn a_long_list_of_what_generation_read_shows_the_first_fifty(cx: &mut TestAppCon
     assert!(e.cx.debug_bounds("tk-read-0-50").is_none(), "no 51st");
     assert!(e.cx.debug_bounds("tk-read-more").is_some(), "+10 more");
 }
+
+// --- studio 0.71 --- typing while the blyg generates: the editor stays
+// live for the seconds a model takes.
+
+const ASKED: &str = "Fog. [TK]write one line[/TK]\n\nThe end.";
+const ANSWERED: &str = "Fog. [TK]write one line[=]A line.[/TK]\n\nThe end.";
+
+/// What the editor takes after a generate on the blyg: the blyg's text when
+/// nothing was typed, the two merged when a keystroke landed elsewhere in
+/// the post, and nothing (a conflict, for the writer) when it landed in the
+/// generated scope.
+#[test]
+fn server_fill_merges_a_keystroke_outside_the_scope() {
+    use crate::ai::generate::server_fill;
+    let theirs = || Some(ANSWERED.to_string());
+    assert_eq!(
+        server_fill(ASKED, ASKED, theirs()).as_deref(),
+        Some(ANSWERED)
+    );
+    assert_eq!(server_fill(ASKED, ASKED, None), None, "pulled instead");
+    assert_eq!(
+        server_fill(ASKED, &format!("Grey. {ASKED}"), theirs()),
+        Some(format!("Grey. {ANSWERED}")),
+        "typed before the scope"
+    );
+    assert_eq!(
+        server_fill(
+            ASKED,
+            &ASKED.replace("The end.", "The end, at last."),
+            theirs()
+        ),
+        Some(ANSWERED.replace("The end.", "The end, at last.")),
+        "typed after it"
+    );
+    assert_eq!(
+        server_fill(ASKED, &ASKED.replace("one line", "two lines"), theirs()),
+        None,
+        "typed in the scope the blyg filled"
+    );
+}
+
+/// A word typed at the top of the post while the blyg generates ends as the
+/// generated text with the word, in the editor and in the copy that is
+/// pushed, with no conflict. Before 0.28.0's fix the editor was reloaded
+/// with the typed text alone, and its push (at the revision before the
+/// generate) came back as a conflict sheet.
+#[gpui_kit::test]
+fn a_word_typed_while_the_blyg_generates_is_kept_with_its_text(cx: &mut TestAppContext) {
+    use blyg_core::generate::GenerateOutcome;
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(ASKED);
+    let id = LocalId(DRAFT.into());
+    // The blyg generates and stores its text...
+    let Ok(GenerateOutcome::Generated(g)) = e.fake.generate_on_blyg(&id, 0, true) else {
+        panic!("the fake blyg generates");
+    };
+    let answer = g.content_md.clone().expect("the spliced text");
+    assert!(answer.contains("[=]"), "{answer}");
+    // ...while a word is typed at the top, before the answer is back.
+    let typed = format!("Grey. {ASKED}");
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.splice_editor(ASKED, &typed, Some(5), window, cx)
+    });
+    e.cx.run_until_parked();
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.ai_done(
+            super::Done::Server {
+                item: id.clone(),
+                sent: ASKED.into(),
+                content_md: Some(answer.clone()),
+                revision: g.revision,
+            },
+            blyg_ai::ProviderKind::BlygServer,
+            window,
+            cx,
+        )
+    });
+    e.cx.run_until_parked();
+    let want = format!("Grey. {answer}");
+    assert_eq!(e.text(), want, "the editor holds both");
+    assert!(
+        e.view.read_with(e.cx, |v, _| !v.sheet.is_open()),
+        "no conflict sheet"
+    );
+    let fake = e.fake.clone();
+    let w = want.clone();
+    crate::test_wait::until(e.cx, "both pushed", move |cx| {
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        fake.item(&LocalId(DRAFT.into()))
+            .is_some_and(|i| !i.pending_sync && i.content_md == w)
+    });
+    let it = e.fake.item(&id).unwrap();
+    assert!(!it.conflict);
+}

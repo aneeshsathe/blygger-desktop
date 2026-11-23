@@ -207,8 +207,8 @@ impl CountRead {
 
 impl MainView {
     /// Read the blyg's choice once a session (Reading opening asks), and
-    /// again when Settings opens (`force`), so a change made in Studio
-    /// shows. A blyg without it keeps the choice hidden.
+    /// again when Settings opens and when the window comes to the front
+    /// (`force`, `count_read_on_front`), so a change made in Studio shows. A blyg without it keeps the choice hidden.
     pub(crate) fn count_read_refresh(&mut self, force: bool, cx: &mut Context<Self>) {
         let c = &mut self.reading.count_read;
         if c.loaded && !force {
@@ -234,6 +234,15 @@ impl MainView {
             });
         })
         .detach();
+    }
+
+    /// The window came to the front: the rule may have been chosen
+    /// elsewhere meanwhile (Studio on the web), so read it again, once it's
+    /// in use (Reading or Settings has asked for it this session).
+    pub(crate) fn count_read_on_front(&mut self, cx: &mut Context<Self>) {
+        if self.reading.count_read.loaded {
+            self.count_read_refresh(true, cx);
+        }
     }
 
     /// Choose: at once here, then saved on the blyg (that key alone). A
@@ -322,6 +331,18 @@ impl MainView {
             return self.send_marks(due, cx);
         };
         send_to(on, due, cx);
+    }
+
+    /// The backend under the window changed (a blyg switched to, connected
+    /// or signed out of, the sample data, the tour's swaps): the one place
+    /// the reading state is rebuilt for it. The seen marks waiting go to the
+    /// blyg they were seen on, the rows, folders, order and rule start over
+    /// from the new backend, and its "Count an entry as read" is read now,
+    /// so the old backend's rule never marks entries on this one.
+    pub(crate) fn reading_for_new_backend(&mut self, cx: &mut Context<Self>) {
+        self.flush_seen_now();
+        self.reading = crate::app::reading::State::new(&*self.backend, cx);
+        self.count_read_refresh(false, cx);
     }
 
     /// Write every seen mark waiting, now, on this thread (a mark is a

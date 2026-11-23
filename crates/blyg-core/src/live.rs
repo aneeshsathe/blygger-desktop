@@ -162,6 +162,12 @@ pub const DB_FILE: &str = "blygger.db";
 /// How long a fetched public changelog is trusted before refetching.
 pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 
+/// --- studio 0.71 --- How long an edit typed during a generate on the blyg
+/// waits for the writer's merge (`Backend::keep_generated`) before its push
+/// goes (and is refused). The window makes the merge as it takes the
+/// answer, well inside this.
+const GENERATE_MERGE_WAIT_MS: i64 = 3_000;
+
 /// --- contacts --- the address book as last fetched (JSON), and whether
 /// the blyg served it ("1"/"0").
 const CONTACTS_SERVED_META: &str = "contacts.served";
@@ -1176,14 +1182,41 @@ impl Backend for LiveBackend {
             // read again with conflict detection rather than going through
             // over the generated words. Unread (offline), the old revision
             // stays too, with the same effect.
-            if let Some(w) = self.refresh(id, &sid)
-                && let Some(p) = w.server_provenance()
-            {
-                self.e().store.adopt_prov(id, &w.content_md, &p)?;
+            if let Some(w) = self.refresh(id, &sid) {
+                if let Some(p) = w.server_provenance() {
+                    self.e().store.adopt_prov(id, &w.content_md, &p)?;
+                }
+                // That edit's push waits a moment for the writer's merge
+                // (`keep_generated`), which the window makes as it takes the
+                // answer; without one it goes, and is refused, as above.
+                if self
+                    .row(id)
+                    .is_ok_and(|r| r.item.pending_sync && r.item.content_md != w.content_md)
+                {
+                    let until = crate::util::now_ms() + GENERATE_MERGE_WAIT_MS;
+                    self.e().store.hold_push(id, until)?;
+                }
             }
             self.e().emit(CoreEvent::ItemsChanged);
         }
         Ok(out)
+    }
+
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let kept = self
+            .e()
+            .store
+            .keep_generated(id, generated, revision, merged)?;
+        if kept {
+            self.wake();
+        }
+        Ok(kept)
     }
 
     fn provenance_available(&self) -> bool {

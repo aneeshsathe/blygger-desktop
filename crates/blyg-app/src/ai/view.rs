@@ -115,6 +115,8 @@ enum Done {
         item: LocalId,
         sent: String,
         content_md: Option<String>,
+        /// The revision the blyg answered with (it goes with `content_md`).
+        revision: u64,
     },
     /// --- studio 0.71 --- the blyg couldn't read some links and saved
     /// nothing: ask (`checkpoint.rs`).
@@ -633,6 +635,7 @@ impl MainView {
                         item: local,
                         sent,
                         content_md: g.content_md,
+                        revision: g.revision,
                     }),
                     GenerateOutcome::Checkpoint(c) => Ok(Done::Checkpoint {
                         item: local,
@@ -862,13 +865,27 @@ impl MainView {
                 item,
                 sent,
                 content_md,
+                revision,
             } => {
                 let now = self.ai_text_of(&item, cx).unwrap_or_default();
                 let open = self.current.as_ref().is_some_and(|c| c.local_id == item);
+                let generated = content_md.clone().unwrap_or_default();
+                // --- studio 0.71 --- typed meanwhile: the merge is the edit
+                // that goes, over the blyg's text and revision. Refused (the
+                // typed edit's push came back first), the conflict stands.
+                let kept = |v: &mut Self, new: &str| {
+                    now == sent
+                        || v.backend
+                            .keep_generated(&item, &generated, revision, new)
+                            .unwrap_or(false)
+                };
                 match generate::server_fill(&sent, &now, content_md) {
                     // The server's copy, straight into the editor as one
-                    // undoable edit (its provenance is the server's own).
-                    Some(new) if open => self.splice_editor(&now, &new, None, window, cx),
+                    // undoable edit (its provenance is the server's own),
+                    // with anything typed while it generated.
+                    Some(new) if open && kept(self, &new) => {
+                        self.splice_editor(&now, &new, None, window, cx)
+                    }
                     // Otherwise the pulled copy (pulled in the background
                     // when the reply had no content_md).
                     _ => {

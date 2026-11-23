@@ -471,3 +471,113 @@ fn a_cards_date_opens_its_full_view(cx: &mut TestAppContext) {
     let id = first.unwrap();
     wait_read(&fake, &id, cx);
 }
+
+/// Connecting a blyg (here from blyg `a`, as from the sample data) puts the
+/// new blyg's "Count an entry as read" in force at once, without Settings
+/// opening. Before 0.28.0's fix the backend was swapped and synced but the
+/// reading state kept the old backend's rule (read already, so never asked
+/// again), and entries were marked read by it until a restart.
+#[gpui_kit::test]
+fn connecting_a_blyg_puts_its_rule_in_force(cx: &mut TestAppContext) {
+    use blyg_core::api::auth::Credential;
+    let (view, two, cx) = setup_two(cx);
+    choose(&view, &two.a, MarkRead::Seen, cx);
+    two.b.load_reader_mark_read().unwrap();
+    two.b.save_reader_mark_read(MarkRead::Never).unwrap();
+    view.update_in(cx, |v, window, cx| {
+        v.finish_connect(B, &Credential::Token("tok-b".into()), window, cx)
+    });
+    settle(cx);
+    assert_eq!(
+        cx.update(|_, cx| crate::settings::blyg_url(cx)).as_deref(),
+        Some(B)
+    );
+    assert!(
+        cx.debug_bounds("count-read").is_none(),
+        "Settings never opened"
+    );
+    until(cx, "the new blyg's rule", |cx| {
+        view.read_with(cx, |v, _| {
+            v.reading.count_read.setting == Some(MarkRead::Never)
+        })
+    });
+    view.read_with(cx, |v, _| {
+        assert!(!v.reading.count_read.on_open(), "opening doesn't count");
+        assert_eq!(v.reading.count_read.seen_rule(), None, "nor seeing");
+    });
+}
+
+/// Every place the backend under the window changes (switching blygs,
+/// connecting, signing out, the sample data, the tour) rebuilds the reading
+/// state through `MainView::reading_for_new_backend`, which writes the seen
+/// marks waiting, builds the state from the new backend and reads its rule.
+/// A site that builds `reading::State` itself can forget one of those, as
+/// connecting did.
+#[test]
+fn the_reading_state_is_rebuilt_in_one_place() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut found = Vec::new();
+    let mut dirs = vec![src.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if !name.ends_with(".rs") || name.ends_with("_tests.rs") || name == "tests.rs" {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            for (i, line) in text.lines().enumerate() {
+                if line.contains("reading::State::new(") {
+                    let rel = path.strip_prefix(&src).unwrap().to_string_lossy();
+                    found.push(format!("{}:{}", rel.replace('\\', "/"), i + 1));
+                }
+            }
+        }
+    }
+    found.sort();
+    let files: Vec<&str> = found.iter().map(|f| f.split(':').next().unwrap()).collect();
+    assert_eq!(
+        files,
+        vec!["app.rs", "reading/count_read.rs"],
+        "build the reading state only in MainView::new (app.rs) and \
+         reading_for_new_backend (reading/count_read.rs): {found:?}"
+    );
+}
+
+/// The rule chosen in Studio on the web while Burrow was in the background
+/// is in force once its window comes back to the front, without Settings
+/// or a restart. Before 0.28.0's fix it was read only when Reading first
+/// opened and when Settings opened, so cards went on being marked read.
+#[gpui_kit::test]
+fn the_window_coming_to_the_front_reads_the_rule_again(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(fake(), cx);
+    choose(&view, &fake, MarkRead::Seen, cx);
+    cx.deactivate_window();
+    // Chosen in Studio meanwhile.
+    fake.save_reader_mark_read(MarkRead::Never).unwrap();
+    cx.update(|window, _| window.activate_window());
+    until(cx, "the rule chosen on the web", |cx| {
+        view.read_with(cx, |v, _| {
+            v.reading.count_read.setting == Some(MarkRead::Never)
+        })
+    });
+    assert!(
+        cx.debug_bounds("count-read").is_none(),
+        "Settings never opened"
+    );
+}
+
+/// A blyg whose rule was never asked for (Reading and Settings unopened)
+/// isn't asked each time the window comes to the front.
+#[gpui_kit::test]
+fn the_front_window_asks_only_once_the_rule_is_in_use(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(fake(), cx);
+    cx.deactivate_window();
+    cx.update(|window, _| window.activate_window());
+    settle(cx);
+    view.read_with(cx, |v, _| assert_eq!(v.reading.count_read.setting, None));
+}
