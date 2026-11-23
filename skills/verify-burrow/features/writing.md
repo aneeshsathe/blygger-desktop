@@ -48,7 +48,7 @@ installed sets; Learn Spelling in the editor's spelling menu adds there too.
 | `publish` | a published post edited (unpublished changes) |
 | `published` | publish with a note: the "Published v1" toast, `v1` in the list |
 | `preview` | the preview pane beside the editor |
-| `ai-checkpoint` | ⌘G on the (fake) blyg with a link it can't read: "1 of 2 links in the draft could not be read. Generate anyway?", ⏎ / esc |
+| `ai-checkpoint` | ⌘G on the (fake) blyg with a link it can't read: "1 of 2 links in this TK could not be read. Generate anyway?", Details open (d), ⏎ / esc |
 | `ai-checkpoint-details` | the same, Details open: each link and why |
 | `ai-tk-read` | ⌘G on the blyg with a readable link, then ⌘⏎: the Publish sheet lists what the gap read |
 | `ai-tk-read-preview` | the same in split view: the list under the preview |
