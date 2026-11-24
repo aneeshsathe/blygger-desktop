@@ -29,6 +29,10 @@ use crate::theme::Rule; // --- themes --- dividers
 #[cfg(test)]
 #[path = "view_tests.rs"]
 mod tests;
+// --- studio 0.71 --- ⌘G with Burrow's own provider reads the links first.
+#[cfg(test)]
+#[path = "hydrate_tests.rs"]
+mod hydrate_tests;
 // --- studio 0.71 --- ⌘G on the blyg, its checkpoint and what it read.
 #[path = "checkpoint.rs"]
 pub(crate) mod checkpoint;

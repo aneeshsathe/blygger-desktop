@@ -10,3 +10,4 @@ mod chatgpt;
 mod cli_bridges;
 mod http_providers;
 mod prompts;
+mod hydrate; // --- studio 0.71 --- [TK] link reading
