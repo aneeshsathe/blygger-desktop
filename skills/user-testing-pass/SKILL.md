@@ -64,6 +64,45 @@ clicks, never `pkill` by name, and never use real data.
 5. **Time it:** count the steps and keys a journey takes. Note any wait over
    about 100 ms that the UI doesn't acknowledge.
 
+## The web app (`crates/blyg-web`)
+
+The desktop scenes don't reach the web app. It gets two passes: one that
+measures how its journeys feel, and the persona walk-through.
+
+1. **Run the flow pass first:**
+   `BLYG_WORKER_DIR=<a scratch copy of the studio, npm ci'd there> FLOW_OUT=<scratch dir> scripts/browser-web-flow-pass.sh`.
+   - It starts local studios (wrangler dev) with 300+ invented reading posts
+     over 11 subscriptions (`scripts/web-flow-feeds.py` serves the RSS
+     sites), serves Burrow web through `crates/blyg-web/dev-proxy.py`, and
+     runs ten journeys headless at 1440×900 and 390×844: first open to
+     reading, catching up, quote and publish, a draft revised, subscribe,
+     switching sources, a sync while reading and while typing, phone back
+     and scroll, and the phone keyboard. Phone journeys also run in WebKit.
+   - It runs the same journeys on the studio's own UI, so every number has
+     a reference. Where Burrow is slower, takes more steps or jumps more,
+     that's a finding.
+   - Each step records the time from input to a quiet page, layout shift,
+     long tasks, requests and duplicates, where focus went, whether scroll,
+     selection and typed text survived, flicker, spinners under 150 ms and
+     empty states that flash before data. `$FLOW_OUT/flow.json` holds it all;
+     `$FLOW_OUT/summary.md` is the table, and each journey leaves a
+     screenshot of where it ended.
+   - Burrow's numbers are held to `scripts/web-flow-budgets.json`: the pass
+     exits 1 and names each broken budget. Lower a budget when a change
+     beats it; raise one only with the reason in the commit.
+   - `FLOW_ONLY=<journeys>`, `FLOW_TARGETS=burrow`, `FLOW_BROWSERS=chromium`
+     narrow a re-run. `FLOW_HOLD=<file>` keeps the seeded stack up for
+     exploring until you delete the file.
+   - Only invented data and local studios; headless browsers only. Copy the
+     studio to a scratchpad and `npm ci` there, never inside its repo.
+2. **Then walk it as each persona,** with the flow pass's screenshots, and
+   `scripts/browser-web-ux-pass.sh` for the discrete checks it doesn't
+   cover. Look at every screenshot you cite.
+3. **Feel, not function:** the web app's complaints have been "it works but
+   it isn't nice to use". Report text lost or focus stolen first, then scroll
+   jumps and waits with no feedback, then extra steps, then visual
+   roughness (flicker, layout shift, a spinner that flashes).
+
 ## What to report
 
 Each finding gets:
@@ -75,7 +114,9 @@ Each finding gets:
 - the steps;
 - what they expected and what happened;
 - the screenshot path;
-- a suggested fix, with the file to change if it's known.
+- a suggested fix, with the file to change if it's known;
+- for the web app, the step's numbers from `$FLOW_OUT/flow.json`, beside
+  the studio's for the same step.
 
 Also list what worked well, so a fix doesn't break it. Report observations,
 not code reviews: "I didn't know the post was published" beats "the toast
