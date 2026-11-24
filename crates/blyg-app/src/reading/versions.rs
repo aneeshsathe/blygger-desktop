@@ -514,7 +514,7 @@ impl MainView {
                     })
                     .into_any_element()
             }
-            Load::Failed(e) => self.muted_note(format!("Couldn't load the history: {e}")),
+            Load::Failed(e) => self.retry_note(format!("Couldn't load the history: {e}"), cx),
             _ => self.muted_note("Loading the history…"),
         };
 
@@ -541,7 +541,7 @@ impl MainView {
                         .rounded_full()
                         .border_1()
                         .border_color(p.accent)
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .child(format!("current · v{sel}")),
                 )
             })
@@ -621,6 +621,7 @@ impl MainView {
                 .child(
                     div()
                         .id("own-doc")
+                        .debug_selector(|| "own-doc".into())
                         .flex_1()
                         .min_w_0()
                         .min_h_0()
@@ -647,7 +648,7 @@ impl MainView {
                 .child(
                     div()
                         .id("own-side")
-                        .w(px(290.))
+                        .w(px(crate::app::side::VERSIONS_SIDE_PX))
                         .flex_none()
                         .overflow_y_scroll()
                         .p(px(14.))
@@ -716,7 +717,7 @@ impl MainView {
                     d.child(div().mt(px(6.)).text_color(p.muted).child("Pinning…"))
                 })
                 .child(self.keys_row(vec![
-                    self.key_hint("pin ⏎", "type pin, then ⏎ to confirm"),
+                    self.key_hint(crate::keymap::hint("pin ⏎"), crate::keymap::hint("type pin, then ⏎ to confirm")),
                     self.key_hint("esc", "cancel"),
                 ]))
                 .into_any_element(),

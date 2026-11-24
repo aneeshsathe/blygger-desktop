@@ -5,7 +5,9 @@
 mod common;
 
 mod accounts;
+mod agentic_prompt; // --- agentic writer ---
 mod chatgpt;
 mod cli_bridges;
 mod http_providers;
-mod prompts;
+mod hydrate;
+mod prompts; // --- studio 0.71 --- [TK] link reading

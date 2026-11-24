@@ -210,6 +210,10 @@ pub(crate) struct WriterGuards {
     pub(crate) last_tangle: Option<(blyg_core::LocalId, String)>,
     /// The toast that stays until it's clicked (a long publish failure).
     pub(crate) sticky_toast: Option<usize>,
+    /// --- ux 0.29 --- The top of the highest bar a toast stays above (the
+    /// editor's footer, Reading's compose bar), as last drawn
+    /// (`MainView::toast_floor_probe`).
+    pub(crate) toast_floor: std::rc::Rc<std::cell::Cell<Option<f32>>>,
     /// --- format --- Windows' one-time Ctrl+B hint was shown
     /// (`state.json`'s `bold_key_hint_shown`).
     pub(crate) bold_hint_shown: bool,
@@ -1170,10 +1174,19 @@ impl MainView {
         }
         let slot = self.studio.slot.borrow();
         match (slot.visible, slot.frame) {
-            (true, Some(f)) => f.size.width + px(14.),
+            // --- ux 0.29 --- from the view's left edge: its width alone
+            // left out the drawers and tab bar right of it, and the toast's
+            // end went under the view.
+            (true, Some(f)) => toast_right_of(px(self.nearby.window_w), f.origin.x),
             _ => px(14.),
         }
     }
+}
+
+/// A toast's right inset in a window `window_w` wide that keeps it clear of
+/// a native view whose left edge is at `left` (the view draws over it).
+pub(crate) fn toast_right_of(window_w: Pixels, left: Pixels) -> Pixels {
+    (window_w - left).max(px(0.)) + px(14.)
 }
 
 #[cfg(test)]

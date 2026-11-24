@@ -50,6 +50,7 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         Key::Tray => &["AddToTray"],
         Key::Split => &["OpenBeside"],
         Key::CatchUp => &["CatchUp"],
+        Key::AgenticWrite => &["WriteAgenticEdition"], // --- agentic writer ---
         Key::Discover => &["ShowDiscover"],
         Key::Nearby => &["ToggleNearby"],
         Key::QuietWriting => &["ToggleQuietWriting"],

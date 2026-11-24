@@ -158,6 +158,8 @@ pub enum Key {
     RawTab,
     /// Reading's Agentic feed is the source (studio 0.69's edition).
     AgenticTab,
+    /// --- agentic writer --- ⌥⌘E: Burrow's AI writes the edition.
+    AgenticWrite,
     /// --- studio 0.71 --- A Stream card's date was clicked: its post is
     /// open in the side pane.
     StreamDate,
@@ -768,17 +770,12 @@ pub const STEPS: &[Step] = &[
         id: "palette",
         since: "0.18.0",
         title: ui_text("Every command, by name"),
-        caption: ui_text_per_platform(
+        caption: ui_text(
             "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
              your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
              each row shows its key, and a theme or font row shows itself on the window as you \
              move to it. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and the last ten \
              come first.",
-            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
-             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
-             Changes); each row shows its key, and a theme or font row shows itself on the window \
-             as you move to it. Enter runs it, Ctrl+Enter runs it and keeps the palette open, \
-             and the last ten come first.",
         ),
         keys: &[Key::Palette],
         key_label: ui_text("⇧⌘P"),
@@ -1449,6 +1446,27 @@ pub const STEPS: &[Step] = &[
         ),
         keys: &[Key::AgenticTab],
         key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    // --- agentic writer --- Burrow's own AI writes the edition.
+    Step {
+        id: "agentic-write",
+        since: "0.29.0",
+        title: ui_text("Burrow writes the edition"),
+        caption: ui_text(
+            "Your blyg's own assistant isn't built yet, so Burrow's AI can write the edition: \
+                  ⌥⌘E in the Agentic feed tab has the provider you set up in Settings › AI lay \
+                  out what's new, each post with a headline and why it's there, signed Burrow. \
+                  Settings › Agentic feed writes one after each sync that brings new posts. \
+                  Press ⌥⌘E.",
+        ),
+        keys: &[Key::AgenticWrite],
+        key_label: ui_text("⌥⌘E"),
         region: Region::Reader,
         button: None,
         setup: Setup::FeedOrder,
@@ -2145,6 +2163,7 @@ pub const TOURS: &[Tour] = &[
             "raw-tab",
             "count-read",
             "agentic-edition",
+            "agentic-write", // --- agentic writer ---
             "background",
             "parts",
             "shelf-add",

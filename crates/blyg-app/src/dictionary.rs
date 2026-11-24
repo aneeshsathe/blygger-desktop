@@ -235,7 +235,9 @@ impl MainView {
         if self.sheet.is::<DictionarySheet>() {
             return self.close_sheet(window, cx);
         }
-        let add = cx.new(|cx| InputState::new(window, cx).placeholder("Add a word, then ⏎"));
+        let add = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::keymap::hint("Add a word, then ⏎"))
+        });
         self._subs
             .push(cx.subscribe_in(&add, window, |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {

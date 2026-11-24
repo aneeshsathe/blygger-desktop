@@ -2,11 +2,25 @@
 //! word diff; `1` keeps mine, `2` takes the server's, `3` keeps both.
 
 use blyg_core::{LocalId, Resolution};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::{Kit, SheetView, Shown};
 use crate::app::MainView;
 use crate::vm::DiffOp;
+
+/// A side's pane, at most (it scrolls past this).
+const PANE_MAX_H: f32 = 260.;
+
+/// Whether `text` runs past its pane: about 34 characters a line in a
+/// 560 px sheet's half, about 11 lines under the label.
+fn runs_past_the_pane(text: &str) -> bool {
+    let lines: usize = text
+        .lines()
+        .map(|l| l.chars().count().div_ceil(34).max(1))
+        .sum();
+    lines > 11
+}
 
 pub(crate) struct ConflictSheet {
     pub(crate) id: LocalId,
@@ -25,8 +39,9 @@ impl SheetView for ConflictSheet {
             ..
         } = self;
         Shown::from({
-            let col = |label: &'static str, runs: &Vec<(DiffOp, String)>| {
+            let col = |label: &'static str, side: &'static str, runs: &Vec<(DiffOp, String)>| {
                 let text: String = runs.iter().map(|(_, s)| s.as_str()).collect();
+                let more = runs_past_the_pane(&text);
                 let mut hl = Vec::new();
                 let mut at = 0;
                 for (op, s) in runs {
@@ -54,11 +69,9 @@ impl SheetView for ConflictSheet {
                         DiffOp::Same => {}
                     }
                 }
-                div()
+                let pane = div()
                     .id(label)
-                    .flex_1()
-                    .min_w_0()
-                    .max_h(px(260.))
+                    .max_h(px(PANE_MAX_H))
                     .overflow_y_scroll()
                     .p(px(8.))
                     .rounded(px(kit.theme.radius.min(8.)))
@@ -79,7 +92,26 @@ impl SheetView for ConflictSheet {
                             .text_size(px(13.))
                             .line_height(relative(1.45))
                             .child(StyledText::new(text).with_highlights(hl)),
-                    )
+                    );
+                // --- ux 0.29 --- a long text says it goes on (the pane
+                // scrolls, with no other cue).
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(pane)
+                    .when(more, |d| {
+                        d.child(
+                            div()
+                                .debug_selector(move || format!("conflict-more-{side}"))
+                                .mt(px(3.))
+                                .font_family(kit.theme.chrome_font(&v.prefs))
+                                .text_size(px(10.5))
+                                .text_color(p.muted)
+                                .child("↓ scroll for the rest"),
+                        )
+                    })
             };
             (
                 560.,
@@ -101,8 +133,8 @@ impl SheetView for ConflictSheet {
                             .flex()
                             .gap(px(10.))
                             .my(px(8.))
-                            .child(col("ON THIS MAC", mine))
-                            .child(col("ON THE SERVER", theirs)),
+                            .child(col("ON THIS MAC", "mine", mine))
+                            .child(col("ON THE SERVER", "theirs", theirs)),
                     )
                     .child(kit.keys_row(vec![
                         kit.key_hint("1", "keep mine"),

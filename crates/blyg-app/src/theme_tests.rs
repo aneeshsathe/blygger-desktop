@@ -167,3 +167,31 @@ fn a_user_theme_with_svg_ornaments_renders(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     frame(cx);
 }
+
+/// --- ux 0.29 --- Text drawn in a theme's accent goes through
+/// `Palette::accent_text` (the accent, darkened or lightened until it reads
+/// at 4.5:1 on the ground): the Agentic feed's italic summaries were drawn in
+/// the raw accent, 3.76:1 in Konkan and 4.37:1 in Saltspace. Every
+/// built-in's `accent_text` is held to 4.5:1 by `theme_ext`'s tests; this
+/// scan keeps the raw accent from being used as a text colour.
+#[test]
+fn accent_coloured_text_goes_through_accent_text() {
+    let raw: Vec<String> = ["p", "self.palette", "pal", "palette"]
+        .iter()
+        .map(|who| format!("text_color({who}.accent)"))
+        .collect();
+    let mut bad = Vec::new();
+    for (path, src) in crate::platform_text::scan::crate_sources() {
+        for (n, line) in src.lines().enumerate() {
+            if raw.iter().any(|r| line.contains(r.as_str())) {
+                bad.push(format!("  src/{path}:{} {}", n + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "text in a theme's raw accent, which can read under 4.5:1:\n{}\n\
+         Use .text_color(p.accent_text()) (the accent made to read on p's ground).",
+        bad.join("\n")
+    );
+}

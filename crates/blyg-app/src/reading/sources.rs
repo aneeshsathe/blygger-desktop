@@ -919,7 +919,7 @@ impl MainView {
                         .id("sub-own-name")
                         .mt(px(8.))
                         .cursor_pointer()
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .hover(|s| s.underline())
                         .child("Use the blyg's own name")
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -1200,6 +1200,26 @@ impl MainView {
 
     // ------------------------------------------------------------ render
 
+    /// --- ux 0.29 --- Which of the sources pane and the list column fit
+    /// beside the open post (`pane_fit`), in the room the drawers leave.
+    fn reader_fit(&self) -> super::pane_fit::Fit {
+        use super::pane_fit::{POST_MIN, SITE_MIN, fit};
+        let room = self.nearby.window_w - f32::from(self.side_room());
+        let opened = self.reading.opened.is_some();
+        let side = if opened && self.reading.browse.history_open {
+            super::browse::HISTORY_W
+        } else {
+            0.
+        };
+        let min = if opened && self.site_view_shown() {
+            SITE_MIN
+        } else {
+            POST_MIN
+        };
+        let sources = self.reading.sources_open.then_some(self.reading.sources_w);
+        fit(room, sources, side, min, opened)
+    }
+
     /// The three panes' row: sources | list | post.
     pub(super) fn render_three_panes(
         &self,
@@ -1208,8 +1228,11 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette.on_page();
-        let open = self.reading.sources_open;
         let post_focus = self.reading.pane == Pane::Post;
+        // --- ux 0.29 --- in a narrow window the list column (then the
+        // sources) makes way for the open post and its side panel.
+        let fit = self.reader_fit();
+        let open = fit.sources;
         div()
             .id("reader-panes")
             .flex_1()
@@ -1244,7 +1267,7 @@ impl MainView {
                         .on_drag(DraggedEdge, |_, _, _, cx| cx.new(|_| DraggedEdge)),
                 )
             })
-            .child(list)
+            .when(fit.list, |d| d.child(list))
             .child(
                 div()
                     .id("reader-post-pane")
@@ -1460,7 +1483,7 @@ impl MainView {
                     .child(h.to_uppercase())
                     // Dropping a subscription on "Subscriptions" unfiles it.
                     .when(unfile, |d| {
-                        d.drag_over::<DraggedSub>(move |s, _, _, _| s.text_color(p.accent))
+                        d.drag_over::<DraggedSub>(move |s, _, _, _| s.text_color(p.accent_text()))
                             .on_drop(cx.listener(|this, d: &DraggedSub, _, cx| {
                                 this.file_subscription(&d.id, None, cx)
                             }))

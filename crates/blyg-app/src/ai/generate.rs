@@ -7,8 +7,9 @@
 //! `Backend::save_with_provenance` with one entry per scope.
 
 use blyg_ai::AiError;
+use blyg_ai::hydrate::Hydration;
 use blyg_ai::prompts::{self, Prompt};
-use blyg_core::{Backend, Item, ProvenanceSource, ReadingItem, ScopeProvenance, tk};
+use blyg_core::{Backend, Item, PageSource, ProvenanceSource, ReadingItem, ScopeProvenance, tk};
 
 /// The editor's text after a server generate: the server's `content_md`
 /// (`sent`, the text the server spliced into, with the generated words)
@@ -130,6 +131,14 @@ pub struct FillJob {
     pub prompt: Prompt,
     /// The sources the scope quotes, for provenance.
     pub sources: Vec<ProvenanceSource>,
+    /// --- studio 0.71 --- what `prompt` was built from, to add the links
+    /// read to ([`with_links`]); the style prompt; and the ids that are
+    /// already sources, or are the item being written (not read again).
+    pub input: prompts::TkPromptInput,
+    pub style: Option<String>,
+    pub exclude: Vec<String>,
+    /// The pages read for it ([`with_links`]), for provenance.
+    pub pages: Vec<PageSource>,
 }
 
 pub fn prepare_fill(
@@ -140,6 +149,9 @@ pub fn prepare_fill(
     style: Option<&str>,
 ) -> Result<FillJob, AiError> {
     let mut versions = Vec::new();
+    let (scope, input) = prompts::tk_input(md, index, &mut |id| {
+        resolve_source(items, reading, id).map(|(c, _)| c)
+    })?;
     let job = prompts::tk_job(
         md,
         index,
@@ -166,7 +178,90 @@ pub fn prepare_fill(
         instruction: job.scope.instruction.clone(),
         prompt: job.prompt,
         sources,
+        input,
+        style: style.map(str::to_string),
+        exclude: scope.source_ids,
+        pages: vec![],
     })
+}
+
+/// --- studio 0.71 --- The blyg a held item lives on, for reading a gap's
+/// links (`blyg_ai::hydrate`): `ours` for your own posts, the post's own
+/// blyg for one you read; `None` when Burrow doesn't hold it.
+pub fn held_home(
+    items: &[Item],
+    reading: &[ReadingItem],
+    ours: Option<&str>,
+    id: &str,
+) -> Option<String> {
+    if items
+        .iter()
+        .any(|i| i.server_id.as_ref().is_some_and(|s| s.0 == id))
+    {
+        return Some(ours.unwrap_or_default().to_string());
+    }
+    reading
+        .iter()
+        .find(|r| r.remote_id == id)
+        .map(|r| r.origin.clone())
+}
+
+/// --- studio 0.71 --- `job` with what reading its links found (`h`), as
+/// the studio's `runGenerateScope` adds them: each linked item a source
+/// after the scope's own (fed, but not cited: `provenance_with` keeps only
+/// the quoted ones, which `tk::validate` asks for), each page after those, given
+/// as untrusted material and recorded as a page; and the system prompt's
+/// paragraph on web pages.
+pub fn with_links(
+    mut job: FillJob,
+    h: &Hydration,
+    items: &[Item],
+    reading: &[ReadingItem],
+) -> FillJob {
+    for id in &h.items {
+        let Some((content, version)) = resolve_source(items, reading, id) else {
+            continue;
+        };
+        job.input.sources.push(prompts::Source {
+            id: id.clone(),
+            content_md: content,
+        });
+        job.sources.push(ProvenanceSource {
+            id: id.clone(),
+            version,
+            origin: remote_origin(items, reading, id),
+            cited: None,
+            ..Default::default()
+        });
+    }
+    for p in &h.pages {
+        let text = if p.title.is_empty() {
+            p.text.clone()
+        } else {
+            format!("{}\n\n{}", p.title, p.text)
+        };
+        job.input.pages.push(prompts::WebPage {
+            url: p.url.clone(),
+            content_md: text,
+        });
+        job.pages.push(PageSource {
+            url: p.url.clone(),
+            cited: p.cited.clone(),
+            extra: Default::default(),
+        });
+    }
+    let mut system = prompts::SYSTEM_PROMPT.to_string();
+    if h.total > 0 {
+        system = format!("{system} {}", prompts::WEB_PAGES_PROMPT);
+    }
+    if let Some(s) = job.style.as_deref().filter(|s| !s.is_empty()) {
+        system = format!("{system}\n\n{s}");
+    }
+    job.prompt = Prompt {
+        system,
+        user: prompts::tk_user_content(&job.input),
+    };
+    job
 }
 
 /// Model output made safe to put inside a scope: the bracket grammar taken
@@ -241,7 +336,8 @@ pub fn provenance_with(
         .filter(|v| v.len() == n)
         .unwrap_or_else(|| vec![None; n]);
     if let Some(slot) = v.get_mut(index) {
-        // Cite only what the scope still quotes (the Worker refuses others).
+        // Cite only what the scope still quotes (`tk::validate` refuses
+        // others): an item a gap only links (`with_links`) is fed, not cited.
         let quoted = &scopes[index].source_ids;
         *slot = Some(ScopeProvenance {
             sources: p

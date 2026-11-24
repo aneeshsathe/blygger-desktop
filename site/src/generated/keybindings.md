@@ -46,6 +46,7 @@
 | ⇧⌘S | Subscriptions | Blyg › Subscriptions |
 | ⌘Y | Versions of this post | Post › Versions… |
 | ⌘J | Lineage: what this post draws on and what draws on it | Post › Lineage… |
+| ⌥⌘E | Write an edition now: Burrow's AI lays out your Agentic feed from what's new | Blyg › Write an Agentic Feed Edition Now |
 | ⌘K | Quote a post in this thread | Post › Quote… |
 | ⌥⌘R | Reply: a new thread of yours that replies to this post (yours too) | Post › Reply |
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
@@ -143,6 +144,7 @@
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
+| Retry reads: ask your blyg again, and read again what failed and the lists on screen | Blyg › Retry Reads |
 | Discover blygs listed on blygger.com that you don't follow yet | Blyg › Discover Blygs… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |

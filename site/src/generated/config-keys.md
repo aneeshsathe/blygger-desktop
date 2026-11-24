@@ -294,6 +294,38 @@ Model for one particular provider, as provider=model, e.g. anthropic=claude-sonn
 Providers that are switched on. Repeat the key for each one. None by default: Burrow uses no AI (not even a locally installed claude or codex CLI) until you enable a provider here or sign in to one in Settings, which updates this list. An empty `ai-enable =` switches every provider off again.
 
 
+### `agentic-writer`
+
+- **Values:** `off`, `after-sync`
+- **Default:** `off`
+
+Burrow's own AI writes your blyg's Agentic feed edition (a digest of your reading in sections). after-sync writes one in the background after a sync that brings new posts, at most once every agentic-writer-gap hours; off (the default) writes one only when you ask (Write an Edition Now, ⌥⌘E, in the Agentic feed tab). Either way it sends the titles and opening words of up to 60 unread or new posts, and your blyg's Agentic feed prompt, to the provider in agentic-writer-provider, and the edition it writes to your blyg. Settings (⌘,) › Agentic feed has it too.
+
+
+### `agentic-writer-provider`
+
+- **Values:** `default`, `claude-code`, `codex`, `chatgpt`, `openai`, `anthropic`, `cloudflare`
+- **Default:** `default`
+
+The AI provider that writes the Agentic feed edition: default (the one the writing helpers use, ai-provider) or one of claude-code, codex, chatgpt, openai, anthropic, cloudflare. It must be enabled (ai-enable) and signed in.
+
+
+### `agentic-writer-model`
+
+- **Values:** text
+- **Default:** unset
+
+The model the Agentic feed's writer asks for. Unset uses that provider's model (ai-provider-model, else its default).
+
+
+### `agentic-writer-gap`
+
+- **Values:** a number from 0.5 to 168
+- **Default:** `3`
+
+With agentic-writer = after-sync: the fewest hours between two editions, from 0.5 to 168 (a week). A sync sooner than that after the last edition writes nothing.
+
+
 ### `cloudflare-account-id`
 
 - **Values:** text

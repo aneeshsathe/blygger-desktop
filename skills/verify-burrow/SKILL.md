@@ -69,7 +69,13 @@ scripts/verify/burrow-verify.sh shot <run dir> [name]
 Captures only the windows the run's PID owns (`screencapture -l`, window ids
 from `winid.swift`) into `<run dir>/shots/<name>-<window id>.png`. Run dirs
 live in `BURROW_VERIFY_OUT` (default `target/verify/`); `run.env` and
-`app.log` stay with the shots after cleanup. Open the PNG and look at it:
+`app.log` stay with the shots after cleanup. Shots taken while the Mac is
+locked are refused: `launch` and `shot` exit 2 while `ioreg -n Root -d1 -a`
+says `IOConsoleLocked` is true (the 0.28 user-testing pass took its shots
+that way and missed obvious layout bugs), so unlock it and run again; never
+work around it. A shot that comes back one flat colour (checked by
+`scripts/verify/shotcheck.swift`) is renamed `*.BLANK.png` and fails the
+shot. Open the PNG and look at it:
 check the thing the change is about, not just that a window appeared. Report
 the PNG paths with your result.
 
@@ -94,7 +100,8 @@ under the feature's Gotchas; never weaken the journey to make it pass.
 ## Keeping it working
 
 - `crates/blyg-app/tests/verify_script.rs` runs `burrow-verify.sh selftest`
-  (the scene list and the refusals) in `cargo test` on macOS.
+  (the scene list and the refusals, a locked screen and a blank shot among
+  them) in `cargo test` on macOS.
 - `scenes.rs`'s tests fail on a feature file naming a scene that doesn't
   exist, so renaming a scene means updating the feature files with it.
 - Those checks prove the names, not that each feature still renders.

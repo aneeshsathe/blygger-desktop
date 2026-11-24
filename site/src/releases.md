@@ -5,6 +5,53 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.29.0
+
+### Burrow writes the Agentic feed's edition
+
+Your blyg's own assistant isn't built yet, so the Agentic feed stayed "No
+edition yet". Now Burrow's own AI writes it: press ⌥⌘E in the Agentic feed
+tab (or Blyg › Write an Agentic Feed Edition Now) and the provider you set up
+in Settings › AI lays out what's new, each post with a headline, a summary
+and why it's there, signed "Burrow · *provider*". Turn on Settings ›
+Agentic feed › "Write the edition after a sync" to have one written after a
+sync that brings new posts, at most every 3 hours. Off by default; what is
+sent where is in [AI helpers](ai.md#agentic-feed-what-is-sent-where).
+
+### Burrow in a browser is back, and smoother
+
+The web app is served again by your blyg at `{mount}/burrow/`, for studio
+0.69 and later, including a blyg under a path. It has the studio's reading
+tabs, and it was timed journey by journey against the studio's own pages
+until it matched or beat them: typing during a sync is saved once, not once
+per pause; a reload keeps your place; the phone's sources are one tap each;
+the list shows placeholders instead of flashing "Nothing to read yet"; and
+Safari downloads the app once. Setting it up is on
+[Burrow in a browser](web-self-host.md).
+
+### Generating reads your links first
+
+⌘G with Burrow's own providers (codex, Claude Code, a CLI or an API key) now
+does what your blyg does since studio 0.70: it reads the posts and pages you
+linked in the gap before writing, and says which link it couldn't read
+before going on ([AI helpers](ai.md)).
+
+### Smaller things
+
+- **Retry reads:** a read that failed says so with **Retry reads** beside
+  it, also **Blyg › Retry Reads**, which re-reads the lists on screen too.
+- **Extension tabs in the picker:** an extension can add its own tabs to the
+  `[[` / `![[` popup and ⌘K ([Extensions](extensions.md)).
+- **Narrow windows:** at 800 px the lineage ring, history, notes drawer,
+  header keys, toasts and sheets all keep their text readable.
+- **Readable everywhere:** accent text and toolbar icons meet 4.5:1 in every
+  theme; Windows hints name Enter, Tab and Backspace in words.
+- **Reading:** ⌥⌘B saves the reading post in front of you, a reply's quote
+  shows as a quote, and formulas read as formulas in lists.
+- **The tour** shows what each caption says, and its card moves off what the
+  step points at.
+- **Release notes** open with the one-line installer.
+
 ## Burrow 0.28.0
 
 Burrow catches up with blygger-studio 0.71: 0.68's reading, 0.69's Agentic
@@ -75,7 +122,7 @@ what each gap read: the posts it drew on, by title, and the web pages, marking
 the ones publishing tells. Posts you read list the same, when their publisher
 disclosed it. Keep typing while your blyg generates: what you type elsewhere
 in the post is kept with the generated text. See
-[When your blyg can't read a link](ai.md#when-your-blyg-cant-read-a-link). The AI and TK tour has a step for it.
+[When your blyg can't read a link](ai.md#when-a-link-cant-be-read). The AI and TK tour has a step for it.
 
 ### Count an entry as read
 

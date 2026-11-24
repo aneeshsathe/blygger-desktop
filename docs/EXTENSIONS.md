@@ -276,6 +276,40 @@ same names, so the two clients agree:
   "‹N characters, not shown›" (N in UTF-16 units, as the Studio counts) and
   `*_json` strings parsed. Nothing is fetched.
 
+## Picker sources
+
+An extension can add tabs to the `[[` / `![[` picker (the popup under the
+caret and ⌘K's panel). It mirrors the web Studio's `pickerSource`
+(blygger-studio `src/ui/extension-api.ts`, studio 0.71):
+
+```toml
+[[picker-sources]]
+id = "refs"                      # unique in this manifest
+label = "references"             # the tab's name
+forms = ["link", "transclude"]   # optional; default ["link"]
+```
+
+`forms` says which pickers show the tab: `link` for `[[`, `transclude` for
+`![[` and ⌘K's quote panel (`source` is accepted, for the Studio's
+`![[id::source]]`; Burrow has no picker for it yet). The tabs come after
+Burrow's own "items", in the order the extensions were started. The tab a
+user picks is remembered for the session; a remembered tab that isn't
+offered falls back to items.
+
+- **`extension/picker.search {source, query, form}`** (the search timeout)
+  → `[{id, label?, excerpt?, meta?}]`. Burrow asks 150 ms after the last
+  key, and drops an answer to an older query. Results are **item ids**
+  only: anything not 26 characters of the id alphabet is dropped, as are
+  repeats, and at most 50 are shown. Text is folded onto one line; a
+  missing `excerpt` shows the label, then the id. ⏎ writes `[[id | label]]`
+  (or `![[id | label]]` on its own line), with no label when there's none.
+  An error shows in the picker's line ("Couldn't search: …") and nothing
+  is written.
+
+Burrow refuses a search for a source the extension didn't declare for that
+form (`Host::picker_search`). Types: `crates/blyg-ext/src/picker.rs`; a
+test extension: `crates/blyg-ext/src/bin/bxp-picker-ext.rs`.
+
 ## Wire format
 
 JSON-RPC 2.0, one JSON object per line (LF or CRLF), both directions on the

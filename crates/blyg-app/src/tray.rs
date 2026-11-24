@@ -660,10 +660,10 @@ impl MainView {
             let on = sel == Some(i);
             let id = e.id.clone();
             let f = focus.clone();
-            let tip = format!(
+            let tip = crate::keymap::hint_owned(format!(
                 "{} · ⏎ places it · ⌫ drops it · or drag it into a post",
                 e.label
-            );
+            ));
             draggable(
                 div()
                     .id(("tray-chip", i))
@@ -723,7 +723,7 @@ impl MainView {
                 .child(
                     div()
                         .flex_none()
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .child(format!("{GLYPH} tray")),
                 )
                 .child(

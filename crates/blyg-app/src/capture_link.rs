@@ -135,7 +135,10 @@ mod tests {
         cx.simulate_input("https://lin.example.org/t/rock-pools");
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
-            assert_eq!(v.list.hint(), "⏎ start a fragment with this link");
+            assert_eq!(
+                v.list.hint(),
+                crate::keymap::hint("⏎ start a fragment with this link")
+            );
         });
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();

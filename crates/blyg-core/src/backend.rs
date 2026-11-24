@@ -1546,10 +1546,30 @@ pub trait Backend: Send + Sync {
     }
 
     /// Remote: a feed's edition, each reference resolved (`GET
-    /// /api/agentic/{feed}`). Burrow never writes one.
+    /// /api/agentic/{feed}`). Burrow's own AI may write one
+    /// (`put_agentic_edition`).
     fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
         let _ = feed;
         Ok(None)
+    }
+
+    /// --- agentic writer --- Remote: whether this sign-in may write an
+    /// edition (the capabilities list `putAgentic`).
+    fn agentic_writable(&self) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Remote: replace a feed's edition from `expected_revision` (`PUT
+    /// /api/agentic/{feed}`). `crate::agentic_write::send` reads the
+    /// revision and retries a conflict once.
+    fn put_agentic_edition(
+        &self,
+        feed: &str,
+        expected_revision: u64,
+        edition: &crate::agentic_write::EditionInput,
+    ) -> Result<crate::agentic_write::Put> {
+        let _ = (feed, expected_revision, edition);
+        Ok(crate::agentic_write::Put::NotOffered)
     }
 
     /// Remote: the blyg's dictionary (`GET /api/dictionary`).

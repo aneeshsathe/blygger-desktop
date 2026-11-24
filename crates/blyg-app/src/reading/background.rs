@@ -702,7 +702,7 @@ impl MainView {
             })
             .cursor_pointer()
             .font_weight(FontWeight::MEDIUM)
-            .text_color(p.accent)
+            .text_color(p.accent_text())
             .hover(|s| s.underline())
             .tooltip(move |_, cx| {
                 cx.new(|_| {
@@ -769,7 +769,7 @@ impl MainView {
                         .truncate()
                         .cursor_pointer()
                         .text_color(p.ink)
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.open_reading(k.clone(), window, cx)

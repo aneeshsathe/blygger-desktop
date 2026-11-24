@@ -50,6 +50,7 @@ fn child_args(name: &str) -> Vec<String> {
 #[ignore = "the reading-time child process of the reading-slot tests"]
 fn reading_time_child() {
     if std::env::args().any(|a| a == child_test("reading_time_child")) {
+        crate::app::extensions::children_tests::hold_alive_lock();
         let _ = blyg_ext_reading_time::run_stdio();
     }
 }
@@ -59,6 +60,7 @@ fn reading_time_child() {
 #[ignore = "the inspect child process of the reading-slot tests"]
 fn inspect_child() {
     if std::env::args().any(|a| a == child_test("inspect_child")) {
+        crate::app::extensions::children_tests::hold_alive_lock();
         let _ = blyg_ext_inspect::run_stdio();
     }
 }

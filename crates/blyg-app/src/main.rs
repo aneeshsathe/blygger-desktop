@@ -517,6 +517,11 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 MenuItem::action("Mark All Read…", app::reading::sources::MarkAllRead),
+                // --- agentic writer ---
+                MenuItem::action(
+                    "Write an Agentic Feed Edition Now",
+                    app::reading::agentic_writer::WriteAgenticEdition,
+                ),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
                 MenuItem::action(
@@ -539,6 +544,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 // --- discover ---
                 MenuItem::action("Discover Blygs…", app::reading::discover::ShowDiscover),
+                // --- studio 0.71 ---
+                MenuItem::action("Retry Reads", app::reading::retry_reads::RetryReads),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),

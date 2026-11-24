@@ -94,8 +94,18 @@ right.
   its headline, a short summary and why it's there. The tab shows it under
   the name your blyg gives it (set in Blyg › AI on Your Blyg…); j/k step
   through its posts, ⏎ opens one, and a post not on this Mac yet says so and
-  arrives with the next sync. Burrow reads editions and never writes one.
-  Before the first, the tab says "No edition yet."
+  arrives with the next sync. Your blyg's own assistant isn't built yet, so
+  **Burrow's own AI can write the edition** with the provider you set up in
+  Settings › AI: press ⌥⌘E in the tab (or Blyg › Write an Agentic Feed
+  Edition Now, or click "Write an edition now" above it), or turn on
+  Settings › Agentic feed › "Write the edition after a sync" to have one
+  written in the background after a sync that brings new posts, at most
+  every 3 hours (`agentic-writer`, `agentic-writer-gap`). While it writes the
+  tab says "Writing an edition with …"; if it can't, it says why, with Try
+  again, and sends nothing. The masthead then says "by Burrow · *provider*".
+  It writes only where your sign-in may (studio's `putAgentic`). What it
+  sends where: [AI helpers](ai.md#agentic-feed-what-is-sent-where). Before
+  the first edition, the tab says "No edition yet." and how one gets made.
 - **Raw** is what came in from the blygs you read, newest first, as it
   arrived: nothing moved to Background, nothing folded under a thread,
   withdrawn posts included. Your own posts aren't in it.
@@ -187,6 +197,8 @@ to open it. By keys, **p** folds or unfolds the parts (of the open thread,
 else of the selected card), and **1**–**9** open a listed part. Turn **Parts published with a thread** off to see the parts in
 your lists again.
 
+The web app has the same, under an open post and in ⚙ Reading (no key).
+
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
 - **Folders** stay on your Mac. Drag a subscription onto one to file it, or
@@ -211,6 +223,9 @@ Your posts are **never unread**: they get no dot, never count in All unread
 or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
+
+The [web app](web-self-host.md#using-it) shows your posts in Reading the
+same way.
 
 ### Hoppers
 
@@ -443,6 +458,8 @@ you don't follow yet, newest listing first, five at a time.
 
 Burrow reads the directory only when you open Discover, without signing in
 to anything. It needs a connected blyg, since subscriptions live there.
+Discover is in the desktop app only: Burrow on the web talks to nothing but
+your own blyg.
 
 ## Acting on a post
 
@@ -514,6 +531,15 @@ you open it.
   pane). Where there's no browser pane, opening a post opens its page in
   your default browser (not while you move with the keys), and Burrow's
   reader shows it here.
+
+In the web app, ⚙ Reading has the same choice for that browser: opening a
+post also opens its page in a new tab, and the post stays in Burrow with a
+link back to the page and **Read … here instead** for its blyg.
+
+The web app can also **mark all read**: ✓ Mark all read… in the sources
+pane (⌃⌥A), or ✓ All read on a phone, marks every unread post of the source
+and lens you're looking at, after asking. It needs a blyg that takes read
+marks in bulk (blygger-studio's `markReadBatch`).
 
 ### The changelog
 
@@ -754,6 +780,12 @@ response's name to read the post that responded in the reader, as a blyg
 link in a post opens; ↗ opens its web page where links go (the browser pane,
 or your default browser). Click **On “…”** above a group to open your own
 post, the one those responses point at.
+
+**When a read fails.** If Responses, or a post's history, can't be read
+(offline, or your blyg didn't answer), it says so with **Retry reads** beside
+it (also **Blyg › Retry Reads**). That asks your blyg again, reads again
+what failed, and re-reads the lists on screen (your posts, the reading rows
+and their counts), so nothing stays stale until the next sync.
 
 **Linked from.** When someone's post links to yours with `[[id]]` (on
 blygger-studio 0.64 and later), your blyg gets a **link notice**. A link isn't

@@ -29,6 +29,15 @@ mod tour; // --- onboarding --- the tour's sample extensions
 #[path = "tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "picker_tabs_tests.rs"]
+mod picker_tabs_tests; // --- picker sources ---
+
+#[cfg(test)]
+pub(crate) mod children_tests;
+#[cfg(test)]
+mod test_hosts; // --- test children ---
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -87,8 +96,15 @@ pub struct Launch {
 impl Global for Launch {}
 
 impl Launch {
-    /// The app's own: this executable, `+ext markdown-notes`.
+    /// The app's own: this executable, `+ext markdown-notes`. None in a
+    /// test: there this executable is the test binary, which doesn't know
+    /// `+ext` (it would start, run no test and exit, for every extension
+    /// turned on, and again on each restart). Tests run extensions
+    /// only when they say how (a `Launch` global, `test_launch`).
     fn app(data_dir: PathBuf) -> Option<Launch> {
+        if cfg!(test) {
+            return None;
+        }
         Some(Launch {
             program: std::env::current_exe().ok()?,
             args: vec!["+ext".into(), NOTES.into()],
@@ -125,6 +141,20 @@ pub(crate) fn test_launch(data_dir: PathBuf) -> Launch {
         data_dir,
         timing: Timing::default(),
     }
+}
+
+/// A window's extension host (the user's, or the tour's sample one). In a
+/// test it is stopped when the test ends (`test_hosts`): GPUI's test
+/// contexts never drop the window, so its own drop never comes.
+fn new_host(
+    hc: HostConfig,
+    api: Arc<dyn blyg_ext::HostApi>,
+    sink: impl Fn(ExtEvent) + Send + Sync + 'static,
+) -> Host {
+    let host = Host::new(hc, api, sink);
+    #[cfg(test)]
+    test_hosts::stop_at_test_end(&host);
+    host
 }
 
 /// The host's configuration from the config file: what's enabled, what's
@@ -399,7 +429,7 @@ impl MainView {
         let live = !cfg!(test);
         // The window's backend is a switch: connecting or disconnecting a
         // blyg swaps what's inside it, so the host follows without rewiring.
-        let host = Host::new(
+        let host = new_host(
             hc,
             Arc::new(BackendApi::new(self.backend.clone())),
             move |ev| {
@@ -413,6 +443,10 @@ impl MainView {
             },
         );
         self.ext.host = Some(host.clone());
+        // --- picker sources --- the editor's picker asks it for tabs.
+        let picker_host = host.clone();
+        self.assist
+            .update(cx, |a, _| a.set_ext_host(Some(picker_host)));
         self.ext.launch = Some(launch);
         self._tasks.push(cx.spawn_in(window, async move |this, cx| {
             while woken.recv().await.is_ok() {
@@ -788,7 +822,7 @@ impl MainView {
     // ------------------------------------------------------------ context
 
     /// The screen a command runs from.
-    fn ext_screen(&self, window: &Window, cx: &App) -> Screen {
+    pub(crate) fn ext_screen(&self, window: &Window, cx: &App) -> Screen {
         if self.notes.open && self.notes.has_keyboard(window, cx) {
             Screen::Notes
         } else if self.reading.view != crate::app::reading::View::Posts {

@@ -47,6 +47,21 @@ pub const MAX_WIDTH: f32 = 760.;
 /// The pane never takes more than this share of the window.
 pub const MAX_SHARE: f32 = 0.6;
 
+/// --- ux 0.29 --- In a window narrower than this, the pane takes at most
+/// [`NARROW_SHARE`] (but never less than its minimum), so the screen beside
+/// it keeps more than a sliver (at 800 px it left the editor 200 px).
+pub const NARROW_W: f32 = 1000.;
+pub const NARROW_SHARE: f32 = 0.42;
+
+/// The share of a window `window_w` wide the pane may take.
+pub fn max_share(window_w: f32) -> f32 {
+    if window_w < NARROW_W {
+        NARROW_SHARE
+    } else {
+        MAX_SHARE
+    }
+}
+
 /// How long the slide in (and out) takes.
 pub const SLIDE_MS: u64 = 180;
 
@@ -346,7 +361,7 @@ impl Notes {
 
     /// Fit the chosen width to a window `window_w` wide (each frame).
     pub fn fit(&mut self, window_w: f32) {
-        self.dock_w = SPAN.fit(self.width, window_w, MAX_SHARE);
+        self.dock_w = SPAN.fit(self.width, window_w, max_share(window_w));
     }
 
     /// Persist whether it's open and its width (`state.json`).

@@ -448,12 +448,12 @@ impl MainView {
                     .mt(px(10.))
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child(format!(
+                    .child(crate::keymap::hint_owned(format!(
                         "https: addresses only · the version is the one the copy was made from \
                          (blank: v{}) · ⏎ {} · esc closes",
                         s.current,
                         if s.editing.is_some() { "saves" } else { "adds" }
-                    )),
+                    ))),
             );
         (520., body.into_any_element())
     }
@@ -536,7 +536,7 @@ impl MainView {
                         .debug_selector(move || format!("{id}-{i}"))
                         .cursor_pointer()
                         .text_color(p.ink)
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
                             cx.open_url(&url)
@@ -611,7 +611,7 @@ impl MainView {
                 .text_size(px(12.))
                 .when(ok, |d| {
                     d.cursor_pointer()
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .hover(|s| s.bg(p.pick()))
                 })
                 .when(!ok, |d| d.text_color(p.muted).opacity(0.7))

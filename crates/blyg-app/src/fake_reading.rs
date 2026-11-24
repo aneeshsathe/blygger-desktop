@@ -175,6 +175,52 @@ fn post(
     }
 }
 
+/// The post `id` as its blyg serves it: its quotes baked into the HTML from
+/// the posts they name (a blyg never serves `![[id]]` as text; the Reader
+/// shows the HTML as served).
+fn bake_quotes(reading: &mut [ReadingItem], id: &str) {
+    let held = Held(reading.to_vec());
+    let Some(r) = reading.iter_mut().find(|r| r.remote_id == id) else {
+        return;
+    };
+    let mount = r.origin.trim_end_matches('/').to_string();
+    let opts = blyg_render::RenderOpts {
+        data_line: false,
+        provenance: true,
+        mount,
+        self_id: Some(id.to_string()),
+    };
+    let kind = match r.kind {
+        Kind::Fragment => blyg_render::Kind::Fragment,
+        Kind::Thread => blyg_render::Kind::Thread,
+    };
+    r.content_html = blyg_render::render_preview(&r.content_md, kind, &held, &opts).html;
+}
+
+/// The sample reading as a quote resolver (`bake_quotes`): sample HTML is
+/// ours, so it goes in as written.
+struct Held(Vec<ReadingItem>);
+
+impl blyg_render::Resolver for Held {
+    fn resolve(&self, id: &str) -> blyg_render::Resolution {
+        let Some(r) = self.0.iter().find(|r| r.remote_id == id) else {
+            return blyg_render::Resolution::NotFound;
+        };
+        blyg_render::Resolution::Found(blyg_render::Found {
+            origin: Some(r.origin.clone()),
+            id: id.to_string(),
+            version: r.version,
+            kind: match r.kind {
+                Kind::Fragment => blyg_render::ItemKind::Fragment,
+                Kind::Thread => blyg_render::ItemKind::Thread,
+            },
+            content_html: r.content_html.clone(),
+            author: r.author.as_ref().and_then(|a| a.name.clone()),
+            page: r.page.clone(),
+        })
+    }
+}
+
 fn rv(
     version: u32,
     at: DateTime<Utc>,
@@ -822,6 +868,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         (HOPPER_SLOW.into(), "~own".into(), OWN_GARDENS_SERVER.into()),
         (HOPPER_GARDENS.into(), lin.id.clone(), LIN_GARDENS.into()),
     ];
+    bake_quotes(&mut reading, ADA_REPLY);
     Seed {
         hoppers,
         hopper_items,

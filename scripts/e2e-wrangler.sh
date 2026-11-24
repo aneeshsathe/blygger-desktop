@@ -143,7 +143,7 @@ start() {
   [ -f "$CONF" ] || setup
   # Extra KEY=value args override the shared dev vars for this instance
   # only: its own copy of the config, next to its own .dev.vars.
-  local conf="$CONF"
+  local conf="$CONF" mount=""
   if [ "$#" -gt 0 ]; then
     mkdir -p "$state/conf"
     conf="$state/conf/wrangler.e2e.json"
@@ -152,6 +152,8 @@ start() {
     for kv in "$@"; do
       case "$kv" in *=*) ;; *) die "start: expected KEY=value, got $kv" ;; esac
       pattern="$pattern|^${kv%%=*}="
+      # A path-mounted studio (MOUNT=/notes) serves blyg.json under it.
+      case "$kv" in MOUNT=*) mount="${kv#MOUNT=}"; mount="/${mount#/}"; mount="${mount%/}" ;; esac
     done
     { grep -Ev "${pattern#|}" "$BLYG_E2E_SCRATCH/.dev.vars" || true; printf '%s\n' "$@"; } >"$state/conf/.dev.vars"
     chmod 600 "$state/conf/.dev.vars"
@@ -170,8 +172,9 @@ start() {
   set +m
   echo "$pid" >"$state/pid"
   echo "$port" >"$state/port"
+  echo "$mount" >"$state/mount"
   local t=0
-  until curl -fsS -o /dev/null "http://127.0.0.1:$port/blyg.json" 2>/dev/null; do
+  until curl -fsS -o /dev/null "http://127.0.0.1:$port$mount/blyg.json" 2>/dev/null; do
     kill -0 "$pid" 2>/dev/null || { tail -40 "$state/wrangler.log" >&2; die "wrangler ($name) exited"; }
     t=$((t + 1)); [ "$t" -lt 240 ] || { tail -40 "$state/wrangler.log" >&2; die "wrangler ($name) not ready"; }
     sleep 0.5
@@ -192,10 +195,11 @@ stop() {
     sleep 0.25
   done
   # Wait until the port is really closed.
-  local port; port="$(cat "$state/port" 2>/dev/null || echo)"
+  local port mount; port="$(cat "$state/port" 2>/dev/null || echo)"
+  mount="$(cat "$state/mount" 2>/dev/null || echo)"
   if [ -n "$port" ]; then
     t=0
-    while curl -fsS -o /dev/null "http://127.0.0.1:$port/blyg.json" 2>/dev/null && [ "$t" -lt 40 ]; do
+    while curl -fsS -o /dev/null "http://127.0.0.1:$port$mount/blyg.json" 2>/dev/null && [ "$t" -lt 40 ]; do
       t=$((t + 1)); sleep 0.25
     done
   fi

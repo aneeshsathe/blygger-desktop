@@ -22,6 +22,9 @@
 pub(crate) mod agentic;
 #[cfg(test)]
 mod agentic_tests;
+pub(crate) mod agentic_writer; // --- agentic writer --- Burrow's AI writes the edition
+#[cfg(test)]
+mod agentic_writer_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
 #[cfg(test)]
 mod background_tests;
@@ -37,11 +40,13 @@ pub(crate) mod compose;
 pub(crate) mod count_read; // --- studio 0.71 --- when an entry counts as read
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
+// --- ux 0.29 --- which columns fit beside the open post.
 #[cfg(test)]
 mod browse_tests;
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
 pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
+pub(crate) mod pane_fit;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
 pub(crate) mod marks;
@@ -62,11 +67,13 @@ pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
 pub(crate) mod feed;
 #[cfg(test)]
 mod feed_tests;
+pub(crate) mod feed_vm;
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
 mod neighbourhood_view;
 pub(crate) mod opml; // --- OPML import/export ---
+pub(crate) mod retry_reads; // --- studio 0.71 --- Retry reads
 // --- own posts --- your published posts as a reading source, and the
 // reading actions on them from the Posts view.
 pub(crate) mod hoppers; // --- hoppers ---
@@ -79,6 +86,8 @@ mod opml_tests;
 pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
+#[cfg(test)]
+mod retry_reads_tests; // --- studio 0.71 --- Retry reads
 pub(crate) mod shelf_lens; // --- shelf sync --- the Shelf lens, + Add to shelf
 mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
@@ -121,7 +130,13 @@ mod studio069_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod ux_reading_tests; // --- ux 0.28 ---
+mod ux029_content_tests;
+#[cfg(test)]
+mod ux029_keys_tests;
+#[cfg(test)]
+mod ux029_layout_tests; // --- ux 0.29 --- layout
+#[cfg(test)]
+mod ux_reading_tests; // --- ux 0.28 --- // --- ux 0.29 ---
 
 use std::collections::{HashMap, HashSet};
 
@@ -218,6 +233,9 @@ impl<T> Load<T> {
 
 /// The key context of the reading body (user keybinding configs may name it).
 pub const CONTEXT: &str = "Reading";
+
+/// The header hints' one line (`MainView::header_hints`).
+const HINT_LINE_H: f32 = 18.;
 
 pub const NOT_AVAILABLE: &str = "Not available on this server";
 pub const NOT_AVAILABLE_SUB: &str = "This blyg doesn't have the owner-API read extensions \
@@ -377,6 +395,10 @@ pub enum RSheet {
         kind: crate::composer::picker::PickKind,
         /// What the search found for the box and the filters.
         rows: Vec<blyg_core::Pickable>,
+        /// --- picker sources --- the extension tabs, and a count that
+        /// drops a stale answer.
+        ext_tabs: crate::composer::picker::TabState,
+        tab_gen: usize,
     },
 }
 
@@ -459,6 +481,8 @@ pub struct State {
     pub sticky: HashSet<Key>,
     /// How many times `reading_changed` ran (a sync burst should be one).
     pub refreshes: u64,
+    /// --- studio 0.71 --- Retry reads is running (`retry_reads.rs`).
+    pub retrying: bool,
     /// The sources pane's (or a subscription's) context menu.
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
@@ -480,6 +504,8 @@ pub struct State {
     pub shelved: Vec<Key>,
     /// --- agentic feed --- the edition and the tab's name (studio 0.69).
     pub agentic: agentic::Agentic,
+    /// --- agentic writer --- Burrow's own AI writing the edition.
+    pub agentic_writer: agentic_writer::Writer,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -551,6 +577,7 @@ impl State {
             collapsed: HashSet::new(),
             sticky: HashSet::new(),
             refreshes: 0,
+            retrying: false,
             src_menu: None,
             avatars: sources::avatars(backend),
             stub: None,
@@ -568,6 +595,7 @@ impl State {
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
             shelved: shelf_lens::keys(backend),                // --- shelf sync ---
             agentic: Default::default(),                       // --- agentic feed ---
+            agentic_writer: Default::default(),                // --- agentic writer ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
@@ -795,12 +823,14 @@ impl MainView {
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
+        .map(|d| self.retry_reads_actions(d, cx)) // --- studio 0.71 ---
         .map(|d| self.discover_actions(d, cx)) // --- discover ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
         .map(|d| self.hopper_actions(d, cx)) // --- hoppers ---
         .map(|d| self.catch_up_actions(d, cx)) // --- catch up ---
+        .map(|d| self.agentic_writer_actions(d, cx)) // --- agentic writer ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -861,6 +891,7 @@ impl MainView {
             }
             o.responses = self.backend.responses(&o.item.origin, &o.item.remote_id);
         }
+        self.agentic_writer_after_reading_changed(cx); // --- agentic writer ---
         cx.notify();
     }
 
@@ -1303,8 +1334,12 @@ impl MainView {
             .top(px(TITLEBAR_H))
             .left_0()
             .right_0()
+            // --- ux 0.29 --- a tall sheet stops above the status bar and
+            // scrolls (as the main sheets do), so its keys stay in view.
+            .bottom(px(crate::app::sheet::SHEET_BOTTOM_GAP))
             .flex()
             .justify_center()
+            .items_start()
             // During the tour, the sheet centres in the room right of the
             // tour card, so the card never covers it.
             .when_some(self.tutorial_card_inset(), |d, inset| {
@@ -1313,9 +1348,14 @@ impl MainView {
             .child(
                 div()
                     .id("reading-sheet")
+                    .debug_selector(|| "reading-sheet".into())
                     .occlude()
                     .w(px(width))
                     .max_w(relative(0.92))
+                    .max_h_full()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
                     .map(|d| self.sheet_style(d))
                     .text_color(p.ink)
                     // Windows: Esc closes the sheet from anywhere inside it,
@@ -1506,16 +1546,47 @@ impl MainView {
                     .text_size(px(14.))
                     .child(title),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(self.chrome())
-                    .text_size(px(12.))
-                    .text_color(p.muted)
-                    .truncate()
-                    .child(hint),
-            )
+            .child(self.header_hints(&hint))
             .children(actions)
+    }
+
+    /// --- ux 0.29 --- The header's keys ("j/k move · ⏎ read more · …"),
+    /// each hint whole or not at all: one line, and the hints that don't
+    /// fit on it (the last, least-used ones) wrap out of sight rather than
+    /// being cut mid-hint with "…".
+    fn header_hints(&self, hint: &str) -> Div {
+        let p = self.palette.on_page();
+        div()
+            .debug_selector(|| "screen-hint".into())
+            .flex_1()
+            .min_w_0()
+            .h(px(HINT_LINE_H))
+            .overflow_hidden()
+            .flex()
+            .flex_wrap()
+            .gap_x(px(5.))
+            .font_family(self.chrome())
+            .text_size(px(12.))
+            .line_height(px(HINT_LINE_H))
+            .text_color(p.muted)
+            .children(
+                hint.split(" · ")
+                    .filter(|h| !h.is_empty())
+                    .enumerate()
+                    .map(|(i, h)| {
+                        div()
+                            .debug_selector(move || format!("screen-hint-{i}"))
+                            .whitespace_nowrap()
+                            // The first stays even in a sliver, cut.
+                            .when(i == 0, |d| d.min_w_0().truncate())
+                            .when(i > 0, |d| d.flex_none())
+                            .child(if i == 0 {
+                                h.to_string()
+                            } else {
+                                format!("· {h}")
+                            })
+                    }),
+            )
     }
 
     /// "Not available on this server", centred.
@@ -1547,8 +1618,14 @@ impl MainView {
             .into_any_element()
     }
 
+    /// A muted message that wraps within whatever holds it. In a flex row
+    /// (the reading pane) a text box is as wide as its one-line text unless
+    /// it may shrink: the Agentic feed's no-edition note ran off the pane.
     fn muted_note(&self, s: impl Into<SharedString>) -> AnyElement {
         div()
+            .debug_selector(|| "reading-note".into())
+            .w_full()
+            .min_w_0()
             .p(px(16.))
             .italic()
             .text_size(px(12.5))
@@ -1565,6 +1642,8 @@ impl MainView {
         };
         div()
             .id("reading-empty")
+            .w_full()
+            .min_w_0()
             .pt(px(16.))
             .px(px(16.))
             .flex()

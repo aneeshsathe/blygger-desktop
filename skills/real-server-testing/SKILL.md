@@ -47,11 +47,13 @@ BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh
 ```
 
 - It derives the config, starts blygs `a` and `b`, mints tokens and runs
-  `crates/blyg-core/tests/it/e2e/mod.rs`, the markdown-notes e2e and the switcher
-  e2e
+  `crates/blyg-core/tests/it/e2e/mod.rs`, the markdown-notes e2e, the web
+  read-path e2e (`crates/blyg-web/tests/e2e.rs`) and the switcher e2e
   (`BLYG_E2E_SKIP_*` skips each).
 - Browser pane checks: `scripts/browser-*-check.sh` (content blocking,
-  macros) run the app against local fixture pages, no network.
+  macros) run the app against local fixture pages, no network. The web app's
+  (`browser-web-live-check.sh`, `browser-web-perf-check.sh`) serve `blyg-web`
+  through `crates/blyg-web/dev-proxy.py` against the local blygs.
 - Store logic is tested on real SQLite. The UI is checked by running the app
   on sample data with `verify-burrow` (`scripts/verify/burrow-verify.sh`).
 - Don't add tests to the mock server (`crates/blyg-core/tests/common`) or the

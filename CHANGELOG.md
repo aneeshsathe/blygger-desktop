@@ -22,6 +22,275 @@ teaches something new in the tour, set the newest entry's `version` in
 Pending changes are fragments in `changes/unreleased/`; the release stitches
 them in here.
 
+## [0.29.0] - 2026-11-24
+
+Burrow writes your Agentic feed's edition with its own AI, Burrow in a browser
+is back and was tuned against the studio's own pages until it felt as smooth,
+and a usability pass taken on an unlocked screen fixed what 0.28's missed:
+narrow windows, unreadable accent text, Windows key names and the tour.
+Generating now reads a gap's links first (studio 0.70–0.71), extensions can
+add picker tabs, and Retry reads re-reads the lists on screen.
+
+### Added
+- **Agentic feed: Burrow's own AI writes the edition.** Your blyg's own
+  assistant isn't built yet, so the tab stayed "No edition yet". Now ⌥⌘E in
+  the Agentic feed tab (Ctrl+Shift+J on Windows; Blyg › Write an Agentic Feed
+  Edition Now; or the line above the tab) has the provider you set up in
+  Settings › AI write one: a title and lede, a lead, sections and briefs, each
+  post with a headline, a summary and why it's there, signed "Burrow ·
+  <provider>". Settings › Agentic feed (`agentic-writer = after-sync`) writes
+  one in the background after a sync that brings new posts, at most every 3
+  hours (`agentic-writer-gap`), with `agentic-writer-provider` and
+  `agentic-writer-model`. Off by default. It sends the titles and opening
+  words of up to 60 unread or new posts, and your blyg's Agentic feed prompt,
+  to that provider, and the edition to your blyg, only where your sign-in may
+  write one (`putAgentic`). A reply it can't use is said, and nothing is sent.
+  `crates/blyg-core/src/agentic_write.rs`,
+  `crates/blyg-app/src/reading/agentic_writer.rs`.
+- **Burrow in a browser is back.** The web app (`crates/blyg-web`), removed
+  in 0.26.0, is served again by your blyg at `{mount}/burrow/` and speaks
+  studio 0.69 (contract 6; contract 5 still works). It finds the API beside
+  itself at `{mount}/api`, so a blyg under a path works without the
+  host-root `/api` that studio 0.65 dropped. With no `/api/changes`, it
+  refreshes by conditional reads: each list asked with `If-None-Match`, an
+  unchanged one answering a bodyless 304 that the page reads as what it
+  already holds, and the reading list asked only by its first page until
+  that moves. Reading has studio 0.68's tabs: Feed (in the blyg's reader
+  order, pace-layered or chronological, chosen in the sources pane), Mentions,
+  Agentic feed, Saved (the shelf), Background and Raw. Not in the web app
+  yet: syndication as native 0.28 has it, full-text search, the dictionary and
+  the Agentic feed's helpers (`site/src/dev/web.md`).
+
+- **Picker: extension tabs (studio 0.71's picker sources).** An extension's
+  manifest can add `[[picker-sources]]` tabs to the `[[` / `![[` popup and
+  ⌘K's quote panel, after Burrow's own "items". Burrow asks the extension
+  (`extension/picker.search`) 150 ms after the last key; its results are
+  item ids only (others and repeats are dropped, at most 50), and ⏎ writes
+  `[[id | label]]`. A tab is shown only for the forms it declares, the one
+  you pick is remembered for the session, and an extension's error is said
+  in the picker. `crates/blyg-ext/src/picker.rs`,
+  `crates/blyg-app/src/composer/picker.rs`, `docs/EXTENSIONS.md`.
+- **Reading: Retry reads, which also re-reads the lists (studio 0.71).** A
+  read that failed (Responses, a post's history) now says so with **Retry
+  reads** beside it, and **Blyg › Retry Reads** does the same from anywhere.
+  It asks your blyg again (a pull), reads again what failed on screen, and
+  re-reads every list on screen: your posts, the reading rows and the unread
+  counts, as the studio's "retry reads" now reloads the page's lists too. One
+  runs at a time; one that fails again says why.
+  `crates/blyg-app/src/reading/retry_reads.rs`.
+- **AI: Burrow's own providers read a gap's links first (studio 0.71).**
+  ⌘G with codex, Claude Code, a CLI or an API key now does what your blyg
+  does since studio 0.70: before writing, Burrow reads the links you placed
+  in the instruction or the post. A `[[id]]` link, or the address of a post
+  on its own blyg, is the post Burrow holds; any other http(s) address is
+  fetched (at most 8 pages and 8 linked posts, 15 s and 4 MB a page, HTML
+  and plain text only, no cookies), its text cut at 30,000 characters and
+  given to the model fenced as untrusted material, with the studio's "Web
+  pages" rule added to the system prompt. A link that can't be read stops
+  at the same checkpoint ("1 of 2 links in this TK could not be read.
+  Generate anyway?"); ⏎ goes on without it. The pages read are recorded
+  with the gap (`pages`), and listed under the preview and in the Publish
+  sheet. A post a gap only links is given to the model but not cited, since
+  Burrow's provenance check (`tk::validate`) accepts only quoted sources.
+  `crates/blyg-ai/src/hydrate.rs`, `crates/blyg-app/src/ai/generate.rs`,
+  `site/src/ai.md`.
+### Changed
+- **Release notes open with the installer.** An unnotarized build's notes now
+  start with how to install it on macOS: the one-line Terminal installer
+  itself, which Gatekeeper doesn't block. Before, they pointed at the README
+  in a note at the very bottom.
+- **Web: smoother to use, measured against the studio's own UI.** A check
+  of the blyg while you type no longer sends the post you're typing once
+  per pause (one sentence went as 18 saves); it goes once typing stops, and
+  read marks still go at once. A reload keeps your place (Read on the phone,
+  Reading on the desk) in the address. The phone's Read screen has a row of
+  the smart sources (Feed, Agentic feed, Saved, Background, Raw): one tap
+  each, where it took ☰ Sources and a sheet. The stream shows placeholder
+  cards until its first page arrives instead of flashing "Nothing to read
+  yet", and "Loading Burrow…" appears only when the start is slow. A sync no
+  longer reads the reading list's first page twice. A Subscribe look-up that
+  fails says why in the form. A thread's card no longer repeats its title
+  in its excerpt, the blyg's messages start with a capital, and the Agentic
+  feed's empty state says where its setting is (Burrow desktop's Settings ›
+  Agentic feed). WebKit (Safari) no longer downloads the app twice on
+  every open. `crates/blyg-web/www/`.
+
+### Fixed
+- **Reading: the Agentic feed's note wraps.** On a blyg with no edition yet,
+  the tab's explanation ran off the reading pane on one line and couldn't
+  be read. Reading's empty and muted notes now wrap within any pane, and a
+  long word or link no longer widens it. The demo scene
+  `rd-agentic-unwritten` shows the tab with no edition.
+- **Editor: the edge cases of studio#168.** Bold or italic over several
+  lines no longer counts a line of only asterisks (`**`, a rule) as already
+  formatted, so it no longer strips it; formatting a selection of only
+  spaces puts the markers after the spaces, not around them; ⌃⌘M over a
+  displayed `$$…$$` formula leaves it alone instead of wrapping it again;
+  and a save that fails with no message says "Couldn't save (no reason
+  given)" instead of an empty toast. Formatting a selection whose edge
+  falls inside an emoji or an accented letter takes exactly the selection.
+  The studio's other cases don't apply to Burrow: it has no code-block
+  command, hard-break button, Tab list indent, link URL cleanup, read-only
+  editor regions or React state, its keys are read by the GPUI keymap, and
+  its toasts already replace each other.
+  `crates/blyg-app/src/app/format.rs`,
+  `crates/blyg-app/src/editor_edges_tests.rs`.
+- **Reading: ⌥⌘B saves the post in front of you.** On the reading screen
+  the Save key saves the opened (or selected) reading post, not the Write
+  post behind it; with neither it says so.
+- **Reader: a quote shows as a quote.** A reply quoting another post shows
+  the quoted passage in its box, as the Stream does, not the raw `![[id]]`.
+- **Reading: formulas read as formulas in lists.** Reader rows and both quote
+  pickers say "e^(iπ) + 1 = 0" instead of the TeX source.
+- **Themes: Konkan's contour ornament stays out of rows.** Its sounding
+  numbers no longer print over the post list.
+- **Themes: accent text and toolbar icons are readable in every theme.**
+  Accent-coloured text (the Agentic feed's italic among it) meets 4.5:1 on
+  its background, and the toolbar's icons use the ink colour.
+- **Agentic feed: the byline names the model once.** "by Burrow · Codex
+  (local) · demo-model", not "Codex (local) (demo-model)".
+- **Tour: steps show what their caption says.** Catch up, Generated and
+  Several posts into a hopper find their posts when the list fills after the
+  step begins; Quiet writing scrolls its row into view; the tour's last card
+  closes the conflict sheet the walk left open.
+- **Tour: the card moves off what the step points at,** to another corner
+  when it would cover the ring; its header no longer runs "SAMPLE DATAEnd
+  tour" together, and a key chip or chord never breaks across lines.
+- **Windows: keys named in words.** Hints say Enter, Tab and Backspace
+  rather than ⏎ ⇥ ⌫; the text-size keys read "Ctrl+Plus Ctrl+Minus Ctrl+0";
+  menus' key columns use the same spelling as the hints.
+- **Lineage: the action ring reads at 800 px.** In a narrow window the
+  panel beside the graph goes under it, and each answer ("yes, as a
+  reply") wraps under its question instead of standing one letter per line.
+- **Reader: Browsing history leaves the post room.** The panel has its own
+  ground, and in a narrow window the list column, then the sources, make
+  way so the post keeps a reading width (`reading/pane_fit.rs`). The
+  author's own site gets the same room.
+- **Header keys are whole or gone.** The keys in the Reading, Responses and
+  Subscriptions headers drop whole hints, last ones first, when the header
+  is short, instead of cutting one mid-word with "…".
+- **Side panels leave the editor room.** Beside ⌘Y's history, the notes
+  drawer or the preview, the posts list makes way rather than squeezing the
+  editor or the version's text to a sliver. In a window under 1000 px the
+  notes drawer takes at most 42% of it. A browser pane too narrow for a page
+  fills its room, and its toolbar no longer draws over the notes drawer.
+- **Toasts wrap and stay clear.** A toast ends left of the native preview
+  (it used to run under it, cut mid-word), and sits above the editor's
+  footer and Reading's compose bar.
+- **Sheets fit the window.** Sheets stop above the status bar and scroll.
+  Site settings and AI on your blyg keep Save in view. Client access shows
+  when each grant ends, the conflict sheet says its texts scroll, and
+  Settings › AI says "↓ more below" while it has more below.
+- **Web: your own posts in Reading are yours.** They keep their place in the
+  Feed by date, as the studio's Feed has them, but no longer offer ● Unread,
+  a swipe to mark read, or ↓ Background. A post of yours with edits you
+  haven't published says "unpublished edits" on its card and in the reader,
+  instead of showing the working copy as the public version
+  (`crates/blyg-web/src/read_api.rs`).
+- **Web: one name, Saved.** The button is "+ Save", the phone's tab, the
+  sheet and Blyg's row say Saved, and Saved's empty state names a button
+  that exists.
+- **Web: › and ‹ draw as themselves** in the ET Book theme (the page now
+  serves the desktop's fixed ET Book faces, as 0.25.1 did for the app),
+  and bold ET Book is drawn, not made up by the browser.
+- **Web: tables in posts** have cell padding and rules and scroll sideways
+  when wide; **a wide code block** shows its scroll bar.
+- **Web: the status bar tells the truth.** A scratch note says "on this
+  device only", never "synced". A post changed elsewhere says "edited
+  elsewhere · choose a copy" in amber beside the Keep mine / Use theirs
+  banner, not a red "sync error".
+- **Web: an over-long fragment shakes** at ⌃⏎ instead of opening the publish
+  sheet, and ⌃D says when keeping it makes it a thread.
+- **Web: the Agentic feed's empty state** says what writes an edition and
+  what's coming, without a studio version number.
+- **Web: Subscribe and Peek take a bare address** ("blyg.example.com"):
+  Burrow adds `https://` and says its own error, not the browser's.
+- **Web: key hints say the keys the page binds** (⌃, not ⌘, which browsers
+  keep), in tooltips, the key help, the HUD and Blyg's list, from one table
+  (`crates/blyg-web/www/keys.js`; the Rust's hints spell them the same way).
+- **Web: Reading by keyboard.** Tab from the search goes to the list, ⏎ opens
+  a card and ↑↓ move between cards; the search says ↑↓ step through posts.
+- **Web: no `/api/changes` on a blyg without it.** The page asks only when
+  the capabilities list `getChanges`, so a contract-6 blyg logs no 404 on
+  every start.
+- **Web: smaller things.** Toasts sit where they don't cover Publish or the
+  search box, and a toast's link is readable; the Feed's order control says
+  what each order does and keeps its place; the reader pane clears when you
+  choose another source; Publish dims on a post with nothing new; the Posts
+  list is taller; phone tap targets are 44 px; the phone's filter chips fade
+  at the edge to say they scroll; "In your reader, show" reads as English.
+
+### Security
+- **Someone else's post can't reach the app's own hooks.** The reader's
+  sanitizer (`crates/blyg-app/src/studio/sanitize.rs`, shared by the desktop
+  reader and the web app) keeps only the classes and `data-*` names the
+  renderer emits, so a post can no longer carry the attributes and classes
+  the pages listen for or draw as buttons. In the web app, the links it
+  draws from your blyg's answers (a mention's source, a sent Webmention's
+  target, a peeked post's page) are http(s) only; a page whose address
+  doesn't give a plain mount refuses to run; owner-API paths refuse encoded
+  dots and slashes; and the page loads under a Content-Security-Policy.
+
+### Development
+- **Tests: a test's extension processes end with it.** GPUI's test
+  contexts never drop the app, so a window's extension host was never
+  dropped in a test, and every extension child (the test binary run as
+  `reading_time_child`, `inspect_child`, `markdown_notes_child`,
+  `cross_post_child`, …) lived until the whole test binary exited: one
+  `cargo test -p blyg-app` had 135 alive at once. In a test the host is now
+  stopped when the test's thread ends (`extensions/test_hosts.rs`), which
+  brings the peak down to four per test thread, and
+  `extensions/children_tests.rs` checks it on macOS and Windows. The tour
+  tests whose steps don't show the sample extensions no longer start them,
+  and a test without a `Launch` global gets no extension host at all.
+- **Scenes: the Settings BACKGROUND scenes reach their row by name.**
+  `settings-background-keys` tabs until the cursor is on BACKGROUND (READ
+  MARKS sits above it now); `settings-background-locked` presses no key (a
+  locked rule is no tab stop) and scrolls to the greyed row.
+- **Scenes: one Agentic empty scene, and `+` tour scenes only where they act.**
+  `rd-agentic-empty` and `-narrow` are gone (`rd-agentic-unwritten`, with
+  `BLYGGER_SNAPSHOT_WIDTH`, shows the same); `tut-<id>+` exists only for a
+  step whose key the scene does (`DEMO_ACTS` in `onboarding/tutorial.rs`).
+- **Checks: Windows wording, contrast and accent text.** The
+  `platform_text.rs` scan also catches ⏎ ⇥ ⌫ in prose; a test computes the
+  toolbar icons' contrast in every theme; another refuses accent text not
+  drawn through `accent_text()`.
+- **Verification: no shots of a locked screen, and no blank ones.**
+  `scripts/verify/burrow-verify.sh` refuses to launch or capture while the
+  Mac is locked (`IOConsoleLocked`), and a shot that is one flat colour
+  (`scripts/verify/shotcheck.swift`) is renamed `*.BLANK.png` and fails the
+  shot. The 0.28 user-testing pass took its shots while locked and missed
+  obvious layout bugs. `crates/blyg-app/tests/verify_script.rs` runs both
+  checks through the script's selftest.
+- **Verify: shots skip off-screen windows.** `scripts/verify/winid.swift`
+  lists only on-screen windows. A run with a web view also owns a blank
+  500×500 pt window that is never on screen, which the blank-shot check
+  failed on (`rd-raw`, `rd-feed`, `rd-versions`, `rd-stream-copies`, …).
+  Users never see that window.
+- **Web: the flow pass.** `scripts/browser-web-flow-pass.sh` runs ten
+  journeys (first open to reading, catching up, quote and publish, a draft
+  revised, subscribe, switching sources, a sync while reading and while
+  typing, phone back and scroll, the phone keyboard) at desktop and phone
+  size in Chromium and WebKit, on Burrow web and on the studio's UI, against
+  local studios with 300+ invented posts. Each step is timed to a quiet page
+  and checked for layout shift, flicker, short spinners, empty flashes,
+  duplicate requests, focus and lost text or scroll; Burrow's numbers must
+  stay within `scripts/web-flow-budgets.json`.
+- **Web usability pass on a path-mounted blyg.** `scripts/browser-web-ux-pass.sh`
+  also starts a studio with `MOUNT=/notes` and walks the app at
+  `/notes/burrow/` (desktop and phone), and seeds posts a second apart so the
+  Feed's orders can be judged. `crates/blyg-web/dev-proxy.py` takes `--mount`.
+- **Capability gates: `Guards::Retired`** for an operation the current
+  contract no longer has (the web's `getChanges`), checked to be absent from
+  it (`crates/blyg-core/tests/it/capability_gates.rs`).
+
+### Known issues
+- **The web app's limits** are listed on its page
+  (`site/src/web-self-host.md`): reading is watched by its first page until
+  the hourly safety net, the pace-layered Feed is worked out without pinned
+  version history, and a newer contract is refused where the desktop app
+  keeps syncing.
+
 ## [0.28.0] - 2026-11-23
 
 Burrow 0.28.0 syncs to blygger-studio 0.71 (contract 6.3.0). It reads the

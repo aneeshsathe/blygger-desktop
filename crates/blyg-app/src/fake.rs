@@ -195,6 +195,8 @@ struct State {
     syndication: HashMap<LocalId, Vec<blyg_core::syndication::SyndicationEntry>>,
     /// Simulate a Worker without the provenance extension (404).
     prov_unavailable: bool,
+    /// The Agentic feed has no edition yet (the feed is offered).
+    no_edition: bool,
     /// Reading, subscriptions, mentions, site settings (see `fake_reading.rs`).
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
@@ -253,6 +255,8 @@ struct State {
     // Learn Spelling taught this computer.
     dictionary: blyg_core::dictionary::Dictionary,
     dictionary_taught: Vec<String>,
+    // --- agentic writer --- the Agentic feed's edition as written here.
+    agentic: studio069::AgenticState,
     // --- site --- the public site's settings (`blyg_core::site`).
     site: blyg_core::site::SiteConfig,
     // --- contacts --- the address book and what the blyg sent.
@@ -433,6 +437,7 @@ impl FakeBackend {
                 prov: HashMap::new(),
                 prov_saves: Vec::new(),
                 prov_unavailable: false,
+                no_edition: false,
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: !crate::dev_flags::get().fake.no_read,
@@ -460,6 +465,7 @@ impl FakeBackend {
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
                 dictionary: studio069::dictionary(),        // --- dictionary ---
                 dictionary_taught: Vec::new(),              // --- dictionary ---
+                agentic: Default::default(),                // --- agentic writer ---
                 site: fake_site(),                          // --- site ---
                 book: Default::default(),                   // --- contacts ---
                 upkeep: Default::default(),                 // --- upkeep ---
@@ -648,6 +654,13 @@ impl FakeBackend {
     /// provenance endpoint (or not).
     pub fn set_provenance_available(&self, available: bool) {
         self.lock().prov_unavailable = !available;
+    }
+
+    /// Whether the Agentic feed has an edition (`false`: a blyg whose
+    /// assistant hasn't written one yet; the feed is still offered).
+    #[cfg(test)]
+    pub fn set_agentic_edition(&self, written: bool) {
+        self.lock().no_edition = !written;
     }
 
     /// --- blyg switcher --- Replace the sample posts with these drafts (a
@@ -915,6 +928,25 @@ impl FakeBackend {
     #[cfg(test)]
     pub fn set_mentions_lens(&self, keys: Option<Vec<(SubId, RemoteId)>>) {
         self.lock().book.lens = keys;
+    }
+
+    /// --- agentic writer --- No edition on the blyg (the empty tab).
+    pub fn agentic_clear(&self) {
+        let mut st = self.lock();
+        st.agentic.written = None;
+        st.agentic.cleared = true;
+    }
+
+    /// Whether this sign-in may write an edition (`putAgentic`).
+    #[cfg(test)]
+    pub fn set_agentic_writable(&self, on: bool) {
+        self.lock().agentic.writable = on;
+    }
+
+    /// Editions written to the fake blyg.
+    #[cfg(test)]
+    pub fn agentic_puts(&self) -> usize {
+        self.lock().agentic.puts
     }
 
     /// The Mentions feed's sample: three posts that point at your blyg,
@@ -3395,12 +3427,39 @@ impl Backend for FakeBackend {
 
     fn agentic_edition(&self, feed: &str) -> Result<Option<blyg_core::agentic::Edition>> {
         self.remote_guard()?;
-        if feed != blyg_core::agentic::DEFAULT_FEED {
+        if feed != blyg_core::agentic::DEFAULT_FEED || self.lock().no_edition {
             return Ok(None);
         }
         let title = self.lock().access_ai.ai.agentic_title.clone();
         let title = blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default());
-        Ok(Some(studio069::edition(&self.reading(), &title)))
+        let rows = self.reading();
+        Ok(Some(self.lock().agentic.edition(&rows, &title)))
+    }
+
+    // --- agentic writer ---
+    fn agentic_writable(&self) -> Result<bool> {
+        self.remote_guard()?;
+        Ok(self.lock().agentic.writable)
+    }
+
+    fn put_agentic_edition(
+        &self,
+        feed: &str,
+        expected_revision: u64,
+        edition: &blyg_core::agentic_write::EditionInput,
+    ) -> Result<blyg_core::agentic_write::Put> {
+        simulate_latency(self.timing.publish);
+        self.remote_guard()?;
+        if feed != blyg_core::agentic::DEFAULT_FEED {
+            return Ok(blyg_core::agentic_write::Put::NotOffered);
+        }
+        let title = self.lock().access_ai.ai.agentic_title.clone();
+        let title = blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default());
+        let rows = self.reading();
+        Ok(self
+            .lock()
+            .agentic
+            .put(&rows, &title, expected_revision, edition))
     }
 
     fn dictionary(&self) -> Result<Option<blyg_core::dictionary::Dictionary>> {

@@ -14,7 +14,8 @@
 //! it; a card (or j/k) opens its post, the edition narrows to the list
 //! column beside it, and esc puts the page back. Formulas in a card read
 //! as text (`maths_text`). The edition is read when the tab is chosen and
-//! whenever Reading refreshes while it's shown; Burrow never writes one.
+//! whenever Reading refreshes while it's shown; Burrow's own AI may write
+//! one (`agentic_writer.rs`).
 //! A blyg without editions (its capabilities don't list `getAgentic`) shows
 //! the tab empty, saying what it's for.
 
@@ -34,14 +35,14 @@ use crate::app::MainView;
 /// The masthead's mark on the assistant's words.
 pub const ASSISTANT_BADGE: &str = "✦ written by your assistant";
 
-/// What the tab says with no edition (the studio's words, for Burrow).
+/// What the tab says with no edition: how one gets made.
 pub fn empty_note(title: &str) -> String {
-    format!(
-        "No edition yet. {title} is an assistant who organizes your reading for you, as a \
-         digest in sections: an assistant writes it on your blyg, and it shows here. Your \
-         blyg's own assistant isn't built yet; an outside assistant you've given a token can \
-         write one now. Its brief is the Agentic feed prompt in Blyg › AI on Your Blyg…"
-    )
+    crate::keymap::hint_owned(format!(
+        "No edition yet. {title} is a digest of your reading in sections, written by an \
+         assistant. Burrow's own AI can write it: ⌥⌘E writes one now, and Settings › Agentic \
+         feed (⌘,) writes one after each sync that brings new posts. An assistant on your blyg \
+         can write it too; its brief is the Agentic feed prompt in Blyg › AI on Your Blyg…"
+    ))
 }
 
 /// The edition and the tab's name, as last read.
@@ -234,7 +235,13 @@ fn source_name(r: &ReadingItem) -> String {
 pub fn masthead_meta(l: &Layout, when: Option<String>) -> String {
     let mut s = format!("by {}", l.agent.name);
     if let Some(m) = &l.agent.model {
-        s.push_str(&format!(" ({m})"));
+        // A name with its own brackets ("Codex (local)") takes the model
+        // after a dot: "(local) (demo-model)" read as one muddle.
+        if l.agent.name.contains('(') {
+            s.push_str(&format!(" · {m}"));
+        } else {
+            s.push_str(&format!(" ({m})"));
+        }
     }
     if let Some(w) = when {
         s.push_str(&format!(" · {w}"));
@@ -336,7 +343,7 @@ impl MainView {
                 .italic()
                 .text_size(px(size))
                 .line_height(relative(1.4))
-                .text_color(p.accent)
+                .text_color(p.accent_text())
                 .child(super::maths_text::plain_maths(&t))
         };
         // The page's type is larger across the pane.
@@ -387,7 +394,7 @@ impl MainView {
                     })
                     .font_weight(FontWeight::SEMIBOLD)
                     .italic()
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .child(s.title.clone()),
             );
             if let Some(note) = &s.note {
@@ -491,7 +498,7 @@ impl MainView {
                 div()
                     .italic()
                     .text_size(px(12. * k))
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .child(s.clone()),
             );
         }

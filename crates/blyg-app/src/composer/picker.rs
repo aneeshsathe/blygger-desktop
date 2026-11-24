@@ -261,7 +261,7 @@ fn chip(p: Palette, id: SharedString, label: String, on: bool) -> Stateful<Div> 
         .rounded(px(5.))
         .border_1()
         .border_color(if on { p.accent } else { p.edge() })
-        .when(on, |d| d.text_color(p.accent))
+        .when(on, |d| d.text_color(p.accent_text()))
         .when(!on, |d| d.text_color(p.muted))
         .cursor_pointer()
         .hover(|s| s.bg(p.hover()))
@@ -427,6 +427,205 @@ pub fn rows(
                         .truncate()
                         .child(meta(r, now)),
                 )
+                .into_any_element()
+        })
+        .collect()
+}
+
+// ------------------------------------------------------------ extension tabs
+
+/// --- picker sources --- The extension tabs (studio 0.71's
+/// `pickerSource`, `blyg_ext::picker`): with any offered for the form, a
+/// row of tabs heads the picker, Burrow's own search ("items") first, then
+/// each extension's in order. The extension finds; the picker lists, moves
+/// through and inserts its results as it does its own.
+pub use blyg_ext::picker::{PickerForm, PickerResult, PickerTab};
+
+/// The extension form a picker kind is (`![[` here is always a quote).
+pub fn form_of(kind: PickKind) -> PickerForm {
+    match kind {
+        PickKind::Link => PickerForm::Link,
+        PickKind::Quote => PickerForm::Transclude,
+    }
+}
+
+/// The tab chosen last, by (extension, source), remembered while the app
+/// runs as the filters are. `None` is Burrow's own search. A remembered
+/// tab that isn't offered now falls back to it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChosenTab(pub Option<(String, String)>);
+
+impl Global for ChosenTab {}
+
+impl ChosenTab {
+    pub fn get(cx: &App) -> ChosenTab {
+        cx.try_global::<ChosenTab>().cloned().unwrap_or_default()
+    }
+
+    pub fn set(self, cx: &mut App) {
+        cx.set_global(self);
+    }
+
+    /// The chosen tab's place among `tabs`, if it's one of them.
+    pub fn index_in(&self, tabs: &[PickerTab]) -> Option<usize> {
+        let (ext, source) = self.0.as_ref()?;
+        tabs.iter()
+            .position(|t| &t.ext == ext && &t.source.id == source)
+    }
+
+    pub fn of(tabs: &[PickerTab], i: Option<usize>) -> ChosenTab {
+        ChosenTab(
+            i.and_then(|i| tabs.get(i))
+                .map(|t| (t.ext.clone(), t.source.id.clone())),
+        )
+    }
+}
+
+/// What an extension tab shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TabRows {
+    /// Asked, not answered yet (or not asked yet: a pause first).
+    Searching,
+    Found(Vec<PickerResult>),
+    /// The extension's error, in words.
+    Failed(String),
+}
+
+impl TabRows {
+    pub fn rows(&self) -> &[PickerResult] {
+        match self {
+            TabRows::Found(r) => r,
+            _ => &[],
+        }
+    }
+
+    /// The line over the results (the studio's count, or its error line).
+    pub fn status(&self) -> String {
+        match self {
+            TabRows::Searching => "searching…".into(),
+            TabRows::Found(r) if r.len() == 1 => "1 result".into(),
+            TabRows::Found(r) => format!("{} results", r.len()),
+            TabRows::Failed(e) => format!("Couldn't search: {e}"),
+        }
+    }
+}
+
+impl TabRows {
+    /// An extension's answer, its error in its own name's words.
+    pub fn of(r: Result<Vec<PickerResult>, blyg_ext::ExtError>, ext: &str) -> TabRows {
+        match r {
+            Ok(rows) => TabRows::Found(rows),
+            Err(e) => TabRows::Failed(e.message(ext)),
+        }
+    }
+}
+
+/// A picker's extension tabs: those offered for its form, the one open
+/// (`None`: Burrow's own search), and what that one shows.
+#[derive(Debug, Clone)]
+pub struct TabState {
+    pub tabs: Vec<PickerTab>,
+    pub tab: Option<usize>,
+    pub rows: TabRows,
+}
+
+impl TabState {
+    /// The tabs `host`'s extensions offer for `kind`, opened on the one
+    /// chosen last if it's among them.
+    pub fn open(host: Option<&blyg_ext::Host>, kind: PickKind, cx: &App) -> TabState {
+        let tabs = host
+            .map(|h| h.picker_tabs(form_of(kind)))
+            .unwrap_or_default();
+        let tab = ChosenTab::get(cx).index_in(&tabs);
+        TabState {
+            tabs,
+            tab,
+            rows: TabRows::Searching,
+        }
+    }
+
+    /// The extension tab that's open, if one is.
+    pub fn on_ext(&self) -> Option<&PickerTab> {
+        self.tab.and_then(|i| self.tabs.get(i))
+    }
+
+    /// Open `tab` and remember it.
+    pub fn choose(&mut self, tab: Option<usize>, cx: &mut App) {
+        self.tab = tab.filter(|i| *i < self.tabs.len());
+        self.rows = TabRows::Searching;
+        ChosenTab::of(&self.tabs, self.tab).set(cx);
+    }
+
+    /// The tab row (see [`tab_row`]).
+    pub fn row(&self, p: Palette, set: OnTab) -> Option<Div> {
+        tab_row(p, &self.tabs, self.tab, set)
+    }
+}
+
+/// How long the query rests before a tab's extension is asked (the
+/// studio's pause, so a source isn't asked once per keystroke).
+pub const TAB_PAUSE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Chooses tab `None` (items) or `Some(i)`.
+pub type OnTab = Rc<dyn Fn(Option<usize>, &mut Window, &mut App)>;
+
+/// The tab row: "items", then each extension's tab. Nothing when no
+/// extension offers one here.
+pub fn tab_row(p: Palette, tabs: &[PickerTab], on: Option<usize>, set: OnTab) -> Option<Div> {
+    if tabs.is_empty() {
+        return None;
+    }
+    let mut row = div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap(px(5.))
+        .text_size(px(11.));
+    let items = set.clone();
+    row = row.child(
+        chip(p, "pick-tab-items".into(), "items".into(), on.is_none())
+            .debug_selector(|| "pick-tab-items".into())
+            .on_click(move |_, window, cx| items(None, window, cx)),
+    );
+    for (i, t) in tabs.iter().enumerate() {
+        let set = set.clone();
+        row = row.child(
+            chip(
+                p,
+                format!("pick-tab-{i}").into(),
+                t.source.label.clone(),
+                on == Some(i),
+            )
+            .debug_selector(move || format!("pick-tab-{i}"))
+            .on_click(move |_, window, cx| set(Some(i), window, cx)),
+        );
+    }
+    Some(row)
+}
+
+/// An extension tab's rows: the excerpt, and its note below.
+pub fn tab_rows(p: Palette, rows: &[PickerResult], sel: usize, pick: OnPick) -> Vec<AnyElement> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let pick = pick.clone();
+            div()
+                .id(("pick-ext-row", i))
+                .px(px(8.))
+                .py(px(4.))
+                .rounded(px(5.))
+                .cursor_pointer()
+                .when(i == sel, |d| d.bg(p.pick()))
+                .when(i != sel, |d| d.hover(|s| s.bg(p.hover())))
+                .on_click(move |_, window, cx| pick(i, window, cx))
+                .child(div().truncate().child(r.excerpt.clone()))
+                .children(r.meta.clone().map(|m| {
+                    div()
+                        .text_size(px(10.5))
+                        .text_color(p.muted)
+                        .truncate()
+                        .child(m)
+                }))
                 .into_any_element()
         })
         .collect()

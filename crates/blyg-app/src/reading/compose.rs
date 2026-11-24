@@ -764,7 +764,7 @@ impl MainView {
                 None if let Some(s) = holding => div()
                     .id("compose-hold")
                     .debug_selector(|| "compose-hold".into())
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .font_weight(FontWeight::MEDIUM)
                     .child(crate::keymap::hint_owned(hold_line(s))),
                 Some(e) => div()
@@ -819,6 +819,7 @@ impl MainView {
                 .debug_selector(|| "reading-compose".into())
                 .relative()
                 .child(marker)
+                .child(self.toast_floor_probe()) // --- ux 0.29 ---
                 .flex_none()
                 .flex()
                 .flex_col()

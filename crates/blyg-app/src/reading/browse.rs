@@ -45,6 +45,9 @@ pub const TITLE_MAX: usize = 400;
 /// How many log rows the history pane shows.
 pub const HISTORY_ROWS: usize = 200;
 
+/// The history panel's width.
+pub(crate) const HISTORY_W: f32 = 270.;
+
 /// The history pane's words (upstream's).
 pub const HISTORY_TITLE: &str = "Browsing history";
 pub const HISTORY_PRIVATE: &str = "Where following links has taken you. Private to you.";
@@ -779,12 +782,12 @@ impl MainView {
         let link = |d: Stateful<Div>| {
             d.cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent))
+                .hover(|s| s.text_color(p.accent_text()))
         };
         let button = |d: Stateful<Div>| {
             d.cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent).bg(p.sel))
+                .hover(|s| s.text_color(p.accent_text()).bg(p.sel))
         };
         div()
             .id("trail-bar")
@@ -850,7 +853,9 @@ impl MainView {
                     .px(px(6.))
                     .rounded(px(self.theme.corner(5.)))
                     .map(button)
-                    .when(self.reading.browse.history_open, |d| d.text_color(p.accent))
+                    .when(self.reading.browse.history_open, |d| {
+                        d.text_color(p.accent_text())
+                    })
                     .child("history")
                     .tooltip(|_, cx| {
                         cx.new(|_| super::Tip(crate::keymap::hint("Browsing history · ⇧⌘H").into()))
@@ -910,7 +915,7 @@ impl MainView {
                             .id("peek-subscribe")
                             .debug_selector(|| "peek-subscribe".into())
                             .cursor_pointer()
-                            .text_color(p.accent)
+                            .text_color(p.accent_text())
                             .border_b_1()
                             .border_color(p.accent.opacity(0.5))
                             .child(NOT_SUBSCRIBED_ASK)
@@ -933,12 +938,23 @@ impl MainView {
         if !self.reading.browse.history_open || self.reading.opened.is_none() {
             return detail;
         }
+        // --- ux 0.29 --- the post keeps to its side of the panel (it drew
+        // through it when squeezed), and `pane_fit` leaves it its room.
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .flex()
-            .child(detail)
+            .child(
+                div()
+                    .debug_selector(|| "reading-post".into())
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .flex()
+                    .child(detail),
+            )
             .child(self.render_history_pane(cx))
             .into_any_element()
     }
@@ -955,7 +971,7 @@ impl MainView {
                 .pl(px(depth.min(8) as f32 * 12.))
                 .cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent))
+                .hover(|s| s.text_color(p.accent_text()))
                 .child(div().flex_none().text_color(p.muted).child(lead))
                 .child(div().min_w_0().truncate().child(text))
         };
@@ -1052,9 +1068,10 @@ impl MainView {
         div()
             .id("browse-history")
             .debug_selector(|| "browse-history".into())
-            .w(px(270.))
+            .w(px(HISTORY_W))
             .flex_none()
             .h_full()
+            .bg(p.bg)
             .flex()
             .flex_col()
             .rule_l(&p)

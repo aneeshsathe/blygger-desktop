@@ -64,7 +64,10 @@ pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
     ordered(items)
 }
 
-fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+/// [`order`] over owned rows or borrowed ones: Burrow in a browser orders
+/// thousands of rows on every change, so it passes references
+/// (`rows.iter()`).
+pub fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut seen = std::collections::HashSet::new();
     let (mut edited, mut rest): (Vec<T>, Vec<T>) = items
         .into_iter()
@@ -172,6 +175,16 @@ fn html_text(html: &str) -> String {
 /// The first line with readable text, as plain text; `…` when there's none.
 pub fn title(md: &str) -> String {
     blyg_core::plain_title(md).unwrap_or_else(|| "…".into())
+}
+
+/// --- ux 0.29 --- A reading row's title as shown: [`post_title`] with each
+/// formula as the text it says (`e^(iπ)`), as the Stream's cards show it.
+/// [`post_title`] stays the post's own words (a quote's label, a drag).
+pub fn row_title(r: &ReadingItem) -> String {
+    match blyg_core::model::plain_title_read(&r.content_md) {
+        Some(t) => t,
+        None => post_title(r),
+    }
 }
 
 /// A post's title in the reading list and stream: its own first line (never

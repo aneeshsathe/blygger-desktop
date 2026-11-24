@@ -701,7 +701,7 @@ impl MainView {
                     .cursor_pointer()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.ink)
-                    .hover(|s| s.text_color(p.accent))
+                    .hover(|s| s.text_color(p.accent_text()))
                     .tooltip(|_, cx| {
                         cx.new(|_| super::Tip(crate::keymap::hint("Profile · ⌘I").into()))
                             .into()
@@ -722,7 +722,7 @@ impl MainView {
                     .id("stream-date")
                     .debug_selector(move || format!("stream-date-{ix}"))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(p.accent).underline())
+                    .hover(|s| s.text_color(p.accent_text()).underline())
                     .tooltip(|_, cx| cx.new(|_| super::Tip(OPEN_ENTRY.into())).into())
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
@@ -781,13 +781,15 @@ impl MainView {
                     .font_family(self.chrome())
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .cursor_pointer()
                     .hover(|s| s.underline())
                     .child("Read more →")
                     .tooltip(|_, cx| {
-                        cx.new(|_| super::Tip("Open the whole thread · ⏎".into()))
-                            .into()
+                        cx.new(|_| {
+                            super::Tip(crate::keymap::hint("Open the whole thread · ⏎").into())
+                        })
+                        .into()
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
@@ -895,7 +897,7 @@ impl MainView {
                         |el: Stateful<Div>, target: Option<(String, String, Option<u32>)>| {
                             el.when_some(target, |d, (o, i, v)| {
                                 d.cursor_pointer()
-                                    .hover(|s| s.text_color(p.accent))
+                                    .hover(|s| s.text_color(p.accent_text()))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.open_original(o.clone(), i.clone(), v, window, cx)
@@ -920,7 +922,7 @@ impl MainView {
                                 .border_b_1()
                                 .border_dashed()
                                 .border_color(p.muted.opacity(0.6))
-                                .hover(|s| s.text_color(p.accent))
+                                .hover(|s| s.text_color(p.accent_text()))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.open_profile(url.clone(), window, cx)
@@ -950,7 +952,7 @@ impl MainView {
         let k_more = key.clone();
         let (shown, _) = vm::split_chips(self.stream_chips(r));
         let mut row: Vec<AnyElement> = vec![
-            self.chip("stream-act-open", "Read more ⏎")
+            self.chip("stream-act-open", crate::keymap::hint("Read more ⏎"))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
                     this.stream_read_more(k_more.clone(), window, cx)
@@ -1500,7 +1502,7 @@ impl MainView {
                             .border_b_1()
                             .border_dashed()
                             .border_color(p.muted.opacity(0.6))
-                            .hover(|s| s.text_color(p.accent))
+                            .hover(|s| s.text_color(p.accent_text()))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.open_profile(prof.clone(), window, cx)

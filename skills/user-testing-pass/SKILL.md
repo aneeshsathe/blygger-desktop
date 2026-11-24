@@ -45,6 +45,10 @@ clicks, never `pkill` by name, and never use real data.
      the journey.
    - Look at every screenshot as that persona would. Don't just check that the
      window opened.
+   - Shots taken while the Mac is locked are refused (the script exits 2), and
+     a blank, one-colour shot fails its scene: the 0.28 pass's locked-screen
+     shots missed obvious layout bugs. Stop and report it; a pass with no
+     real shots is not a pass.
    - Where a step has no scene, add one to the registry
      (`crates/blyg-app/src/scenes.rs`), calling the same methods the keys call.
 3. **Type it in-process:** for the keyboard-only and writer journeys, also

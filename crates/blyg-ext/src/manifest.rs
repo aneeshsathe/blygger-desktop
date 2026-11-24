@@ -30,6 +30,11 @@
 //! origin = "https://social.example.com"
 //! home = "https://social.example.com/notes"
 //!
+//! [[picker-sources]]                # tabs in the [[ picker (crate::picker)
+//! id = "refs"
+//! label = "references"
+//! forms = ["link"]                  # link | transclude | source
+//!
 //! [[macros]]                        # see crate::recipe for the steps
 //! id = "cross-post"
 //! title = "Cross-post to Social…"
@@ -102,6 +107,9 @@ struct Raw {
     entry_byline: bool,
     #[serde(default, rename = "entry-actions", alias = "entryActions")]
     entry_actions: Vec<crate::reading::EntryActionSpec>,
+    // --- picker sources --- (crate::picker)
+    #[serde(default, rename = "picker-sources", alias = "pickerSources")]
+    picker_sources: Vec<crate::picker::PickerSourceSpec>,
 }
 
 /// A validated manifest.
@@ -130,6 +138,9 @@ pub struct Manifest {
     /// Its rows in a reading entry's ⋯ sheet (`[[entry-actions]]`); needs
     /// `reading.read`.
     pub entry_actions: Vec<crate::reading::EntryActionSpec>,
+    /// --- picker sources --- Its tabs in the `[[` / `![[` picker
+    /// (`[[picker-sources]]`, `crate::picker`).
+    pub picker_sources: Vec<crate::picker::PickerSourceSpec>,
 }
 
 impl Manifest {
@@ -262,6 +273,19 @@ impl Manifest {
         {
             return err("entry-byline and entry-actions need \"reading.read\" in capabilities");
         }
+        // --- picker sources ---
+        unique_ids(
+            "picker source",
+            raw.picker_sources.iter().map(|p| p.id.as_str()),
+        )?;
+        for p in &raw.picker_sources {
+            if p.label.trim().is_empty() {
+                return err(format!("picker source {:?} has no label", p.id));
+            }
+            if p.forms.is_empty() {
+                return err(format!("picker source {:?} has no forms", p.id));
+            }
+        }
         Ok(Manifest {
             name: raw.name,
             version: raw.version,
@@ -277,6 +301,7 @@ impl Manifest {
             macros: raw.macros,
             entry_byline: raw.entry_byline,
             entry_actions: raw.entry_actions,
+            picker_sources: raw.picker_sources,
         })
     }
 }

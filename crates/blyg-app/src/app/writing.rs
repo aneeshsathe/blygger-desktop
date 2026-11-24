@@ -26,10 +26,10 @@ impl MainView {
         if self.list.wants_create() {
             self.current = None;
             self.set_editor_text("", window, cx);
-            let ph = format!(
+            let ph = crate::keymap::hint_owned(format!(
                 "⏎ creates a new {}: “{q}”",
                 scratch::new_note_noun(self.prefs.new_note)
-            );
+            ));
             self.editor
                 .update(cx, |s, cx| s.set_placeholder(ph, window, cx));
         } else {
@@ -252,7 +252,7 @@ impl MainView {
         self.search.edits += 1;
         let saved = self.ai_save_edit(&id, &text);
         if let Err(e) = &saved {
-            self.show_toast(format!("Couldn't save: {e}"), None, cx);
+            self.show_toast(save_failed(e), None, cx);
         }
         // The row as the save leaves it, worked out here rather than read
         // back from the store: a keystroke never waits on SQLite.
@@ -424,5 +424,16 @@ impl MainView {
         .capture_action(
             cx.listener(|this, _: &Escape, window, cx| route(this, AssistKey::Escape, window, cx)),
         )
+    }
+}
+
+/// The toast for a save that failed, with its reason; a failure that came
+/// with none still says what failed (studio#168).
+pub(super) fn save_failed(e: &blyg_core::CoreError) -> String {
+    let why = e.to_string();
+    if why.trim().is_empty() {
+        "Couldn't save (no reason given)".into()
+    } else {
+        format!("Couldn't save: {why}")
     }
 }

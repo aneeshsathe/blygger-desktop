@@ -60,6 +60,14 @@ impl MainView {
         cx.notify();
     }
 
+    /// The reading post ⌥⌘B saves: the open one, else the selected one.
+    pub(crate) fn reading_post_in_front(&self) -> Option<Key> {
+        if let Some(o) = &self.reading.opened {
+            return Some(vm::key(&o.item));
+        }
+        self.reading.sel.clone()
+    }
+
     /// Hook: read the shelf's keys again (after a sync, or a change here).
     pub(crate) fn reload_reading_shelf(&mut self) {
         self.reading.shelved = keys(self.backend.as_ref());

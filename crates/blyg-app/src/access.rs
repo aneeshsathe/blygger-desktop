@@ -644,6 +644,8 @@ impl MainView {
                     this.close_sheet(window, cx)
                 }
             }))
+            // --- ux 0.29 --- the list scrolls in a short window.
+            .min_h_0()
             .flex()
             .flex_col()
             .gap(px(2.))
@@ -686,6 +688,8 @@ impl MainView {
                 let mut list = div()
                     .id("access-list")
                     .mt(px(10.))
+                    .flex_1()
+                    .min_h_0()
                     .max_h(px(360.))
                     .overflow_y_scroll()
                     .flex()
@@ -764,9 +768,10 @@ impl MainView {
                                             ))
                                             .child(badge(resource_label(&a.resource), false)),
                                     )
+                                    // --- ux 0.29 --- wraps: when the
+                                    // grant ends is at its end.
                                     .child(
                                         div()
-                                            .truncate()
                                             .text_size(px(11.))
                                             .text_color(if selected {
                                                 p.sel_muted

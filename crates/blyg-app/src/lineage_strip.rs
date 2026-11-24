@@ -483,6 +483,8 @@ impl MainView {
         let line = div()
             .id("lineage-strip")
             .debug_selector(|| "lineage-strip".into())
+            .relative()
+            .child(self.toast_floor_probe()) // --- ux 0.29 ---
             .flex()
             .items_center()
             .gap(px(8.))

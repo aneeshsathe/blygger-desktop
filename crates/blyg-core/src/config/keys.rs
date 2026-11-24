@@ -75,6 +75,18 @@ pub const EXTENSION_FS_PREFIX: &str = "fs:";
 /// path) an extension's macros may fill in and post to.
 pub const EXTENSION_AUTOMATE_PREFIX: &str = "browser.automate:";
 
+/// `agentic-writer-provider`'s values: the writing default, or a provider
+/// (not the blyg's own generate endpoint, which writes TK spans only).
+const AGENTIC_WRITER_PROVIDERS: &[&str] = &[
+    "default",
+    "claude-code",
+    "codex",
+    "chatgpt",
+    "openai",
+    "anthropic",
+    "cloudflare",
+];
+
 const AI_PROVIDER_CHOICES: &[&str] = &[
     "claude-code",
     "codex",
@@ -438,6 +450,49 @@ pub const KEYS: &[KeySpec] = &[
          enable a provider here or sign in to one in Settings, which updates this list. \
          An empty `ai-enable =` switches every provider off again.",
     ),
+    // --- agentic writer ---
+    docs(
+        key(
+            "agentic-writer",
+            ValueKind::Choice(&["off", "after-sync"]),
+            Some("off"),
+        ),
+        "Burrow's own AI writes your blyg's Agentic feed edition (a digest of your reading in \
+         sections). after-sync writes one in the background after a sync that brings new \
+         posts, at most once every agentic-writer-gap hours; off (the default) writes one only \
+         when you ask (Write an Edition Now, ⌥⌘E, in the Agentic feed tab). Either way it sends \
+         the titles and opening words of up to 60 unread or new posts, and your blyg's Agentic \
+         feed prompt, to the provider in agentic-writer-provider, and the edition it writes to \
+         your blyg. Settings (⌘,) › Agentic feed has it too.",
+    ),
+    docs(
+        key(
+            "agentic-writer-provider",
+            ValueKind::Choice(AGENTIC_WRITER_PROVIDERS),
+            Some("default"),
+        ),
+        "The AI provider that writes the Agentic feed edition: default (the one the writing \
+         helpers use, ai-provider) or one of claude-code, codex, chatgpt, openai, anthropic, \
+         cloudflare. It must be enabled (ai-enable) and signed in.",
+    ),
+    docs(
+        key("agentic-writer-model", ValueKind::Text, None),
+        "The model the Agentic feed's writer asks for. Unset uses that provider's model \
+         (ai-provider-model, else its default).",
+    ),
+    docs(
+        key(
+            "agentic-writer-gap",
+            ValueKind::Number {
+                min: 0.5,
+                max: 168.0,
+            },
+            Some("3"),
+        ),
+        "With agentic-writer = after-sync: the fewest hours between two editions, from 0.5 to \
+         168 (a week). A sync sooner than that after the last edition writes nothing.",
+    ),
+    // --- end agentic writer ---
     docs(
         key("cloudflare-account-id", ValueKind::Text, None),
         "Cloudflare account ID for Workers AI. Not a secret; the API token is in the Keychain.",

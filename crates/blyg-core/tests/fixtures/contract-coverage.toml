@@ -85,7 +85,7 @@ items = [
 
 [[exempt]]
 item = "property:AgenticEdition.edition"
-reason = "Burrow doesn't read an edition's `edition` (the assistant's AgenticEditionInput, echoed back for its next PUT) because it draws `layout`, the same edition with each reference resolved and the unresolvable ones left out (blyg_core::agentic::parse_edition), and never writes an edition (putAgentic is the assistant's); Studio's tab draws `layout` too"
+reason = "Burrow doesn't read an edition's `edition` (the assistant's AgenticEditionInput, echoed back for its next PUT) because it draws `layout`, the same edition with each reference resolved and the unresolvable ones left out (blyg_core::agentic::parse_edition), and Burrow's own writer (blyg_core::agentic_write) builds each edition afresh from the reading list, never from the last one; Studio's tab draws `layout` too"
 
 [[exempt]]
 item = "property:*.studioTheme"

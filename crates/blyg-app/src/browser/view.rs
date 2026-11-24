@@ -42,6 +42,20 @@ use super::CONTEXT;
 /// The slide-over's share of the window width.
 pub const SLIDE_WIDTH: f32 = 0.66;
 
+/// --- ux 0.29 --- The slide-over's narrowest: in less room it takes the
+/// whole room (beside the notes drawer at 800 px it was 255 px, its
+/// toolbar drawn over the drawer).
+pub const SLIDE_MIN_PX: f32 = 480.;
+
+/// The slide-over's left edge in a room `width` wide (from its left).
+pub fn slide_left_edge(width: f32) -> f32 {
+    if width * SLIDE_WIDTH < SLIDE_MIN_PX {
+        0.
+    } else {
+        (width * (1. - SLIDE_WIDTH)).round()
+    }
+}
+
 const CHROME_H: f32 = 38.;
 
 /// --- onboarding --- The tutorial's sample page.
@@ -287,7 +301,7 @@ impl Browser {
     /// Where the pane's left edge is, for a window `width` wide.
     pub fn left_edge(&self, width: Pixels) -> Pixels {
         match self.mode {
-            OpenMode::Slide => (width * (1. - SLIDE_WIDTH)).round(),
+            OpenMode::Slide => px(slide_left_edge(f32::from(width))),
             OpenMode::Full => px(0.),
         }
     }
@@ -401,6 +415,9 @@ pub(crate) fn chrome_bar(p: &Palette, id: &'static str, pg: &PageState) -> State
         .flex()
         .items_center()
         .gap(px(2.))
+        // --- ux 0.29 --- what doesn't fit is cut at the pane's edge, never
+        // drawn over the notes drawer beside it.
+        .overflow_hidden()
         .bg(p.bg)
         .rule_b(p)
         .when(progress > 0.0, |d| {
@@ -1268,7 +1285,8 @@ impl MainView {
         }
         let p = self.palette;
         let focus = b.focus.clone()?;
-        let full = b.mode == OpenMode::Full;
+        // --- ux 0.29 --- a slide-over too narrow for a page fills its room.
+        let full = b.left_edge(b.viewport_w - self.side_room()) <= px(0.);
         let body: AnyElement = match &b.failed {
             Some(msg) => div()
                 .flex_1()

@@ -102,10 +102,27 @@ pub(crate) fn cancelled(c: &Checkpoint) -> (&'static str, String) {
 pub(crate) const DONE_ON_BLYG: &str = "Your blyg noted what it read";
 
 /// ⏎ while another AI job runs: the sheet stays, and this says why.
-pub(crate) const BUSY: (&str, &str) = (
+pub(crate) const BUSY: (&str, crate::platform_text::Text) = (
     "Another AI job is still running",
-    "When it's done, press ⏎ again",
+    crate::platform_text::ui_text("When it's done, press ⏎ again"),
 );
+
+/// --- studio 0.71 --- The checkpoint for Burrow's own provider, from what
+/// reading the gap's links found (`blyg_ai::hydrate`), in the blyg's shape.
+pub(crate) fn of_hydration(h: &blyg_ai::hydrate::Hydration) -> Checkpoint {
+    Checkpoint {
+        read: h.read() as u32,
+        total: h.total as u32,
+        failed: h
+            .failed
+            .iter()
+            .map(|f| blyg_core::generate::UnreadLink {
+                link: f.link.clone(),
+                reason: f.reason.clone(),
+            })
+            .collect(),
+    }
+}
 
 /// One failure under Details.
 pub(crate) fn failure_line(link: &str, reason: &str) -> String {
@@ -169,7 +186,7 @@ impl MainView {
             return;
         }
         if self.ai.job.is_some() {
-            self.show_toast(BUSY.0, Some(BUSY.1.into()), cx);
+            self.show_toast(BUSY.0, Some(BUSY.1.get().into()), cx);
             return;
         }
         let Some(s) = self.sheet.take::<TkCheckpointSheet>() else {
@@ -177,7 +194,19 @@ impl MainView {
         };
         self.focus_after_sheet(window, cx);
         cx.notify();
-        self.ai_on_blyg(s.kind, s.item, s.index, true, window, cx);
+        if s.kind == ProviderKind::BlygServer {
+            return self.ai_on_blyg(s.kind, s.item, s.index, true, window, cx);
+        }
+        // Burrow's own provider: ⌘G again on the text as it is now, going
+        // on without the links it couldn't read.
+        let Some(item) = self.backend.item(&s.item) else {
+            return;
+        };
+        let text = match &self.current {
+            Some(c) if c.local_id == s.item => self.editor.read(cx).value().to_string(),
+            _ => item.content_md.clone(),
+        };
+        self.ai_fill(item, text, s.index, true, window, cx);
     }
 
     /// esc: nothing generated; say what to do about the links.
@@ -251,7 +280,7 @@ impl MainView {
         let link = |id: String, label: String, open: read::Open, cx: &mut Context<Self>| {
             div()
                 .id(SharedString::from(id))
-                .text_color(p.accent)
+                .text_color(p.accent_text())
                 .cursor_pointer()
                 .hover(|s| s.underline())
                 .child(label)
@@ -496,7 +525,7 @@ impl SheetView for TkCheckpointSheet {
                         .cursor_pointer()
                         .text_size(px(12.))
                         .text_color(p.ink)
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .child(if self.details {
                             "▾ Details"
                         } else {

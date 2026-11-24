@@ -647,3 +647,26 @@ fn what_generated_text_read_names_a_held_post() {
     assert!(html.contains("drew on a post on ada.example.com"), "{html}");
     assert!(!html.contains("01kfar"), "{html}");
 }
+
+/// --- ux 0.29 B4 --- Ada's reply quotes Lin's bench note: the Reader shows
+/// it as a quote box, as Ada's blyg serves it and as the Stream draws it,
+/// never as a literal `![[id]]` (the tour's "Follow the thicket" step
+/// clicks it). The box names Lin's origin, so a click opens the original.
+#[gpui_kit::test]
+fn a_quote_in_the_reader_is_a_quote_box_not_its_directive(cx: &mut TestAppContext) {
+    let (view, _, log, cx) = setup(cx);
+    reading(&view, cx);
+    open_row(&view, ADA_REPLY, cx);
+    let page = last(&log, Which::Reader);
+    assert!(!page.contains("![["), "{page}");
+    assert!(
+        page.contains(&format!(
+            "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"{LIN_BENCH}\""
+        )),
+        "{page}"
+    );
+    assert!(
+        page.contains(&format!("data-blyg-origin=\"{LIN}\"")),
+        "{page}"
+    );
+}

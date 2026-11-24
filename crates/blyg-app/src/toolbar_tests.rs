@@ -637,3 +637,27 @@ fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }
+
+/// --- ux 0.29 --- The toolbar's icons read on the title bar in every
+/// built-in theme: an enabled icon is drawn in a colour of at least 4.5:1
+/// on the bar, so its thin, antialiased strokes still clear the 3:1 that
+/// icons need (the pass measured 1.6–2.8:1 from pixels when they were drawn
+/// in the bar's muted colour).
+#[test]
+fn toolbar_icons_read_on_the_bar_in_every_theme() {
+    let t = crate::theme::builtins();
+    let mut bad = Vec::new();
+    for id in t.registry.ids() {
+        let full = t.get(&id).palette;
+        let p = full.on_bar();
+        let ratio = crate::theme::contrast(super::icon_color(&p, true, false), full.bar);
+        if ratio < 4.5 {
+            bad.push(format!("{id}: {ratio:.2}:1"));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "toolbar icons under 4.5:1 on the bar:\n{}",
+        bad.join("\n")
+    );
+}

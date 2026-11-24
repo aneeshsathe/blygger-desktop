@@ -715,7 +715,12 @@ impl MainView {
                             ),
                     )
                     .when(e.active && !manage, |d| {
-                        d.child(div().text_color(p.accent).text_size(px(12.)).child("✓"))
+                        d.child(
+                            div()
+                                .text_color(p.accent_text())
+                                .text_size(px(12.))
+                                .child("✓"),
+                        )
                     })
                     .when(!manage, |d| d.children(shortcut(i).map(kbd)))
                     .when(manage, |d| {

@@ -41,6 +41,7 @@ goes once its mistake is a compile error):
 | `site/src/generated/*` match the keymap and config keys | `keymap_docs.rs`, `blyg-core/tests/it/config_docs.rs` |
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
+| no verification shot is taken while the screen is locked, and a blank (one-colour) shot fails | `scripts/verify/burrow-verify.sh` (`check_unlocked`, `scripts/verify/shotcheck.swift`), `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
 | UI text tests hold on both platforms' spelling | `scripts/check.sh wording` (CI's macOS step "Test (Windows wording)"); `platform_text::spelled_as` for one test |
 | tests move the caret and edit with keys both platforms read alike (no ⌘+arrow, ⌥+←/→, no literal redo: `platform_text::redo_keys()`) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
@@ -74,4 +75,5 @@ goes once its mistake is a compile error):
 | a `BLYGGER_*` variable this build ignores is said at startup (a debug build refuses to start); every variable has a class | `crates/blyg-app/src/dev_flags.rs` (`ignored`, and the test `every_blygger_name_has_a_class`) |
 | a key or click modifier handled outside the keymap is on a reviewed list with its chord (checked against the Windows keymap), and none reads the platform key alone | `crates/blyg-app/src/key_handlers_tests.rs` + `crates/blyg-app/fixtures/key-handlers-allow.txt` |
 | tests hold cmd for a click through `Modifiers::secondary_key()` or a per-platform `match`, never the platform key bare (a deliberate use says `the platform key itself` in a comment) | `crates/blyg-app/src/key_handlers_tests.rs` (`tests_dont_hold_the_platform_key_bare`) |
+| a test's extension processes end when the test does (a window's host is made through `extensions::new_host`, which stops it at the test's end) | `crates/blyg-app/src/extensions/children_tests.rs` (`a_tests_extension_children_end_with_it`) |
 | shell that CI or a release runs has no bash pattern substitution (`${var//…}`), and the release-notes script finishes on a large changelog under `/bin/bash` 3.2 | `blyg-core/tests/it/shell_scripts.rs` |

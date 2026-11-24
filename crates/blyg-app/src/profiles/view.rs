@@ -45,7 +45,7 @@ impl MainView {
                     .border_color(p.line)
                     .text_color(p.ink)
                     .hover(|s| s.border_color(p.accent)),
-                Look::Primary => d.border_color(p.accent).text_color(p.accent),
+                Look::Primary => d.border_color(p.accent).text_color(p.accent_text()),
                 Look::Done => d.border_color(p.line).bg(p.sel).text_color(p.muted),
             })
             .child(label.into())
@@ -235,7 +235,7 @@ impl MainView {
                     div()
                         .id(SharedString::from(format!("pf-link-{i}")))
                         .cursor_pointer()
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .on_click(move |_, _, cx| cx.open_url(&url))
                         .child(format!("{} ↗", l.label))
                 }))
@@ -469,7 +469,7 @@ impl MainView {
             .border_b_1()
             .border_dashed()
             .border_color(p.muted.opacity(0.6))
-            .hover(|s| s.text_color(p.accent).border_color(p.accent))
+            .hover(|s| s.text_color(p.accent_text()).border_color(p.accent))
             .tooltip(|_, cx| {
                 cx.new(|_| crate::app::reading::Tip(crate::keymap::hint("Profile · ⌘I").into()))
                     .into()
@@ -524,7 +524,7 @@ impl MainView {
                         |el: Stateful<Div>, target: Option<(String, String, Option<u32>)>| {
                             el.when_some(target, |d, (o, i, v)| {
                                 d.cursor_pointer()
-                                    .hover(|s| s.text_color(p.accent))
+                                    .hover(|s| s.text_color(p.accent_text()))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         // --- browse --- a step of the walk.
                                         this.browse_follow(via, o.clone(), i.clone(), v, window, cx)
@@ -555,7 +555,7 @@ impl MainView {
                                         .border_b_1()
                                         .border_dashed()
                                         .border_color(p.muted.opacity(0.6))
-                                        .hover(|s| s.text_color(p.accent))
+                                        .hover(|s| s.text_color(p.accent_text()))
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             this.open_profile(url.clone(), window, cx)
                                         }))

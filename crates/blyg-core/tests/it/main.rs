@@ -10,6 +10,7 @@
 mod common;
 
 mod agentic;
+mod agentic_write; // --- agentic writer ---
 mod auth;
 mod capability_gates;
 mod changelog_stitch;
@@ -22,6 +23,7 @@ mod dictionary;
 mod doc_paths;
 mod e2e;
 mod helpers;
+mod install_command;
 mod lint_exceptions;
 mod list_prune_scan;
 mod newer_contract;

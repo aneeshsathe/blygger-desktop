@@ -528,7 +528,9 @@ impl MainView {
                             "Whole conversation"
                         },
                     )
-                    .when(s.whole, |d| d.border_color(p.accent).text_color(p.accent))
+                    .when(s.whole, |d| {
+                        d.border_color(p.accent).text_color(p.accent_text())
+                    })
                     .tooltip(|_, cx| {
                         cx.new(|_| {
                             super::Tip(
@@ -548,9 +550,9 @@ impl MainView {
             .text_size(px(11.))
             .text_color(p.muted)
             .child(if s.convo.truncated {
-                "Oldest first · cut short at 8 hops / 60 posts · j/k move · ⏎ open · w whole conversation · s summarize · esc closes"
+                crate::keymap::hint("Oldest first · cut short at 8 hops / 60 posts · j/k move · ⏎ open · w whole conversation · s summarize · esc closes")
             } else {
-                "Oldest first · j/k move · ⏎ open · w whole conversation · s summarize · esc closes"
+                crate::keymap::hint("Oldest first · j/k move · ⏎ open · w whole conversation · s summarize · esc closes")
             });
         let body = if n <= 1 {
             div()
@@ -729,13 +731,20 @@ impl MainView {
                     .text_size(px(12.5))
                     .child(format!("“{}”", x.trim()))
                     .into_any_element(),
-                muted("What the quoting post cited · ⏎ opens it in the reader".into()),
+                muted(
+                    crate::keymap::hint("What the quoting post cited · ⏎ opens it in the reader")
+                        .into(),
+                ),
             ],
             (Words::NotHeld, _, _) => {
-                vec![muted("Not held here · ⏎ opens it in the reader".into())]
+                vec![muted(
+                    crate::keymap::hint("Not held here · ⏎ opens it in the reader").into(),
+                )]
             }
             (Words::None, _, _) => vec![muted(match e.url() {
-                Some(u) => format!("A web page, {u} · ⏎ opens it in the browser"),
+                Some(u) => crate::keymap::hint_owned(format!(
+                    "A web page, {u} · ⏎ opens it in the browser"
+                )),
                 None => "A post that names no blyg: it can't be found".into(),
             })],
         };

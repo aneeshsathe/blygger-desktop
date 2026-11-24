@@ -5,6 +5,7 @@
 
 pub mod access_ai; // --- access-ai ---
 pub mod agentic; // --- agentic feed --- (studio 0.69, contract 6.2.0)
+pub mod agentic_write; // --- agentic writer --- Burrow's own AI writes the edition
 pub mod api;
 pub mod backend;
 pub mod background; // --- background --- (studio 0.61, contract 5.10.0)
@@ -25,6 +26,7 @@ pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod loose; // --- loose ends ---
 pub mod mark_read; // --- studio 0.71 --- readerMarkRead (contract 6.3.0)
+pub mod maths_text; // a formula as the text a reader would say (ux 0.28/0.29)
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---

@@ -141,7 +141,7 @@ impl MainView {
                 self.chip(format!("mentions-side-{label}"), label)
                     .debug_selector(move || format!("mentions-side-{label}"))
                     .when(side == sent, |d| {
-                        d.border_color(p.accent).text_color(p.accent)
+                        d.border_color(p.accent).text_color(p.accent_text())
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.set_mentions_side(side, cx)))
                     .into_any_element()
@@ -268,7 +268,7 @@ impl MainView {
                             .truncate()
                             .font_weight(FontWeight::MEDIUM)
                             .cursor_pointer()
-                            .hover(|d| d.text_color(p.accent))
+                            .hover(|d| d.text_color(p.accent_text()))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_own_post(&post, window, cx)
                             }))
@@ -286,7 +286,7 @@ impl MainView {
                                     .min_w_0()
                                     .truncate()
                                     .cursor_pointer()
-                                    .hover(|d| d.text_color(p.accent))
+                                    .hover(|d| d.text_color(p.accent_text()))
                                     .on_click(move |_, _, cx| cx.open_url(&target))
                                     .child(format!("→ {}", o.target)),
                             )

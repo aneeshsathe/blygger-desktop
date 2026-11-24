@@ -222,9 +222,8 @@ pub(crate) mod site;
 pub const CONTEXT: &str = "Blygger";
 
 /// The empty list while no blyg is connected (setup skipped): Enter or a
-/// click connects; the other half starts the sample data, as setup's "S"
-/// does.
-pub const EMPTY_CONNECT: &str = "⏎ Connect your blyg…";
+/// click connects (`posts_render::EMPTY_CONNECT`); the other half starts the
+/// sample data, as setup's "S" does.
 pub const EMPTY_SAMPLE: &str = "try sample data";
 
 /// The first publish sheet's muted line (v1 only): it goes public, and a
@@ -310,7 +309,7 @@ pub struct MainView {
     omni: Entity<InputState>,
     editor: Entity<TextareaState>,
     /// --- composer --- @-mentions and spellcheck over the editor.
-    assist: Entity<crate::composer::Assist>,
+    pub(crate) assist: Entity<crate::composer::Assist>,
     list: ListModel,
     /// The omnibar's search running off the UI thread (`query_typed`).
     search: OmniSearch,
@@ -912,7 +911,7 @@ impl Render for MainView {
         // --- reading compose ---
         self.compose_frame(window, cx);
         // --- end reading compose ---
-        let show_list = self.studio.view.list_visible();
+        let show_list = self.side_list_shown(window); // --- side ---
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
         // --- side --- the docked drawers and the tab bar take the right.

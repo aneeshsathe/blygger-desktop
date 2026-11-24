@@ -496,7 +496,7 @@ impl MainView {
                             div()
                                 .w(px(14.))
                                 .flex_none()
-                                .text_color(p.accent)
+                                .text_color(p.accent_text())
                                 .child(mark),
                         )
                         .child(
@@ -543,7 +543,12 @@ impl MainView {
         rows.push(
             row(new_ix, new_ix == *sel)
                 .child(div().w(px(14.)).flex_none())
-                .child(div().flex_1().text_color(p.accent).child("New Hopper…"))
+                .child(
+                    div()
+                        .flex_1()
+                        .text_color(p.accent_text())
+                        .child("New Hopper…"),
+                )
                 .child(
                     div().w(px(18.)).flex_none().flex().justify_center().child(
                         div()

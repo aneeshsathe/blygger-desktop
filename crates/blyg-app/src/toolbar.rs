@@ -371,6 +371,18 @@ impl Render for ButtonTip {
     }
 }
 
+/// A button's icon colour on `p`'s ground. An enabled icon is drawn in the
+/// ground's ink, not its muted colour: a thin, antialiased stroke reads
+/// fainter than its colour (the 0.29 pass measured 1.6–2.8:1 from pixels
+/// for muted icons), so it needs a colour well over 3:1 to read at 3:1.
+pub fn icon_color(p: &Palette, enabled: bool, _active: bool) -> Hsla {
+    if enabled {
+        p.ink
+    } else {
+        p.muted.opacity(0.45)
+    }
+}
+
 /// One quiet button: icon, and a label unless `icons_only`. Shared with the
 /// quick-capture row.
 #[expect(
@@ -399,6 +411,7 @@ pub fn button_element(
     } else {
         muted
     };
+    let icon_ink = icon_color(p, enabled, active);
     let pad = if label.is_some() { PAD_LABEL } else { PAD_ICON };
     let tip = (tooltip, reason);
     div()
@@ -424,7 +437,7 @@ pub fn button_element(
                     .data(bytes)
                     .size(px(ICON))
                     .flex_none()
-                    .text_color(color),
+                    .text_color(icon_ink),
             )
         })
         .when_some(label, |d, l| d.child(l))
