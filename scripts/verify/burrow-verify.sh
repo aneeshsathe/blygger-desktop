@@ -22,6 +22,10 @@
 # (BLYGGER_DEMO). Only the PID this script started is ever signalled, and
 # only the windows that PID owns are captured.
 #
+# Evidence, always: no launch or shot while the screen is locked
+# (IOConsoleLocked), and a shot that is one flat colour is renamed
+# *.BLANK.png and fails the shot (exit 2).
+#
 # Environment:
 #   BLYGGER_BIN        the binary (default: $CARGO_TARGET_DIR or ./target,
 #                      then debug/blygger)
@@ -84,13 +88,36 @@ check_config() {
   done < <(grep -oE 'https?://[^/ "]+' "$1" | sed -E 's#^https?://##; s#:[0-9]+$##' | sort -u)
 }
 
-winid_bin() {
-  local cache="$OUT/.winid"
-  if [[ ! -x "$cache" || "$HERE/winid.swift" -nt "$cache" ]]; then
+# A helper compiled once from scripts/verify/<name>.swift (cached in $OUT).
+swift_bin() {
+  local cache="$OUT/.$1"
+  if [[ ! -x "$cache" || "$HERE/$1.swift" -nt "$cache" ]]; then
     mkdir -p "$OUT"
-    swiftc -O -o "$cache" "$HERE/winid.swift" 2>/dev/null || die "swiftc failed on winid.swift"
+    swiftc -O -o "$cache" "$HERE/$1.swift" 2>/dev/null || die "swiftc failed on $1.swift"
   fi
   echo "$cache"
+}
+winid_bin() { swift_bin winid; }
+
+# Is the console locked? Reads `ioreg -n Root -d1 -a` (a plist) on stdin.
+# awk reads all of it (no early exit, so pipefail sees no SIGPIPE).
+console_locked() {
+  awk '/<key>IOConsoleLocked<\/key>/ { getline; if ($0 ~ /<true\/>/) locked = 1 }
+    END { exit !locked }'
+}
+
+# A locked Mac still hands screencapture a picture of the window, but not of
+# the screen a user sees: the 0.28 user-testing pass took its shots that way
+# and missed obvious layout bugs. So no shot (and no launch) while locked.
+check_unlocked() {
+  if ioreg -n Root -d1 -a 2>/dev/null | console_locked; then
+    die "refusing: the screen is locked (IOConsoleLocked), so a shot shows nothing a user would see; unlock the Mac and run again"
+  fi
+}
+
+# A flat, one-colour shot (a window that drew nothing) is no evidence.
+check_not_blank() {
+  "$(swift_bin shotcheck)" "$1" >/dev/null
 }
 
 # Sets PID, BIN_STARTED, SCENE, STARTED, EXTRA (written by launch).
@@ -114,6 +141,7 @@ launch() {
   shift
   [[ "$(uname)" == Darwin ]] || die "macOS only (window capture uses screencapture)"
   check_bin
+  check_unlocked
   scenes | grep -qx -- "$scene" || die "unknown scene '$scene' (see: $0 scenes)"
   local a
   for a in "$@"; do check_assignment "$a"; done
@@ -188,14 +216,26 @@ doctor() {
 
 shot() {
   load_run "${1:-}"
-  local run="$1" name="${2:-$SCENE}" id n=0
+  local run="$1" name="${2:-$SCENE}" id n=0 blank=0 png
   ours || die "pid $PID isn't the app this run started"
+  check_unlocked
   for id in $("$(winid_bin)" "$PID"); do
-    screencapture -x -o -l "$id" "$run/shots/$name-$id.png"
-    echo "$run/shots/$name-$id.png"
+    png="$run/shots/$name-$id.png"
+    screencapture -x -o -l "$id" "$png"
+    # Locked while capturing: this shot can't be trusted either.
+    check_unlocked
+    if check_not_blank "$png"; then
+      echo "$png"
+    else
+      # Renamed, so nobody reads it as the screen.
+      mv "$png" "${png%.png}.BLANK.png"
+      echo "burrow-verify: BLANK SHOT: window $id of '$SCENE' is one flat colour (${png%.png}.BLANK.png); it shows nothing, so this scene FAILS" >&2
+      blank=$((blank + 1))
+    fi
     n=$((n + 1))
   done
   ((n > 0)) || die "no window to capture"
+  ((blank == 0)) || die "$blank of $n shots blank: not evidence of anything"
 }
 
 stop() {
@@ -255,6 +295,37 @@ selftest() {
     fails=$((fails + 1))
   fi
   rm -f "$cfg"
+  # The lock refusal reads ioreg's plist; feed it both answers.
+  local plist='<dict>
+	<key>IOConsoleLocked</key>
+	<%s/>
+	<key>IOConsoleUsers</key>
+</dict>'
+  # shellcheck disable=SC2059 # the format is ours
+  if printf "$plist" true | console_locked; then echo "ok: refused a locked console"; else
+    echo "FAIL: a locked console was allowed"
+    fails=$((fails + 1))
+  fi
+  # shellcheck disable=SC2059
+  if printf "$plist" false | console_locked; then
+    echo "FAIL: an unlocked console was refused"
+    fails=$((fails + 1))
+  else echo "ok: allowed an unlocked console"; fi
+  # The blank-shot check: a flat image fails, a drawn one passes.
+  local sc dir
+  sc="$(swift_bin shotcheck)"
+  dir="$(mktemp -d)"
+  "$sc" --make flat "$dir/flat.png"
+  "$sc" --make drawn "$dir/drawn.png"
+  if (check_not_blank "$dir/flat.png") 2>/dev/null; then
+    echo "FAIL: a blank shot was allowed"
+    fails=$((fails + 1))
+  else echo "ok: refused a blank shot"; fi
+  if (check_not_blank "$dir/drawn.png") 2>/dev/null; then echo "ok: allowed a drawn shot"; else
+    echo "FAIL: a drawn shot was called blank"
+    fails=$((fails + 1))
+  fi
+  rm -rf "$dir"
   if (check_assignment BLYGGER_THEME=paper) 2>/dev/null; then echo "ok: allowed BLYGGER_THEME"; else
     echo "FAIL: BLYGGER_THEME refused"
     fails=$((fails + 1))

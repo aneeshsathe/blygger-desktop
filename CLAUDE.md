@@ -41,6 +41,7 @@ goes once its mistake is a compile error):
 | `site/src/generated/*` match the keymap and config keys | `keymap_docs.rs`, `blyg-core/tests/it/config_docs.rs` |
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
+| no verification shot is taken while the screen is locked, and a blank (one-colour) shot fails | `scripts/verify/burrow-verify.sh` (`check_unlocked`, `scripts/verify/shotcheck.swift`), `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
 | UI text tests hold on both platforms' spelling | `scripts/check.sh wording` (CI's macOS step "Test (Windows wording)"); `platform_text::spelled_as` for one test |
 | tests move the caret and edit with keys both platforms read alike (no ⌘+arrow, ⌥+←/→, no literal redo: `platform_text::redo_keys()`) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
