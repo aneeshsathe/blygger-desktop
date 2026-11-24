@@ -38,6 +38,22 @@ struct Allowed {
 
 const ALLOWED: &[Allowed] = &[
     Allowed {
+        file: "blyg-web/src/api.rs",
+        func: "detect",
+        why: "Burrow in a browser's major check, through `contract`: whether this is a blyg it speaks",
+    },
+    Allowed {
+        file: "blyg-web/src/web_reading.rs",
+        func: "wr_loaded",
+        why: "stores the capabilities answer and its version for `takes_whole_blyg` (the floor rule); \
+              features are asked of the answer with `offers`",
+    },
+    Allowed {
+        file: "blyg-web/src/syndication.rs",
+        func: "w_copies_put",
+        why: "the post version a copy elsewhere is of (a number the form hands it), not a contract",
+    },
+    Allowed {
         file: "blyg-core/src/api/mod.rs",
         func: "contract_version",
         why: "the one reader of the field: it hands the string on, and decides nothing",

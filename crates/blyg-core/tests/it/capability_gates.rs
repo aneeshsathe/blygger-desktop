@@ -337,7 +337,17 @@ fn writing_an_edition_follows_put_agentic() {
 #[test]
 fn the_gated_operations_are_the_contracts() {
     let known = crate::common::contract::current().operation_ids();
+    // A retired gate names an operation the contract dropped on purpose
+    // (`retired_gates_name_operations_the_current_contract_lacks` checks it).
+    let retired = |c: &str| {
+        GATES
+            .iter()
+            .any(|g| g.constant == c && g.guards == Guards::Retired)
+    };
     for (constant, ops) in operation_constants(&product_sources()) {
+        if retired(&constant) {
+            continue;
+        }
         assert!(
             !ops.is_empty(),
             "crates/{constant} names no operation: a gate constant is the operationId (a string \
@@ -363,6 +373,10 @@ enum Guards {
     Read,
     /// Something Burrow sends: the operation is the write itself.
     Write,
+    /// A request Burrow makes only where an older contract lists it (the
+    /// current one has no such operation): the gate keeps Burrow from
+    /// asking a blyg that would answer 404.
+    Retired,
 }
 
 /// One operation constant a gate asks the capabilities for.
@@ -376,6 +390,32 @@ struct Gate {
 /// Every capability gate Burrow has. `every_operation_constant_is_classified`
 /// fails on a constant in product code that isn't here.
 const GATES: &[Gate] = &[
+    // --- Burrow in a browser (blyg-web/src/parity/mod.rs `offered`) ---
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::MARK_BATCH_OPERATION",
+        guards: Guards::Write,
+        what: "the web's Mark all read, one request for the chosen source",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::STALE_OPERATION",
+        guards: Guards::Read,
+        what: "the web's Updates screen: threads whose quotes have newer versions",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::REFRESH_OPERATION",
+        guards: Guards::Write,
+        what: "the web's Refresh of a thread's quotes",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::CHANGES_OPERATION",
+        guards: Guards::Retired,
+        what: "the web's `GET /api/changes`, asked only where the capabilities list it",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::FRESHNESS_OPERATION",
+        guards: Guards::Read,
+        what: "the web's probe of one thread's quotes at their blygs",
+    },
     // --- studio 0.69 ---
     Gate {
         constant: "blyg-core/src/agentic.rs::GET_OPERATION",
@@ -724,6 +764,25 @@ fn read_gates_ask_for_operations_a_read_token_is_listed() {
          only before the write. Change a GATES row to Guards::Write only when nothing read\n\
          or shown depends on that gate:\n{}",
         beyond.join("\n")
+    );
+}
+
+/// A retired gate names an operation the current contract doesn't have, so
+/// it can't hide a read a current blyg serves.
+#[test]
+fn retired_gates_name_operations_the_current_contract_lacks() {
+    let constants = operation_constants(&product_sources());
+    let contract = crate::common::contract::current();
+    let live: Vec<String> = GATES
+        .iter()
+        .filter(|g| g.guards == Guards::Retired)
+        .flat_map(|g| constants.get(g.constant).cloned().unwrap_or_default())
+        .filter(|op| contract.oauth_scopes(op).is_some())
+        .collect();
+    assert!(
+        live.is_empty(),
+        "GATES (capability_gates.rs) calls these operations retired, but the current contract has \
+         them: classify each as Guards::Read or Guards::Write: {live:?}"
     );
 }
 

@@ -3,8 +3,11 @@
 //!
 //! An allowlist ([`ammonia`], on html5ever): ordinary text markup, links,
 //! images, tables and figures, plus the classes and `data-*` attributes the
-//! protocol and the embeds use (`blyg-transclusion`, `data-blyg-*`,
-//! `blyg-tk-gen`, `blyg-yt`, `data-ytid`). Everything else goes: scripts,
+//! renderer emits ([`CLASSES`], `language-*`, `data-blyg-*`, `data-ytid`).
+//! No other class or `data-*` name survives: the pages this is shown on
+//! listen for their own (the web app's `data-goto`, `data-wr-*`; native's
+//! `.blyg-qorigin`, `[data-line]`) and style their own as buttons, and a
+//! post mustn't reach them. Everything else goes: scripts,
 //! styles, event handlers, `javascript:` and other odd URLs, forms, objects,
 //! embeds, SVG, and every `<iframe>` that isn't a youtube-nocookie embed.
 //! A `<math>` formula is redrawn from its TeX annotation, never passed
@@ -40,6 +43,41 @@ pub fn is_youtube_embed(src: &str) -> bool {
     })
 }
 
+/// The classes the renderer puts in a post (blyg-render, which matches the
+/// studio's; its parity fixtures hold them), and the reader's attachments
+/// box. A code block's `language-*` is kept too.
+pub const CLASSES: &[&str] = &[
+    "blyg-attachments",
+    "blyg-link-unresolved",
+    "blyg-partial",
+    "blyg-tangle-label",
+    "blyg-tangle-link",
+    "blyg-tangle-new",
+    "blyg-tk-gen",
+    "blyg-transclusion",
+    "blyg-yt",
+    "blyg-yt-poster",
+    "h-card",
+    "math-error",
+    "math-source",
+    "nested",
+    "p-name",
+    "provenance",
+    "u-url",
+    "unresolved",
+];
+
+/// `value`'s classes the renderer emits, or `None` when none is.
+fn known_classes(value: &str) -> Option<Cow<'_, str>> {
+    let kept: Vec<&str> = value
+        .split_ascii_whitespace()
+        .filter(|c| {
+            CLASSES.contains(c) || c.strip_prefix("language-").is_some_and(|l| !l.is_empty())
+        })
+        .collect();
+    (!kept.is_empty()).then(|| kept.join(" ").into())
+}
+
 fn builder() -> &'static Builder<'static> {
     static B: OnceLock<Builder<'static>> = OnceLock::new();
     B.get_or_init(allowlist)
@@ -60,8 +98,8 @@ fn allowlist() -> Builder<'static> {
                 .collect(),
             )
             .rm_tags(["map", "area"])
-            .add_generic_attributes(["class", "dir"])
-            .add_generic_attribute_prefixes(["data-"])
+            .add_generic_attributes(["class", "dir", "data-ytid"])
+            .add_generic_attribute_prefixes(["data-blyg-"])
             .add_tag_attributes("img", ["loading", "decoding", "referrerpolicy"])
             .add_tag_attributes(
                 "iframe",
@@ -90,6 +128,7 @@ fn allowlist() -> Builder<'static> {
                         .then(|| value.into())
                         .filter(|_| !v.starts_with("data:image/svg")),
                     (_, "src" | "href" | "cite") if v.starts_with("data:") => None,
+                    (_, "class") => known_classes(value),
                     _ => Some(Cow::Borrowed(value)),
                 }
             });
@@ -374,5 +413,167 @@ mod tests {
         // No DOM clobbering of the host script's globals, no CSS tricks.
         let out = clean("<p id=\"__blyg\" name=\"x\" style=\"position:fixed;inset:0\">a</p>");
         assert_eq!(out, "<p>a</p>");
+    }
+
+    #[test]
+    fn the_apps_own_hooks_never_survive() {
+        // The pages this HTML is shown on listen for their own `data-*`
+        // names and classes (the web app's `data-goto`, a link's
+        // `data-wr-id`/`data-wr-origin` opening Peek, native's
+        // `.blyg-qorigin` and `[data-line]`) and style their own classes as
+        // buttons. Someone else's post carries none of them.
+        let out = clean(
+            "<p data-goto=\"posts\" data-act=\"delete\" data-line=\"3\" data-x=\"1\" \
+             class=\"wr-btn danger item-content card\">a</p>\
+             <a href=\"https://far.example.org/\" data-wr-id=\"X1\" \
+             data-wr-origin=\"https://evil.example/\" class=\"blyg-qorigin\">b</a>\
+             <span class=\"blyg-tk-gen wr-btn\" data-blyg-id=\"01k\">c</span>",
+        );
+        for bad in [
+            "data-goto",
+            "data-act",
+            "data-line",
+            "data-x",
+            "data-wr-",
+            "wr-btn",
+            "danger",
+            "item-content",
+            "card",
+            "blyg-qorigin",
+            "class=\"\"",
+        ] {
+            assert!(!out.contains(bad), "{bad}: {out}");
+        }
+        assert!(out.contains("<p>a</p>"), "{out}");
+        assert!(
+            out.contains("<span class=\"blyg-tk-gen\" data-blyg-id=\"01k\">c</span>"),
+            "{out}"
+        );
+    }
+
+    /// Every class and `data-*` name the renderer puts in a post (the
+    /// studio's, which blyg-render's parity fixtures hold) is kept, but
+    /// for an author's own raw-HTML classes.
+    #[test]
+    fn what_the_renderer_emits_survives() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../blyg-render/tests/fixtures/parity");
+        let mut seen = 0;
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let path = f.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if name.starts_with('_') || name == "tr_sanitize_target.json" {
+                continue;
+            }
+            let fixture: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let Some(html) = fixture["html"].as_str() else {
+                continue;
+            };
+            let out = clean(html);
+            for (tag, attr, value) in attrs(html) {
+                if tag == "math" || value.starts_with("tml-") {
+                    continue; // redrawn from its TeX annotation
+                }
+                if attr == "class" {
+                    for c in value.split_whitespace() {
+                        assert!(out.contains(c), "{name}: class {c} went: {out}");
+                    }
+                    seen += 1;
+                } else if attr.starts_with("data-") {
+                    assert!(out.contains(&attr), "{name}: {attr} went: {out}");
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen > 100, "the fixtures hold classes: {seen}");
+    }
+
+    /// The classes only the page shell writes (`blyg_render::article_html`
+    /// and the stub citation): put round the body after it's cleaned, never
+    /// in a post's own HTML.
+    const SHELL_CLASSES: [&str; 6] = [
+        "compact",
+        "fragment",
+        "item-content",
+        "label",
+        "stub-cite",
+        "thread",
+    ];
+
+    /// Every class blyg-render writes into a post's body survives on its
+    /// own (no substring luck); the shell's are written only by the shell
+    /// and appear in no studio body.
+    #[test]
+    fn every_class_the_renderer_writes_in_a_body_survives() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../blyg-render/src");
+        let mut body = std::collections::BTreeSet::new();
+        for f in std::fs::read_dir(&src).unwrap() {
+            let path = f.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            let text = std::fs::read_to_string(&path).unwrap();
+            for chunk in text.split("class=\\\"").skip(1) {
+                let Some(end) = chunk.find("\\\"") else {
+                    continue;
+                };
+                let value = &chunk[..end];
+                if value.contains('{') || value.contains('"') {
+                    continue; // built from a variable; its values are literals elsewhere
+                }
+                for c in value.split_whitespace() {
+                    if name == "shell.rs" {
+                        assert!(SHELL_CLASSES.contains(&c), "shell.rs writes {c}: list it");
+                    } else {
+                        body.insert(c.to_string());
+                    }
+                }
+            }
+        }
+        assert!(body.len() > 15, "{body:?}");
+        for c in &body {
+            assert!(
+                known_classes(c).as_deref() == Some(c.as_str()),
+                "the renderer writes class {c} in a body; the sanitizer drops it"
+            );
+            let out = clean(&format!("<p class=\"{c}\">x</p>"));
+            assert_eq!(out, format!("<p class=\"{c}\">x</p>"));
+        }
+        // And no studio body (the parity fixtures) carries a shell class.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../blyg-render/tests/fixtures/parity");
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let path = f.unwrap().path();
+            let fixture: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let Some(html) = fixture["html"].as_str() else {
+                continue;
+            };
+            for (_, attr, value) in attrs(html) {
+                if attr == "class" {
+                    for c in value.split_whitespace() {
+                        assert!(!SHELL_CLASSES.contains(&c), "{path:?}: a body with {c}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// `(tag, attribute, value)` for each double-quoted attribute.
+    fn attrs(html: &str) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for open in html.split('<').skip(1) {
+            let Some(end) = open.find('>') else { continue };
+            let mut parts = open[..end].splitn(2, char::is_whitespace);
+            let tag = parts.next().unwrap_or("").to_string();
+            let mut rest = parts.next().unwrap_or("");
+            while let Some(eq) = rest.find("=\"") {
+                let name = rest[..eq].trim().to_string();
+                let after = &rest[eq + 2..];
+                let Some(close) = after.find('"') else { break };
+                out.push((tag.clone(), name, after[..close].to_string()));
+                rest = &after[close + 1..];
+            }
+        }
+        out
     }
 }

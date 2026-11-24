@@ -44,7 +44,7 @@ tests check their format (`scripts/changelog-stitch.py check`).
 
 Server-facing changes also run the real-studio e2e
 (`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
-changes run `scripts/browser-*-check.sh`.
+and web app changes run `scripts/browser-*-check.sh`.
 
 When the maintainer turns on branch protection for `main`, the required
 checks must include CI's `what changed` job (`changes`) as well as the Rust

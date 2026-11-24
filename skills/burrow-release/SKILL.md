@@ -53,3 +53,4 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
     `blyg_core::wait::Budget`'s doc).
 11. After merge: watch the Release run; confirm the release has the macOS,
     Windows assets, plus signed sums.
+12. If a web build is going to a deployment, do `burrow-web-handoff`.

@@ -65,6 +65,7 @@ pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
 pub(crate) mod feed;
 #[cfg(test)]
 mod feed_tests;
+pub(crate) mod feed_vm;
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
