@@ -75,6 +75,11 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Main only: a pull request's caches can't be read by other pull
+          # requests, and saving them pushed the release caches out of the
+          # repo's 10 GB (pull requests restore main's).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Each step is one step of scripts/check.sh, the gate contributors run
       # locally (`scripts/check.sh --fix`), so the two can't drift.
@@ -115,6 +120,11 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Main only: a pull request's caches can't be read by other pull
+          # requests, and saving them pushed the release caches out of the
+          # repo's 10 GB (pull requests restore main's).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # scripts/check.sh, as on macOS, run by Git Bash.
       - name: Format
@@ -154,6 +164,11 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Main only: a pull request's caches can't be read by other pull
+          # requests, and saving them pushed the release caches out of the
+          # repo's 10 GB (pull requests restore main's).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Timing reports
         run: scripts/check.sh timing
@@ -176,6 +191,11 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Main only: a pull request's caches can't be read by other pull
+          # requests, and saving them pushed the release caches out of the
+          # repo's 10 GB (pull requests restore main's).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build (release)
         run: cargo build --release -p blyg-app --locked
@@ -192,6 +212,30 @@ jobs:
             dist/SHA256SUMS-windows
           if-no-files-found: error
           retention-days: 7
+
+  # After a push to main: keeps only the newest cache of each name and drops
+  # closed pull requests' caches, so the total stays under GitHub's 10 GB and
+  # the release workflow's caches (read once per release) aren't evicted.
+  cache-prune:
+    name: prune superseded caches
+    needs: [check, windows, timing, windows-package]
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/ci-cache-prune.sh
 
   # Tests come with the feature: a pull request that changes product code
   # (crates/*/src, not test files) must change tests too, unless a commit
