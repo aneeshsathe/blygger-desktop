@@ -18,6 +18,40 @@ Agentic feed › "Write the edition after a sync" to have one written after a
 sync that brings new posts, at most every 3 hours. Off by default; what is
 sent where is in [AI helpers](ai.md#agentic-feed-what-is-sent-where).
 
+### Burrow in a browser is back, and smoother
+
+The web app is served again by your blyg at `{mount}/burrow/`, for studio
+0.69 and later, including a blyg under a path. It has the studio's reading
+tabs, and it was timed journey by journey against the studio's own pages
+until it matched or beat them: typing during a sync is saved once, not once
+per pause; a reload keeps your place; the phone's sources are one tap each;
+the list shows placeholders instead of flashing "Nothing to read yet"; and
+Safari downloads the app once. Setting it up is on
+[Burrow in a browser](web-self-host.md).
+
+### Generating reads your links first
+
+⌘G with Burrow's own providers (codex, Claude Code, a CLI or an API key) now
+does what your blyg does since studio 0.70: it reads the posts and pages you
+linked in the gap before writing, and says which link it couldn't read
+before going on ([AI helpers](ai.md)).
+
+### Smaller things
+
+- **Retry reads:** a read that failed says so with **Retry reads** beside
+  it, also **Blyg › Retry Reads**, which re-reads the lists on screen too.
+- **Extension tabs in the picker:** an extension can add its own tabs to the
+  `[[` / `![[` popup and ⌘K ([Extensions](extensions.md)).
+- **Narrow windows:** at 800 px the lineage ring, history, notes drawer,
+  header keys, toasts and sheets all keep their text readable.
+- **Readable everywhere:** accent text and toolbar icons meet 4.5:1 in every
+  theme; Windows hints name Enter, Tab and Backspace in words.
+- **Reading:** ⌥⌘B saves the reading post in front of you, a reply's quote
+  shows as a quote, and formulas read as formulas in lists.
+- **The tour** shows what each caption says, and its card moves off what the
+  step points at.
+- **Release notes** open with the one-line installer.
+
 ## Burrow 0.28.0
 
 Burrow catches up with blygger-studio 0.71: 0.68's reading, 0.69's Agentic
