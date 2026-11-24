@@ -514,7 +514,7 @@ impl MainView {
                     })
                     .into_any_element()
             }
-            Load::Failed(e) => self.muted_note(format!("Couldn't load the history: {e}")),
+            Load::Failed(e) => self.retry_note(format!("Couldn't load the history: {e}"), cx),
             _ => self.muted_note("Loading the history…"),
         };
 

@@ -544,6 +544,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 // --- discover ---
                 MenuItem::action("Discover Blygs…", app::reading::discover::ShowDiscover),
+                // --- studio 0.71 ---
+                MenuItem::action("Retry Reads", app::reading::retry_reads::RetryReads),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),

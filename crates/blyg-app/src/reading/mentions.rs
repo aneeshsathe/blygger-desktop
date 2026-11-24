@@ -317,7 +317,7 @@ impl MainView {
             _ if !available => self.unavailable(),
             _ if sent => self.render_sent(cx), // --- contacts ---
             Load::Idle | Load::Loading => self.muted_note("Loading responses…"),
-            Load::Failed(e) => self.muted_note(format!("Couldn't load responses: {e}")),
+            Load::Failed(e) => self.retry_note(format!("Couldn't load responses: {e}"), cx),
             _ => {
                 let groups = self.mention_groups();
                 if groups.is_empty() {

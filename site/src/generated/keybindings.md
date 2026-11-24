@@ -144,6 +144,7 @@
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
+| Retry reads: ask your blyg again, and read again what failed and the lists on screen | Blyg › Retry Reads |
 | Discover blygs listed on blygger.com that you don't follow yet | Blyg › Discover Blygs… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |

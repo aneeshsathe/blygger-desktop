@@ -17,9 +17,7 @@ use crate::prefs::Prefs;
 
 const CONNECTED: &str = "# test config\nblyg-url = https://blyg.example.com\n";
 
-fn setup(
-    cx: &mut TestAppContext,
-) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
+fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut VisualTestContext) {
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -80,7 +78,9 @@ fn retry_reads_reads_the_failed_read_and_the_lists_again(cx: &mut TestAppContext
     });
     let toast = view.read_with(cx, |v, _| v.toast.as_ref().map(|t| t.text.to_string()));
     assert!(
-        toast.as_deref().is_some_and(|t| t.starts_with("Couldn't read")),
+        toast
+            .as_deref()
+            .is_some_and(|t| t.starts_with("Couldn't read")),
         "{toast:?}"
     );
 
@@ -99,5 +99,8 @@ fn retry_reads_reads_the_failed_read_and_the_lists_again(cx: &mut TestAppContext
         "the reading lists were read again"
     );
     crate::test_wait::settle_drawn(cx);
-    assert!(cx.debug_bounds("retry-reads").is_none(), "nothing failed now");
+    assert!(
+        cx.debug_bounds("retry-reads").is_none(),
+        "nothing failed now"
+    );
 }

@@ -49,6 +49,7 @@ use crate::app::reading::sources::{CheckFeeds, MarkAllRead, NewFolder, ToggleSou
 // --- OPML ---
 use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+use crate::app::reading::retry_reads::RetryReads;
 // --- catch up ---
 use crate::app::reading::catchup::CatchUp;
 // --- agentic writer ---
@@ -840,6 +841,12 @@ pub fn mac_table() -> Vec<Keybind> {
             ExportOpml,
             "Save every subscription as an OPML file",
             "Blyg › Export Subscriptions as OPML…"
+        ),
+        // --- studio 0.71 --- (no key: for when a read failed)
+        menu_only!(
+            RetryReads,
+            "Retry reads: ask your blyg again, and read again what failed and the lists on screen",
+            "Blyg › Retry Reads"
         ),
         // --- discover --- (no key: an occasional look around)
         menu_only!(
@@ -1746,6 +1753,7 @@ pub fn bind_keys(cx: &mut App) {
     // Menu-only actions have no keys; keep the compiler honest that they exist.
     let _ = (Disconnect, OpenConfigFile, SiteSettings, SubscribeTo);
     let _ = (ImportOpml, ExportOpml); // --- OPML ---
+    let _ = RetryReads; // --- studio 0.71 ---
     let _ = ShowDiscover; // --- discover ---
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---

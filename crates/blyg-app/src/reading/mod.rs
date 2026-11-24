@@ -70,6 +70,7 @@ pub(crate) mod neighbourhood;
 mod neighbourhood_tests;
 mod neighbourhood_view;
 pub(crate) mod opml; // --- OPML import/export ---
+pub(crate) mod retry_reads; // --- studio 0.71 --- Retry reads
 // --- own posts --- your published posts as a reading source, and the
 // reading actions on them from the Posts view.
 pub(crate) mod hoppers; // --- hoppers ---
@@ -79,11 +80,11 @@ mod hoppers_tests;
 mod mark_all_tests; // --- unread counts / mark all read ---
 #[cfg(test)]
 mod opml_tests;
-#[cfg(test)]
-mod retry_reads_tests; // --- studio 0.71 --- Retry reads
 pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
+#[cfg(test)]
+mod retry_reads_tests; // --- studio 0.71 --- Retry reads
 pub(crate) mod shelf_lens; // --- shelf sync --- the Shelf lens, + Add to shelf
 mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
@@ -468,6 +469,8 @@ pub struct State {
     pub sticky: HashSet<Key>,
     /// How many times `reading_changed` ran (a sync burst should be one).
     pub refreshes: u64,
+    /// --- studio 0.71 --- Retry reads is running (`retry_reads.rs`).
+    pub retrying: bool,
     /// The sources pane's (or a subscription's) context menu.
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
@@ -562,6 +565,7 @@ impl State {
             collapsed: HashSet::new(),
             sticky: HashSet::new(),
             refreshes: 0,
+            retrying: false,
             src_menu: None,
             avatars: sources::avatars(backend),
             stub: None,
@@ -807,6 +811,7 @@ impl MainView {
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
+        .map(|d| self.retry_reads_actions(d, cx)) // --- studio 0.71 ---
         .map(|d| self.discover_actions(d, cx)) // --- discover ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
