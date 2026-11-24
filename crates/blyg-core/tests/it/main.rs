@@ -23,6 +23,7 @@ mod dictionary;
 mod doc_paths;
 mod e2e;
 mod helpers;
+mod install_command;
 mod lint_exceptions;
 mod list_prune_scan;
 mod newer_contract;
