@@ -172,7 +172,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .ptoast small{opacity:.75}
 .ptoast a{color:inherit;text-decoration:underline}
 #phone[data-view="edit"] .ptoast,#phone[data-view="post"] .ptoast,#phone.kb .ptoast{bottom:calc(env(safe-area-inset-bottom) + 6.5rem)}
-.ploading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--pbg);color:var(--pmuted);font:italic 1.1rem var(--fbody);z-index:90;padding:2rem;text-align:center}
+.ploading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--pbg);color:var(--pmuted);font:italic 1.1rem var(--fbody);z-index:90;padding:2rem;text-align:center;animation:appear .2s var(--loading-delay) both}
 .ploading.gone{display:none}
 .ploading.err{color:var(--c-over);font:.9rem var(--ui)}
 

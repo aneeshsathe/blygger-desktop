@@ -33,7 +33,6 @@
      and the modules and the WebAssembly load beside them. After the import
      map, which must come before any module is fetched. -->
 <script type="module" async src="net.js"></script>
-<link rel="preload" href="pkg/blyg_web_bg.wasm" as="fetch" type="application/wasm" crossorigin>
 <link rel="modulepreload" href="pkg/blyg_web.js">
 <link rel="modulepreload" href="app.js">
 <link rel="modulepreload" href="core.js">
@@ -173,6 +172,7 @@
     <!-- --- web-reading --- --><div class="pstrip" id="p-wrBar" role="toolbar" aria-label="Sources and subscriptions">
       <button type="button" data-go="sources">☰ Sources</button><button type="button" data-go="subscribe">＋ Subscribe</button><button type="button" data-go="subs">☷ Subscriptions</button><button type="button" data-go="mentions">@ Mentions</button><button type="button" data-go="hoppers">⊕ Hoppers</button><button type="button" data-go="peek-url">⌕ Peek</button><button type="button" data-go="history">⟲ History</button><button type="button" data-go="reading">⚙ Reading</button><!-- web-parity --><button type="button" data-go="markall">✓ All read</button><!-- end web-parity -->
     </div><!-- --- end web-reading --- -->
+    <!-- --- web-reading --- --><div class="pstrip srcstrip" id="p-srcStrip" role="group" aria-label="Show"><button type="button" data-src="smart:all" aria-pressed="true">Feed</button><button type="button" data-src="smart:agentic" aria-pressed="false">Agentic feed</button><button type="button" data-src="smart:shelf" aria-pressed="false">Saved</button><button type="button" data-src="smart:background" aria-pressed="false">Background</button><button type="button" data-src="smart:raw" aria-pressed="false">Raw</button></div>
     <!-- --- web-reading --- --><div class="wr-chip" id="p-wrChip" hidden></div><!-- --- end web-reading --- -->
     <div class="pscroll" id="p-stream"></div>
   </section>

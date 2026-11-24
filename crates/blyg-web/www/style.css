@@ -114,8 +114,23 @@ kbd{font:500 .74rem Inter,system-ui,sans-serif;display:inline-block;min-width:1.
 .hud{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);display:flex;gap:5px;pointer-events:none;z-index:6}
 .hud kbd{font-size:15px;padding:6px 11px;background:rgba(20,20,20,.82);color:#fff;border-color:#000;animation:hud 1.1s forwards}
 @keyframes hud{0%{opacity:0;transform:translateY(6px)}12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
-.loading{position:absolute;inset:34px 0 0;display:flex;align-items:center;justify-content:center;background:var(--wbg);color:var(--wmuted);font:italic 18px var(--fbody);z-index:8}
+.loading{position:absolute;inset:34px 0 0;display:flex;align-items:center;justify-content:center;background:var(--wbg);color:var(--wmuted);font:italic 18px var(--fbody);z-index:8;animation:appear .2s var(--loading-delay) both}
+/* A wait is shown only once it's long enough to notice: a loading note or
+   placeholder that came and went within a few frames read as a flicker. */
+:root{--loading-delay:.2s}
+@keyframes appear{from{opacity:0}to{opacity:1}}
+.stream-loading{animation:appear .3s var(--loading-delay) both;padding:4px 0}
+.ghost-card{padding:12px 18px;border-bottom:1px solid var(--c-line,rgba(0,0,0,.08))}
+.ghost-card i{display:block;height:10px;margin:8px 0;border-radius:5px;background:currentColor;opacity:.08}
+.ghost-card i:first-child{width:30%}
+.ghost-card i:last-child{width:70%}
 .loading.gone{display:none}
+/* Until the start knows whether this is your blyg or the demo, and the
+   desk is drawn once, it is hidden: the demo's framed window
+   jumped to full size once a blyg answered (a layout shift of 0.12 on every
+   open), then the controls filled in. The loading note waits over the page. */
+html:not([data-ready]) #desk{visibility:hidden}
+html:not([data-ready]) #desk .loading{visibility:visible;position:fixed;inset:0}
 .loading.err{color:var(--c-over);font-style:normal;font-size:14px;padding:24px;text-align:center}
 
 /* ============ views, shelf, reading (desktop) ============ */
@@ -204,6 +219,7 @@ html:not([data-mode="live"]) .live-only, html[data-mode="live"] .demo-only { dis
 .pfilter{display:flex;flex-wrap:wrap;gap:4px;padding:6px 10px;background:var(--c-side);border-bottom:1px solid var(--wline)}
 .win.side .pfilter{border-right:1px solid var(--wline)}
 .pfilter[hidden]{display:none}
+.pfilter .ghost{visibility:hidden}
 .pfilter .pf{font:500 11px Inter,system-ui,sans-serif;padding:3px 8px;border-radius:12px;border:1px solid var(--wline);background:transparent;color:var(--wmuted)}
 .pfilter .pf b{font-weight:600;margin-left:2px}
 .pfilter .pf.on{border-color:var(--wacc);color:var(--wacc)}

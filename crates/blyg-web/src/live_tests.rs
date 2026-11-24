@@ -687,8 +687,12 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
     // Its early reads go through the same guard, and only GETs are taken.
     assert!(net.contains("if (apiPath(path) && !early.has(path))"));
     assert!(net.contains("const e = method === 'GET' && !etag ? early.get(path) : undefined;"));
+    // Besides the app's own WebAssembly, a fixed path beside the page
+    // (flow_tests.rs `the_wasm_is_fetched_once`).
+    let wasm = "export const WASM = fetch(new URL('pkg/blyg_web_bg.wasm', import.meta.url));";
+    assert!(net.contains(wasm));
     assert_eq!(
-        net.matches(" fetch(").count(),
+        net.replace(wasm, "").matches(" fetch(").count(),
         1,
         "net.js fetches in one place"
     );
@@ -765,9 +769,9 @@ fn a_start_asks_for_every_module_and_the_wasm_at_once() {
         }
     }
     assert!(html.contains(r#"<link rel="modulepreload" href="pkg/blyg_web.js">"#));
-    assert!(html.contains(
-        r#"<link rel="preload" href="pkg/blyg_web_bg.wasm" as="fetch" type="application/wasm" crossorigin>"#
-    ));
+    // The wasm is asked for by net.js, the first module to run (a preload
+    // was fetched twice by WebKit: flow_tests.rs `the_wasm_is_fetched_once`).
+    assert!(include_str!("../www/net.js").contains("export const WASM = fetch("));
 }
 
 // ---------------------------------------------------------------- speed (0.18.1)

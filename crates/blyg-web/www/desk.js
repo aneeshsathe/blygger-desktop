@@ -8,7 +8,7 @@ import {
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, swipePosts, arrive, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
-  shelfNote, shelfButton, publishState,
+  shelfNote, shelfButton, publishState, keepPlace,
 } from './core.js';
 // --- web-reading ---
 import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
@@ -42,7 +42,10 @@ export function render({ loadEditor = false } = {}) {
   // --- web-parity --- the filters over the list (hidden with no posts).
   const pf = filterChips();
   const pfh = $('#d-pfilter');
-  pfh.hidden = !pf.all;
+  // While your posts load, an empty row holds the chips' place: the list
+  // dropped by its height when they arrived.
+  pfh.hidden = !pf.all && !V.loading;
+  if (V.loading && !pf.all) pf.html = '<span class="pf ghost">All</span>';
   draw(pfh, pf.html);
   // --- end web-parity ---
   list.innerHTML = V.rows.length
@@ -51,6 +54,7 @@ export function render({ loadEditor = false } = {}) {
         <span class="meta">${r.dot ? `<span class="dot" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}${esc(r.kind)}
         <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span><span>${esc(r.when)}</span></span></div>`).join('')
     : !V.query.trim() && pf.on !== 'all' ? `<div class="empty">${esc(pf.empty)} ⌃⌥F shows the next filter.</div>` // --- web-parity ---
+    : !V.query.trim() ? (V.loading ? '' : '<div class="empty">Nothing written yet. Type above to start a post.</div>')
     : `<div class="empty">No matches. Press ⏎ to start “${esc(V.query.trim())}”.</div>`;
   list.querySelector('.row.sel')?.scrollIntoView({ block: 'nearest' });
 
@@ -152,12 +156,17 @@ function renderReading() {
   const host = $('#d-stream');
   draw(host, R.rows.length
     ? R.rows.map(cardHtml).join('') + moreLine(R.total - R.rows.length)
+    : R.loading ? LOADING_HTML
     : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`);
   host.querySelector('.card.cur')?.classList.remove('cur');
   if (rcur) host.querySelector(`.card[data-key="${CSS.escape(rcur)}"]`)?.classList.add('cur');
   deskSources(); // --- web-reading --- the sources pane --- end web-reading ---
 }
 
+/** The stream before the reading list's first page is in: placeholder
+    cards that fade in only if the wait is long (style.css
+    `.stream-loading`), never an empty note that then vanishes. */
+export const LOADING_HTML = `<div class="stream-loading" aria-label="Loading what you read">${'<div class="ghost-card"><i></i><i></i><i></i></div>'.repeat(5)}</div>`;
 const moreLine = (n) => (n > 0 ? `<div class="empty stream-more">${n} more…</div>` : '');
 /** The next page of the stream, below the cards drawn (not all of them
     again). Anything else that changes the stream draws it whole. */
@@ -311,6 +320,7 @@ function openShelved(id) {
 function setView(v) {
   if (view === v) return;
   view = v;
+  keepPlace(v);
   $$('.views [data-view]').forEach((b) => { b.classList.toggle('on', b.dataset.view === v); b.setAttribute('aria-selected', String(b.dataset.view === v)); });
   $('#pbody').hidden = v !== 'posts';
   $('#rbody').hidden = v !== 'reading';
@@ -583,7 +593,11 @@ export async function resetData() {
   S.render({ loadEditor: true }); toast('Back to the sample data');
 }
 
-export function showDesk() {
+/** `place`: the view a reload comes back to (core.js `placeOnStart`), in
+    either layout's words. */
+export function showDesk(place) {
+  const v = { read: 'reading', post: 'reading', write: 'posts', edit: 'posts' }[place] ?? place;
+  if (['posts', 'reading', 'blyg'].includes(v)) setView(v);
   $('#theme').value = S.theme?.id ?? '';
   render({ loadEditor: true });
   $('#loading').classList.add('gone');

@@ -9,9 +9,9 @@ import {
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, swipePosts, arrive, cardHtml, draw, drawMore, onNearEnd, settle,
-  shelfNote, shelfButton, publishState,
+  shelfNote, shelfButton, publishState, keepPlace,
 } from './core.js';
-import { setOffline, resetData } from './desk.js';
+import { setOffline, resetData, LOADING_HTML } from './desk.js';
 // --- web-reading ---
 import { phoneChip, opened, wrUse } from './web-reading.js';
 // --- end web-reading ---
@@ -47,6 +47,7 @@ function show(v, { push = true } = {}) {
     el.classList.add(ROOT_OF[v] === n ? 'off-l' : 'off-r');
   }
   const tab = ROOT_OF[v] ?? v;
+  keepPlace(tab);
   $$('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === tab));
   // A detail view is a history entry, so the system back gesture closes it.
   if (push && ROOT_OF[v] && !ROOT_OF[was]) { try { history.pushState({ burrow: v }, ''); } catch {} }
@@ -162,6 +163,7 @@ function renderStream() {
   streamShown = R.rows.length;
   draw($('#p-stream'), R.rows.length
     ? R.rows.map(cardHtml).join('') + streamMore(R.total - R.rows.length)
+    : R.loading ? LOADING_HTML
     : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
 }
 const streamMore = (n) => (n > 0 ? `<p class="stream-more">${n} more…</p>` : '');
@@ -597,7 +599,10 @@ export function initPhone() {
   app.dataset.view = 'write';
 }
 
-export function showPhone() {
+/** `place`: the view a reload comes back to (core.js `placeOnStart`). */
+export function showPhone(place) {
+  const v = { reading: 'read', posts: 'write' }[place] ?? place;
+  if (['read', 'blyg'].includes(v) && pview !== v) show(v, { push: false });
   render({ loadEditor: true });
   $('#p-loading').classList.add('gone');
 }

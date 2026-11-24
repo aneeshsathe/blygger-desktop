@@ -58,7 +58,9 @@ impl ApiError {
         match self {
             ApiError::Offline => "Offline. Your changes are kept and sent when you're back.".into(),
             ApiError::Unauthorized => "Signed out. Sign in at Studio, then come back.".into(),
-            ApiError::Forbidden { message } => format!("The blyg refused that: {message}"),
+            ApiError::Forbidden { message } => {
+                format!("The blyg refused that: {}", capitalised(message))
+            }
             ApiError::NotFound => "Not on the blyg any more".into(),
             ApiError::RevisionConflict => "Changed elsewhere since you opened it".into(),
             ApiError::CursorExpired => {
@@ -70,8 +72,9 @@ impl ApiError {
             ApiError::Rejected {
                 message, details, ..
             } => {
+                let message = capitalised(message);
                 if details.is_empty() {
-                    message.clone()
+                    message
                 } else {
                     format!("{message}: {}", details.join("; "))
                 }
@@ -92,6 +95,15 @@ impl ApiError {
         v["text"] = json!(self.message());
         v
     }
+}
+
+/// The studio's messages start lowercase ("invalid url"); a toast starts
+/// with a capital.
+fn capitalised(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
 }
 
 /// Read one answer: 2xx → its JSON body (`null` when empty), else what it
