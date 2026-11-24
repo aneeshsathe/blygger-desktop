@@ -146,8 +146,7 @@ impl Env<'_> {
     }
 
     fn generate(&mut self) {
-        self.cx
-            .simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+        self.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
         self.wait("the generation or its checkpoint", |v| {
             v.ai.job.is_none() || v.sheet.is::<TkCheckpointSheet>()
         });

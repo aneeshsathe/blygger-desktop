@@ -109,6 +109,8 @@ enum Done {
         index: usize,
         instruction: String,
         sources: Vec<blyg_core::ProvenanceSource>,
+        /// --- studio 0.71 --- the pages read for it (`hydrate`).
+        pages: Vec<blyg_core::PageSource>,
         text: String,
         model: String,
     },
@@ -256,7 +258,7 @@ impl MainView {
         let text = self.editor.read(cx).value().to_string();
         let caret = self.editor.read(cx).cursor();
         match generate::under_caret(&text, caret) {
-            Under::Scope(index) => self.ai_fill(item, text, index, window, cx),
+            Under::Scope(index) => self.ai_fill(item, text, index, false, window, cx),
             Under::Malformed => self.show_toast(
                 "This TK isn't closed yet",
                 Some(crate::keymap::hint("End it with [/TK], then ⌘G again").into()),
@@ -557,11 +559,16 @@ impl MainView {
         .detach();
     }
 
-    fn ai_fill(
+    /// ⌘G on scope `index`. With Burrow's own provider, the links the
+    /// author placed are read first (studio 0.71, `blyg_ai::hydrate`), off
+    /// the UI thread; one that can't be read stops at the checkpoint
+    /// (`checkpoint.rs`) unless `proceed`.
+    pub(crate) fn ai_fill(
         &mut self,
         item: Item,
         text: String,
         index: usize,
+        proceed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -569,7 +576,7 @@ impl MainView {
             return;
         };
         if picked.kind == ProviderKind::BlygServer {
-            return self.ai_fill_on_server(picked, item, index, false, window, cx);
+            return self.ai_fill_on_server(picked, item, index, proceed, window, cx);
         }
         let style = ai::style_prompt(cx);
         let items = self.backend.items();
@@ -579,16 +586,39 @@ impl MainView {
             Err(e) => return self.ai_fail(Failure::Ai(e), Some(picked.kind), cx),
         };
         let id = item.local_id.clone();
+        let ours = self.backend.base_url();
+        let mut exclude = job.exclude.clone();
+        exclude.extend(item.server_id.as_ref().map(|s| s.0.clone()));
         self.ai_spawn(
             picked,
             "generating",
             move |p, cancel| {
+                // --- studio 0.71 --- read the links first.
+                let h = blyg_ai::hydrate::hydrate(
+                    &[&job.instruction, &text],
+                    &exclude,
+                    &mut |id| generate::held_home(&items, &reading, ours.as_deref(), id),
+                    &blyg_ai::hydrate::Web,
+                    &generate::now_iso(),
+                );
+                if cancel.is_cancelled() {
+                    return Err(blyg_ai::AiError::Cancelled);
+                }
+                if !h.failed.is_empty() && !proceed {
+                    return Ok(Done::Checkpoint {
+                        item: id,
+                        index: job.index,
+                        checkpoint: checkpoint::of_hydration(&h),
+                    });
+                }
+                let job = generate::with_links(job, &h, &items, &reading);
                 let r = p.generate(job.prompt.request(cancel), &mut |_| {})?;
                 Ok(Done::Fill {
                     item: id,
                     index: job.index,
                     instruction: job.instruction,
                     sources: job.sources,
+                    pages: job.pages,
                     text: r.text,
                     model: r.model,
                 })
@@ -843,6 +873,7 @@ impl MainView {
                 index,
                 instruction,
                 sources,
+                pages,
                 text,
                 model,
             } => {
@@ -853,9 +884,11 @@ impl MainView {
                     return changed(cx, self);
                 };
                 let tracked = self.backend.tracked_tk_provenance(&item);
-                let Some(scopes) =
-                    generate::provenance_with(tracked, &new, index, prov(&model, sources))
-                else {
+                let p = ScopeProvenance {
+                    pages,
+                    ..prov(&model, sources)
+                };
+                let Some(scopes) = generate::provenance_with(tracked, &new, index, p) else {
                     return changed(cx, self);
                 };
                 self.ai_write(&item, &old, new, scopes, None, window, cx);

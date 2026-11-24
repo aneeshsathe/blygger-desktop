@@ -10,8 +10,8 @@
 use std::ops::Range;
 
 pub use blyg_render::{
-    DirectiveRef, LinkRef, directive_ref, is_js_ws, label_text, link_refs, link_source,
-    strip_generated_grammar,
+    DirectiveRef, ID_ALPHABET, LinkRef, directive_ref, is_js_ws, label_text, link_refs,
+    link_source, selection_text, strip_generated_grammar,
 };
 
 /// An item id: 26 characters of the blyg's id alphabet (protocol §10.1's

@@ -38,10 +38,7 @@ struct Table {
 impl Table {
     fn new(pages: Vec<(&str, Result<Fetched, String>)>) -> Self {
         Table {
-            pages: pages
-                .into_iter()
-                .map(|(u, r)| (u.to_string(), r))
-                .collect(),
+            pages: pages.into_iter().map(|(u, r)| (u.to_string(), r)).collect(),
             asked: Mutex::new(vec![]),
         }
     }
@@ -123,7 +120,10 @@ fn a_page_is_read_cut_and_cited() {
     );
     assert_eq!(
         p.text.chars().count(),
-        PAGE_CHARS + format!("\n[…cut at {PAGE_CHARS} characters]").chars().count()
+        PAGE_CHARS
+            + format!("\n[…cut at {PAGE_CHARS} characters]")
+                .chars()
+                .count()
     );
     assert_eq!(
         p.cited,
@@ -192,7 +192,10 @@ fn hydrate_reads_held_items_and_fetches_pages() {
     let failed: Vec<_> = h.failed.iter().map(|x| x.link.as_str()).collect();
     assert_eq!(
         failed,
-        [format!("[[{missing}]]").as_str(), "https://down.example.com/x"]
+        [
+            format!("[[{missing}]]").as_str(),
+            "https://down.example.com/x"
+        ]
     );
     assert_eq!((h.read(), h.total), (3, 5));
     assert!(
@@ -231,7 +234,13 @@ fn hydrate_reads_at_most_eight_of_each() {
         pages.join(" ")
     );
     let f = Table::new(vec![]);
-    let h = hydrate(&[&text], &[], &mut |_| Some("https://blyg.example.com".into()), &f, AT);
+    let h = hydrate(
+        &[&text],
+        &[],
+        &mut |_| Some("https://blyg.example.com".into()),
+        &f,
+        AT,
+    );
     assert_eq!(h.items.len(), MAX_ITEMS);
     assert_eq!(f.asked.lock().unwrap().len(), MAX_PAGES);
     let over: Vec<_> = h

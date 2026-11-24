@@ -88,7 +88,7 @@ what each gap read: the posts it drew on, by title, and the web pages, marking
 the ones publishing tells. Posts you read list the same, when their publisher
 disclosed it. Keep typing while your blyg generates: what you type elsewhere
 in the post is kept with the generated text. See
-[When your blyg can't read a link](ai.md#when-your-blyg-cant-read-a-link). The AI and TK tour has a step for it.
+[When your blyg can't read a link](ai.md#when-a-link-cant-be-read). The AI and TK tour has a step for it.
 
 ### Count an entry as read
 
