@@ -1102,3 +1102,6 @@ mod hardening_tests; // the mount, API paths, CSP and escaping
 
 #[cfg(test)]
 mod ux_tests;
+
+#[cfg(test)]
+mod flow_tests; // the 0.29 flow pass: what felt lost, jumpy or chatty

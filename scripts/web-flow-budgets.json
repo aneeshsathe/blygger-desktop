@@ -1,0 +1,41 @@
+{
+  "about": "Budgets for Burrow web's flow pass (scripts/browser-web-flow-pass.sh). Per journey and viewport: worstSettleMs (the slowest step, input to a quiet page), settleMs (all steps), cls (layout shift, Chromium), inputs (clicks, taps and keys). Unless a journey says otherwise, every one must have no jumps, flicker, spinners under 150 ms, empty states flashing before data, duplicate requests in a step, focus misses, or lost scroll, selection or text. Lower a number when a change beats it; raise one only with the reason in the commit.",
+  "journeys": {
+    "open-to-read": {
+      "desktop": { "worstSettleMs": 1500, "settleMs": 2000, "cls": 0.05, "inputs": 2 },
+      "phone": { "worstSettleMs": 1500, "settleMs": 2000, "cls": 0.05, "inputs": 2 }
+    },
+    "catch-up": {
+      "desktop": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 7 },
+      "phone": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 8 }
+    },
+    "quote-publish": {
+      "desktop": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 6 },
+      "phone": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 6 }
+    },
+    "draft-revise": {
+      "desktop": { "worstSettleMs": 1500, "settleMs": 4000, "cls": 0.05, "inputs": 15 },
+      "phone": { "worstSettleMs": 1500, "settleMs": 4000, "cls": 0.05, "inputs": 15 }
+    },
+    "subscribe": {
+      "desktop": { "worstSettleMs": 6000, "settleMs": 9000, "cls": 0.05, "inputs": 6 },
+      "phone": { "worstSettleMs": 6000, "settleMs": 9000, "cls": 0.05, "inputs": 7 }
+    },
+    "tab-switch": {
+      "desktop": { "worstSettleMs": 600, "settleMs": 2500, "cls": 0.05, "inputs": 11 },
+      "phone": { "worstSettleMs": 600, "settleMs": 3000, "cls": 0.05, "inputs": 11 }
+    },
+    "sync-reading": {
+      "desktop": { "worstSettleMs": 3000, "settleMs": 5000, "cls": 0.05, "inputs": 4 }
+    },
+    "sync-typing": {
+      "desktop": { "worstSettleMs": 6000, "settleMs": 8000, "cls": 0.05, "inputs": 5 }
+    },
+    "back-and-scroll": {
+      "phone": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 8 }
+    },
+    "keyboard": {
+      "phone": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 6 }
+    }
+  }
+}
