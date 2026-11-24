@@ -33,6 +33,9 @@ mod tests;
 #[path = "picker_tabs_tests.rs"]
 mod picker_tabs_tests; // --- picker sources ---
 
+#[cfg(test)]
+pub(crate) mod children_tests;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
