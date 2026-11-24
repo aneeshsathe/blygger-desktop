@@ -270,8 +270,10 @@ stop() {
 run_all() {
   local run status=0
   run="$(launch "$@")"
-  doctor "$run" || status=$?
-  shot "$run" || status=$?
+  # Subshells: a refusal in doctor or shot (die exits) must still reach stop,
+  # or the app is left on screen holding the screen lock.
+  (doctor "$run") || status=$?
+  (shot "$run") || status=$?
   stop "$run"
   return "$status"
 }
