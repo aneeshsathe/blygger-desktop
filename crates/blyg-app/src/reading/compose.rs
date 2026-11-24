@@ -819,6 +819,7 @@ impl MainView {
                 .debug_selector(|| "reading-compose".into())
                 .relative()
                 .child(marker)
+                .child(self.toast_floor_probe()) // --- ux 0.29 ---
                 .flex_none()
                 .flex()
                 .flex_col()

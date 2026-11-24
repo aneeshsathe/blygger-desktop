@@ -621,6 +621,7 @@ impl MainView {
                 .child(
                     div()
                         .id("own-doc")
+                        .debug_selector(|| "own-doc".into())
                         .flex_1()
                         .min_w_0()
                         .min_h_0()
@@ -647,7 +648,7 @@ impl MainView {
                 .child(
                     div()
                         .id("own-side")
-                        .w(px(290.))
+                        .w(px(crate::app::side::VERSIONS_SIDE_PX))
                         .flex_none()
                         .overflow_y_scroll()
                         .p(px(14.))

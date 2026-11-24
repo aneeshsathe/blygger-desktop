@@ -400,7 +400,7 @@ impl MainView {
         let node = m.map.node_at(m.sel);
         let side = div()
             .flex_1()
-            .min_w_0()
+            .min_w(px(260.))
             .flex()
             .flex_col()
             .text_size(px(12.5))

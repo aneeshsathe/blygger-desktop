@@ -40,11 +40,13 @@ pub(crate) mod compose;
 pub(crate) mod count_read; // --- studio 0.71 --- when an entry counts as read
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
+// --- ux 0.29 --- which columns fit beside the open post.
 #[cfg(test)]
 mod browse_tests;
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
 pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
+pub(crate) mod pane_fit;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
 pub(crate) mod marks;
@@ -226,6 +228,9 @@ impl<T> Load<T> {
 
 /// The key context of the reading body (user keybinding configs may name it).
 pub const CONTEXT: &str = "Reading";
+
+/// The header hints' one line (`MainView::header_hints`).
+const HINT_LINE_H: f32 = 18.;
 
 pub const NOT_AVAILABLE: &str = "Not available on this server";
 pub const NOT_AVAILABLE_SUB: &str = "This blyg doesn't have the owner-API read extensions \
@@ -1316,8 +1321,12 @@ impl MainView {
             .top(px(TITLEBAR_H))
             .left_0()
             .right_0()
+            // --- ux 0.29 --- a tall sheet stops above the status bar and
+            // scrolls (as the main sheets do), so its keys stay in view.
+            .bottom(px(crate::app::sheet::SHEET_BOTTOM_GAP))
             .flex()
             .justify_center()
+            .items_start()
             // During the tour, the sheet centres in the room right of the
             // tour card, so the card never covers it.
             .when_some(self.tutorial_card_inset(), |d, inset| {
@@ -1326,9 +1335,14 @@ impl MainView {
             .child(
                 div()
                     .id("reading-sheet")
+                    .debug_selector(|| "reading-sheet".into())
                     .occlude()
                     .w(px(width))
                     .max_w(relative(0.92))
+                    .max_h_full()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
                     .map(|d| self.sheet_style(d))
                     .text_color(p.ink)
                     // Windows: Esc closes the sheet from anywhere inside it,
@@ -1519,16 +1533,47 @@ impl MainView {
                     .text_size(px(14.))
                     .child(title),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(self.chrome())
-                    .text_size(px(12.))
-                    .text_color(p.muted)
-                    .truncate()
-                    .child(hint),
-            )
+            .child(self.header_hints(&hint))
             .children(actions)
+    }
+
+    /// --- ux 0.29 --- The header's keys ("j/k move · ⏎ read more · …"),
+    /// each hint whole or not at all: one line, and the hints that don't
+    /// fit on it (the last, least-used ones) wrap out of sight rather than
+    /// being cut mid-hint with "…".
+    fn header_hints(&self, hint: &str) -> Div {
+        let p = self.palette.on_page();
+        div()
+            .debug_selector(|| "screen-hint".into())
+            .flex_1()
+            .min_w_0()
+            .h(px(HINT_LINE_H))
+            .overflow_hidden()
+            .flex()
+            .flex_wrap()
+            .gap_x(px(5.))
+            .font_family(self.chrome())
+            .text_size(px(12.))
+            .line_height(px(HINT_LINE_H))
+            .text_color(p.muted)
+            .children(
+                hint.split(" · ")
+                    .filter(|h| !h.is_empty())
+                    .enumerate()
+                    .map(|(i, h)| {
+                        div()
+                            .debug_selector(move || format!("screen-hint-{i}"))
+                            .whitespace_nowrap()
+                            // The first stays even in a sliver, cut.
+                            .when(i == 0, |d| d.min_w_0().truncate())
+                            .when(i > 0, |d| d.flex_none())
+                            .child(if i == 0 {
+                                h.to_string()
+                            } else {
+                                format!("· {h}")
+                            })
+                    }),
+            )
     }
 
     /// "Not available on this server", centred.

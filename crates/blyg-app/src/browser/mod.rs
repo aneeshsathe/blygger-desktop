@@ -53,6 +53,9 @@ pub use view::{
 // --- reader view --- the chrome, docked in the reading pane for a post's
 // own page (`reading::site_view`).
 pub(crate) use view::{chrome_address, chrome_bar, chrome_button};
+// --- ux 0.29 --- the slide-over's fit (tested in `reading`'s layout tests).
+#[cfg(test)]
+pub(crate) use view::{SLIDE_MIN_PX, SLIDE_WIDTH, slide_left_edge};
 
 /// The pane exists on this platform: macOS (WKWebView) and Windows
 /// (WebView2), and in tests (a stub surface). Elsewhere links open in the

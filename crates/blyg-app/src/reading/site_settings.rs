@@ -249,7 +249,11 @@ impl MainView {
                 .text_color(p.muted)
                 .child(s)
         };
+        // --- ux 0.29 --- in a short window the fields scroll and Save stays.
         let frame = div()
+            .min_h_0()
+            .flex()
+            .flex_col()
             .track_focus(focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
                 if ev.keystroke.key == "escape" {
@@ -326,7 +330,11 @@ impl MainView {
             Load::Ready(s) => (s.highlight_generated_default, s.picker_typing),
             _ => (None, None),
         };
-        frame
+        let fields = div()
+            .id("site-fields")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
             .child(label("SITE TITLE"))
             .child(self.input_box(
                 gpui_kit::base::input::Input::new(title).into_any_element(),
@@ -365,6 +373,8 @@ impl MainView {
                         .child(if on { "☑" } else { "☐" })
                         .child(
                             div()
+                                .flex_1()
+                                .min_w_0()
                                 .flex()
                                 .flex_col()
                                 .child("Accept mentions")
@@ -393,6 +403,8 @@ impl MainView {
                         .child(if on { "☑" } else { "☐" })
                         .child(
                             div()
+                                .flex_1()
+                                .min_w_0()
                                 .flex()
                                 .flex_col()
                                 .child("Show responses by default")
@@ -414,6 +426,8 @@ impl MainView {
                         .child(if on { "☑" } else { "☐" })
                         .child(
                             div()
+                                .flex_1()
+                                .min_w_0()
                                 .flex()
                                 .flex_col()
                                 .child("Highlight generated text by default")
@@ -446,7 +460,9 @@ impl MainView {
                             .child(opt(T::Editor, "the editor"))
                             .child(opt(T::Panel, "the picker")),
                     )
-            })
+            });
+        frame
+            .child(fields)
             .when_some(error.clone(), |d, e| {
                 d.child(div().mt(px(6.)).text_color(p.over).child(e))
             })
@@ -460,9 +476,13 @@ impl MainView {
                     .items_center()
                     .gap(px(14.))
                     .text_color(p.muted)
-                    .child(self.chip("site-save", "Save").on_click(
-                        cx.listener(|this, _, window, cx| this.save_site_settings(window, cx)),
-                    ))
+                    .child(
+                        self.chip("site-save", "Save")
+                            .debug_selector(|| "site-save".into())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.save_site_settings(window, cx)
+                            })),
+                    )
                     .child(self.key_hint("⏎", "save (in a field)"))
                     .child(self.key_hint("esc", "cancel")),
             )
