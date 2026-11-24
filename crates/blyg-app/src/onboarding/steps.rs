@@ -158,6 +158,12 @@ pub enum Key {
     RawTab,
     /// Reading's Agentic feed is the source (studio 0.69's edition).
     AgenticTab,
+    /// --- studio 0.71 --- A Stream card's date was clicked: its post is
+    /// open in the side pane.
+    StreamDate,
+    /// --- studio 0.71 --- ⌘G on the blyg stopped at the checkpoint: its
+    /// sheet is up.
+    TkCheckpoint,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -244,6 +250,10 @@ pub enum Setup {
     FullEditor,
     /// The draft with a TK scope appended, caret inside it.
     Tk(&'static str),
+    /// --- studio 0.71 --- The draft with a gap naming a link the tour's
+    /// blyg can't read and one it can, caret inside, in ⌘2; ⌘G goes to the
+    /// blyg for this step only (the canned AI everywhere else).
+    TkOnBlyg,
     /// A thread draft whose generated text echoed a quote its instruction
     /// didn't name, in the full editor (⌘3).
     EchoedQuote,
@@ -303,6 +313,10 @@ pub enum Setup {
     CrossPost,
     /// The ⇧⌘P Extensions palette, open.
     Palette,
+    /// --- auto cross-post --- Posts, the sample's published post open and
+    /// set to cross-post to Bluesky (for the session; the tour's sample
+    /// cross-post lists its sites).
+    AutoCrossPost,
     /// A sample consent sheet for markdown-notes (answering it writes
     /// nothing).
     Consent,
@@ -585,6 +599,28 @@ pub const STEPS: &[Step] = &[
         pause_ms: 1200,
         settle: true,
         stay: false,
+    },
+    // --- 0.28.0 --- studio 0.71: ⌘G on the blyg stops at a link it can't
+    // read, and lists what it read.
+    Step {
+        id: "tk-checkpoint",
+        since: "0.28.0",
+        title: ui_text("When your blyg can't read a link"),
+        caption: ui_text(
+            "With your blyg as the AI provider (blygger-studio 0.70 or later), ⌘G has it read \
+                  every link in the gap first. One of these two can't be read, so it stops, \
+                  saves nothing and asks: “Details” (d) says which link and why, ⏎ generates \
+                  anyway, esc leaves the draft as it was. Once it fills the gap, what it read \
+                  is listed under the preview, and again in the Publish sheet. Press ⌘G.",
+        ),
+        keys: &[Key::TkCheckpoint],
+        key_label: ui_text("⌘G"),
+        region: Region::Editor,
+        button: Some("Generate"),
+        setup: Setup::TkOnBlyg,
+        pause_ms: 1200,
+        settle: false,
+        stay: true,
     },
     Step {
         id: "shorten",
@@ -1378,6 +1414,28 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.28.0 --- studio 0.71: a card's date opens it; when an entry
+    // counts as read.
+    Step {
+        id: "count-read",
+        since: "0.28.0",
+        title: ui_text("Open a post from its date"),
+        caption: ui_text(
+            "Click the date on the highlighted card: its post opens in full beside the \
+                  Stream (in the Reader, a row's date opens it too). On a blyg with \
+                  blygger-studio 0.70 or later, Settings (⌘,) › READ MARKS has “Count an entry \
+                  as read”: when a card has been on screen for about a second, when you open \
+                  it, or only when you mark it.",
+        ),
+        keys: &[Key::StreamDate],
+        key_label: ui_text("click"),
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
     // --- 0.28.0 --- studio 0.69: the Agentic feed's edition.
     Step {
         id: "agentic-edition",
@@ -1761,17 +1819,17 @@ pub const STEPS: &[Step] = &[
         since: "0.28.0",
         title: ui_text("Cross-post a post each time you publish it"),
         caption: ui_text(
-            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site, and \
-                  each time you publish that post Burrow starts its cross-post by itself, one \
-                  site after another. Post › Extensions… has the same on/off rows for the open \
-                  post. It only starts the run: you still check the text and click Post. \
-                  (A sample: nothing runs.)",
+            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site (⌥ and \
+                  its number), and each time you publish that post Burrow starts its \
+                  cross-post by itself, one site after another. Press ⇧⌘P: this post has an \
+                  on/off row per site there too, Bluesky on. It only starts the run: you \
+                  still check the text and click Post. (A sample: nothing runs.)",
         ),
-        keys: &[Key::ExtPalette],
-        key_label: ui_text("Post menu"),
+        keys: &[Key::Palette],
+        key_label: ui_text("⇧⌘P"),
         region: Region::Whole,
         button: None,
-        setup: Setup::Posts,
+        setup: Setup::AutoCrossPost,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -2052,8 +2110,8 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "ai",
         title: "AI and TK",
-        blurb: "Fill a gap, shorten, a quote the AI added.",
-        steps: &["tk", "shorten", "echoed-quote"],
+        blurb: "Fill a gap, a link it can't read, shorten.",
+        steps: &["tk", "tk-checkpoint", "shorten", "echoed-quote"],
     },
     Tour {
         id: "publishing",
@@ -2085,6 +2143,7 @@ pub const TOURS: &[Tour] = &[
             "reader",
             "feed-order",
             "raw-tab",
+            "count-read",
             "agentic-edition",
             "background",
             "parts",
@@ -2309,6 +2368,8 @@ mod tests {
             Key::FeedOrder, // --- 0.28.0 ---
             Key::RawTab,
             Key::AgenticTab,
+            Key::StreamDate, // --- studio 0.71 ---
+            Key::TkCheckpoint,
             Key::MoreMenu, // --- 0.26.0 ---
             Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,

@@ -29,6 +29,7 @@ mod links;
 mod maths;
 mod sign_in_path;
 mod studio069;
+mod studio071;
 mod subscribe_guard;
 mod tangle;
 
@@ -1538,9 +1539,13 @@ fn prov(model: &str, sources: &[&str]) -> Option<ScopeProvenance> {
                 id: s.to_string(),
                 version: None,
                 origin: None,
+                cited: None,
+                ..Default::default()
             })
             .collect(),
+        pages: vec![],
         at: None,
+        ..Default::default()
     })
 }
 
@@ -3010,8 +3015,11 @@ fn generate_returns_the_spliced_body() {
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
     let api = Api::new(&e.url, e.cred.clone());
-    match api.generate(&sid, 0, None) {
-        Ok(g) => {
+    match api.generate(&sid, 0, None, false) {
+        Ok(blyg_core::generate::GenerateOutcome::Checkpoint(c)) => {
+            panic!("a scope with no links stopped at a checkpoint: {c:?}")
+        }
+        Ok(blyg_core::generate::GenerateOutcome::Generated(g)) => {
             let body = g.content_md.expect("the studio returns the spliced body");
             assert!(body.contains(&g.text), "{body}");
             assert_eq!(server_item(&sid)["contentMd"], body);

@@ -209,7 +209,9 @@ mod tests {
         Some(ScopeProvenance {
             model: model.into(),
             sources: vec![],
+            pages: vec![],
             at: None,
+            ..Default::default()
         })
     }
 
@@ -287,8 +289,12 @@ mod tests {
                 id: "0123456789abcdefghjkmnpqrs".into(),
                 version: None,
                 origin: None,
+                cited: None,
+                ..Default::default()
             }],
+            pages: vec![],
             at: None,
+            ..Default::default()
         });
         assert!(
             validate("[TK]one[=]x[/TK]", &[src]).is_err(),

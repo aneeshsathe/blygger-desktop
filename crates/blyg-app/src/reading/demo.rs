@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_FORK, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
 use crate::scenes::Scene;
 
 impl MainView {
@@ -189,6 +189,27 @@ impl MainView {
             (Scene::RdStreamLineageRing, 2) => {
                 self.lineage_open_ring(cx);
                 self.lineage_preview(super::lineage_vm::Act::Reply, cx);
+            }
+            // --- studio 0.71 --- the first card's date clicked: its post in
+            // the side pane.
+            (Scene::RdStreamDate | Scene::RdGenRead, 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            (Scene::RdStreamDate, 1) => {
+                let first = self.reading.shown_rows().next().map(super::vm::key);
+                if let Some(k) = first {
+                    self.stream_read_more(k, window, cx);
+                }
+            }
+            // Lin's post in the Reader, scrolled to its end: what its
+            // generated sentence read (the reader is a web view, so a window
+            // capture shows it; the in-app snapshot can't).
+            (Scene::RdGenRead, 1) => {
+                self.set_read_mode(super::stream_vm::ReadMode::Reader, window, cx);
+                open(self, LIN_FORK, window, cx);
+            }
+            (Scene::RdGenRead, 2) => {
+                self.reader_eval("window.scrollTo(0, document.body.scrollHeight)");
             }
             // --- reader folders --- the three panes: a folder picked, a post open.
             (Scene::RdThreePane, 0) => self.show_view(View::Reading, window, cx),

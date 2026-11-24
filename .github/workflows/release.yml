@@ -32,6 +32,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Twice a week: restore the release caches so GitHub doesn't delete them
+  # for going 7 days unused (the keep-cache jobs below; nothing is built).
+  schedule:
+    - cron: "30 6 * * 1,4"
 
 permissions:
   contents: read
@@ -46,6 +50,7 @@ env:
 jobs:
   # Is there a version to release? (No Mac time spent when there isn't.)
   decide:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -141,6 +146,8 @@ jobs:
 
       - name: Check the tag, Cargo version, repo name and changelog agree
         id: meta
+        # Seconds when healthy; a hang here once ate the job's 90 minutes.
+        timeout-minutes: 5
         env:
           TAG: v${{ needs.decide.outputs.version }}
           REPO: ${{ github.repository }}
@@ -283,3 +290,46 @@ jobs:
             dist/Burrow-windows-x64.zip \
             dist/SHA256SUMS \
             dist/SHA256SUMS.sig
+
+  # Scheduled (and run by hand): restore each release job's cache (no build, no save), so
+  # a cache read once per release isn't deleted after 7 days unused between
+  # releases. `shared-key` spells the key the release jobs get from
+  # `key` + their job id (release-universal + release, release-windows +
+  # windows); the toolchain steps and workflow env match theirs, so the
+  # environment hash and the key match too. "Cache restored from key" in the
+  # log, with the release job's key, is the check.
+  keep-cache-macos:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain and the Intel target
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: release-universal-release
+          save-if: false
+
+  keep-cache-windows:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: release-windows-windows
+          save-if: false

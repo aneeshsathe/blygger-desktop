@@ -369,11 +369,16 @@ impl MainView {
     }
 
     /// Settings' keyboard stops on BACKGROUND: the rules this blyg offers,
-    /// in the page's order (none until they're read).
+    /// in the page's order (none until they're read). None for a sign-in
+    /// that can't place: its rules are locked, so the keyboard passes them
+    /// by rather than stopping where space does nothing.
     pub(crate) fn background_rule_picks(&self) -> Vec<crate::app::pref_preview::Pick> {
         let Load::Ready(rules) = &self.reading.background.rules else {
             return vec![];
         };
+        if !self.reading.background.placing {
+            return vec![];
+        }
         RULES
             .into_iter()
             .filter(|r| rules.offers(r))
@@ -483,7 +488,9 @@ impl MainView {
             _ => None,
         };
         // On: the accent edge and a check; off: a plain edge and "off".
-        let chip = |id: SharedString, label: &'static str, on: bool, ring: bool| {
+        // `acts`: a click turns it (not locked, not waiting on another
+        // rule); only then does it look clickable.
+        let chip = |id: SharedString, label: &'static str, on: bool, ring: bool, acts: bool| {
             div()
                 .id(id.clone())
                 .debug_selector(move || id.to_string())
@@ -496,8 +503,10 @@ impl MainView {
                 .when(ring, |d| {
                     d.bg(p.bg).shadow(crate::app::settings_page::focus_ring(&p))
                 })
-                .cursor_pointer()
-                .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .when(acts, |d| {
+                    d.cursor_pointer()
+                        .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                })
                 .child(if on { "✓" } else { "○" })
                 .child(label)
                 .when(!on, |d| d.child(div().text_color(p.muted).child("off")))
@@ -543,52 +552,25 @@ impl MainView {
         // Only the rules this blyg offers: a 0.61 studio refuses the others.
         for rule in RULES.into_iter().filter(|r| rules.offers(r)) {
             let on = rules.on(rule);
-            let ring = focused == Some(rule);
+            // Locked rules take no keyboard stop (`background_rule_picks`).
+            let ring = focused == Some(rule) && !locked;
             let (label, hint) = rule_label(rule);
             // "Including rewritten quotes" acts only under "Quotes
             // refreshed" (studio `enabledRules`): greyed out while it's off.
             let waits = BackgroundRules::needs(rule).filter(|n| !rules.on(n));
-            let c = chip(format!("bg-rule-{rule}").into(), label, on, ring)
+            let acts = waits.is_none() && !locked;
+            let c = chip(format!("bg-rule-{rule}").into(), label, on, ring, acts)
                 .flex_none()
                 .when(BackgroundRules::needs(rule).is_some(), |d| d.ml(px(18.)))
-                .when(waits.is_some() || locked, |d| d.opacity(0.5))
-                .when(waits.is_none() && !locked, |d| {
+                .when(!acts, |d| d.opacity(0.5))
+                .when(acts, |d| {
                     d.on_click(
                         cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
                     )
                 });
             // The ring's own selector (tests), and the scroll to it after ⇥.
             let c: AnyElement = if ring {
-                let reveal = self.preview.reveal.clone();
-                let scroll = self
-                    .sheet
-                    .get::<crate::app::settings_page::SettingsSheet>()
-                    .map(|s| s.scroll.clone());
-                div()
-                    .flex_none()
-                    .debug_selector(|| "bg-rule-focused".into())
-                    .on_children_prepainted(move |b, window, _| {
-                        let (Some(b), Some(scroll)) = (b.first(), scroll.as_ref()) else {
-                            return;
-                        };
-                        if !reveal.replace(false) {
-                            return;
-                        }
-                        let view = scroll.bounds();
-                        let margin = px(48.);
-                        let off = scroll.offset();
-                        let dy = if b.bottom() + margin > view.bottom() {
-                            view.bottom() - (b.bottom() + margin)
-                        } else if b.top() - margin < view.top() {
-                            view.top() - (b.top() - margin)
-                        } else {
-                            return;
-                        };
-                        scroll.set_offset(point(off.x, off.y + dy));
-                        window.refresh();
-                    })
-                    .child(c)
-                    .into_any_element()
+                self.settings_focused_chip("bg-rule-focused", c)
             } else {
                 c.into_any_element()
             };

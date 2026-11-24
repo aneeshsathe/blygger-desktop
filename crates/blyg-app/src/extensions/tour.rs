@@ -5,7 +5,10 @@
 //! real bundled markdown-notes, reading-time and inspect over invented
 //! notes in `<data dir>/tour-sample/`: two folders allowed and one not yet (its
 //! chip in the warning colour), and the reading slots on the sample
-//! reading list. cross-post isn't run: a macro would load a real website.
+//! reading list, and cross-post, so the Publish sheet and ⇧⌘P show its
+//! sites (the sample published post has one turned on). Its macros and
+//! "Open <site>" rows are refused in the tour: they would load a real
+//! website (`ext_tour_refuses_run`).
 //!
 //! Nothing the tour does reaches the config file: Allow, Turn on, Turn off,
 //! Forget permissions and the notes folders' Add and Remove say what they
@@ -130,19 +133,30 @@ fn write_vaults(root: &Path) -> std::io::Result<(BTreeMap<String, String>, Vec<C
 }
 
 /// The tour host's configuration: markdown-notes on the sample folders,
-/// reading-time and inspect, all from the app's own executable.
+/// reading-time, inspect and cross-post (every site allowed), all from the
+/// app's own executable.
 fn tour_config(launch: &Launch, root: &Path) -> std::io::Result<HostConfig> {
     let (notes, notes_grants) = write_vaults(&root.join("vaults"))?;
     let mut hc = HostConfig::new(root.join("data"), env!("CARGO_PKG_VERSION"));
     let rt = blyg_ext_reading_time::NAME;
     let inspect = blyg_ext_inspect::NAME;
-    hc.enabled = vec![NOTES.into(), rt.into(), inspect.into()];
+    let xp = blyg_ext_crosspost::NAME;
+    hc.enabled = vec![NOTES.into(), rt.into(), inspect.into(), xp.into()];
     let mut grants = Grants::default();
     for c in notes_grants {
         grants.grant(NOTES, c);
     }
     grants.grant(rt, Capability::ReadingRead);
     grants.grant(inspect, Capability::ReadingRead);
+    grants.grant(xp, Capability::ItemsRead);
+    grants.grant(xp, Capability::Ui);
+    for origin in [
+        blyg_ext_crosspost::ORIGIN,
+        blyg_ext_crosspost::BLUESKY_ORIGIN,
+        blyg_ext_crosspost::FARCASTER_ORIGIN,
+    ] {
+        grants.grant(xp, Capability::BrowserAutomate(origin.into()));
+    }
     hc.grants = grants;
     hc.bundled = vec![
         blyg_ext_notes::bundled(launch.program.clone(), launch.args.clone(), &notes),
@@ -253,6 +267,9 @@ impl MainView {
         self.ext.slots = p.slots;
         self.ext.overlay = p.overlay;
         let dir = tour.dir.clone();
+        // The sample's cross-post choice was the session's: read the
+        // user's again.
+        self.auto_crosspost_reload();
         cx.background_spawn(async move {
             if let Some(h) = sample {
                 h.shutdown();
@@ -294,6 +311,50 @@ impl MainView {
         );
         cx.notify();
         true
+    }
+
+    /// In the tour: a macro run (or a queued automatic one) says what it
+    /// would do and loads nothing. True when refused.
+    pub(crate) fn ext_tour_refuses_run(
+        &mut self,
+        ext: &str,
+        id: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.ext.tour.is_none() {
+            return false;
+        }
+        let what = self
+            .ext
+            .host
+            .as_ref()
+            .and_then(|h| h.macro_entry(ext, id))
+            .map(|m| m.site.title)
+            .unwrap_or_else(|| ext.to_string());
+        self.show_toast(
+            format!("The cross-post to {what} would start here"),
+            Some("Tour sample: nothing runs".into()),
+            cx,
+        );
+        true
+    }
+
+    /// The automatic cross-post step's sample: the open post (the sample's
+    /// published one) set to cross-post to Bluesky, for this session only.
+    pub(crate) fn ext_tour_auto_sample(&mut self, cx: &mut Context<Self>) {
+        if self.ext.tour.is_none() {
+            return;
+        }
+        if let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) {
+            self.auto_crosspost_set(
+                &id,
+                blyg_ext_crosspost::NAME,
+                blyg_ext_crosspost::BLUESKY_MACRO,
+                true,
+                cx,
+            );
+        }
+        cx.notify();
     }
 
     /// Between the tour's steps: the palette, consent and Manage sheets and

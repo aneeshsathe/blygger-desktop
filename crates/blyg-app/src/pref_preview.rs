@@ -46,6 +46,9 @@ pub(crate) enum Pick {
     /// A Background rule (Settings › BACKGROUND): never tried, only
     /// turned off or on with space or ⏎ (`save_background_rule`).
     Rule(&'static str),
+    /// --- studio 0.71 --- A choice of READ MARKS (`readerMarkRead`):
+    /// never tried, only saved with space or ⏎ (`set_count_read`).
+    CountRead(blyg_core::mark_read::MarkRead),
 }
 
 impl Pick {
@@ -69,7 +72,7 @@ impl Pick {
             Pick::Size(s) => {
                 p.font_size = s.clamp(prefs::MIN_SIZE, prefs::MAX_SIZE);
             }
-            Pick::Rule(_) => {}
+            Pick::Rule(_) | Pick::CountRead(_) => {}
         }
     }
 
@@ -89,7 +92,7 @@ impl Pick {
                 p.ui_font_set = kept.ui_font_set;
             }
             Pick::Size(_) => p.font_size = kept.font_size,
-            Pick::Rule(_) => {}
+            Pick::Rule(_) | Pick::CountRead(_) => {}
         }
     }
 }
@@ -113,23 +116,26 @@ pub(crate) struct Active {
 }
 
 /// The rows of Settings that take ⇥ and the arrow keys, in the page's
-/// order. All but `Background` preview; BACKGROUND's rules (lower on the
-/// page, when the blyg offers any) are turned off and on.
+/// order. The first four preview; READ MARKS' choices (lower on the page,
+/// when the blyg offers the setting) are saved and BACKGROUND's rules (when
+/// it offers any) turned off and on, with space or ⏎.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Row {
     WritingFont,
     UiFont,
     Size,
     Theme,
+    CountRead,
     Background,
 }
 
 impl Row {
-    pub const ALL: [Row; 5] = [
+    pub const ALL: [Row; 6] = [
         Row::WritingFont,
         Row::UiFont,
         Row::Size,
         Row::Theme,
+        Row::CountRead,
         Row::Background,
     ];
 }
@@ -215,6 +221,10 @@ pub fn options(row: Row, dark: bool, cx: &App) -> Vec<Pick> {
             .collect(),
         Row::Theme => theme_options(dark, cx),
         // Steps (Size), or the blyg's rules (`MainView::background_rule_picks`).
+        Row::CountRead => blyg_core::mark_read::MarkRead::ALL
+            .into_iter()
+            .map(Pick::CountRead)
+            .collect(),
         Row::Size | Row::Background => Vec::new(),
     }
 }
@@ -402,6 +412,7 @@ impl MainView {
                 dark: false,
                 id: Some(p.theme.clone()),
             },
+            Row::CountRead => Pick::CountRead(self.reading.count_read.setting.unwrap_or_default()),
             Row::Background => self
                 .background_rule_picks()
                 .into_iter()
@@ -410,12 +421,58 @@ impl MainView {
         }
     }
 
-    /// The rows ⇥ walks: BACKGROUND only while the blyg offers rules.
+    /// The chip under Settings' keyboard cursor, below the fold (READ
+    /// MARKS, BACKGROUND): `selector` names it for tests, and the page
+    /// scrolls to it after ⇥ or an arrow (`State::reveal`).
+    pub(crate) fn settings_focused_chip(
+        &self,
+        selector: &'static str,
+        chip: impl IntoElement,
+    ) -> AnyElement {
+        let reveal = self.preview.reveal.clone();
+        let scroll = self
+            .sheet
+            .get::<super::SettingsSheet>()
+            .map(|s| s.scroll.clone());
+        div()
+            .flex_none()
+            .debug_selector(move || selector.into())
+            .on_children_prepainted(move |b, window, _| {
+                let (Some(b), Some(scroll)) = (b.first(), scroll.as_ref()) else {
+                    return;
+                };
+                if !reveal.replace(false) {
+                    return;
+                }
+                let view = scroll.bounds();
+                let margin = px(48.);
+                let off = scroll.offset();
+                let dy = if b.bottom() + margin > view.bottom() {
+                    view.bottom() - (b.bottom() + margin)
+                } else if b.top() - margin < view.top() {
+                    view.top() - (b.top() - margin)
+                } else {
+                    return;
+                };
+                scroll.set_offset(point(off.x, off.y + dy));
+                window.refresh();
+            })
+            .child(chip)
+            .into_any_element()
+    }
+
+    /// The rows ⇥ walks: READ MARKS only while the blyg offers the
+    /// setting, BACKGROUND only while it offers rules.
     fn tab_rows(&self) -> Vec<Row> {
         let bg = !self.background_rule_picks().is_empty();
+        let marks = self.reading.count_read.setting.is_some();
         Row::ALL
             .into_iter()
-            .filter(|r| *r != Row::Background || bg)
+            .filter(|r| match r {
+                Row::Background => bg,
+                Row::CountRead => marks,
+                _ => true,
+            })
             .collect()
     }
 
@@ -446,7 +503,7 @@ impl MainView {
     ) {
         self.end_preview_from(Origin::Settings, window, cx);
         self.preview.cursor = row.map(|r| (r, self.kept_pick(r)));
-        if row == Some(Row::Background) {
+        if matches!(row, Some(Row::Background | Row::CountRead)) {
             self.preview.reveal.set(true);
         } else if row.is_some()
             // The appearance rows sit at the top of the page.
@@ -487,8 +544,11 @@ impl MainView {
                     return true;
                 };
                 let back = matches!(key, "up" | "left");
-                if row == Row::Background {
-                    let opts = self.background_rule_picks();
+                if matches!(row, Row::Background | Row::CountRead) {
+                    let opts = match row {
+                        Row::Background => self.background_rule_picks(),
+                        _ => options(row, false, cx),
+                    };
                     if let Some(next) = step(&opts, &pick, if back { -1 } else { 1 }) {
                         self.preview.cursor = Some((row, next));
                         self.preview.reveal.set(true);
@@ -520,6 +580,10 @@ impl MainView {
                 };
                 if let Pick::Rule(rule) = pick {
                     self.toggle_background_rule(rule, cx);
+                    return true;
+                }
+                if let Pick::CountRead(m) = pick {
+                    self.set_count_read(m, cx);
                     return true;
                 }
                 if pick != self.kept_pick(row) {

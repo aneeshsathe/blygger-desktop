@@ -17,12 +17,14 @@ pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod dictionary; // --- dictionary --- (studio 0.69, contract 6.2.0)
 pub mod discover; // --- discover --- (studio 0.60, desktop only)
 pub mod floor;
+pub mod generate; // --- studio 0.71 --- generate on the blyg, its checkpoint (contract 6.3.0)
 pub mod grammar;
 pub mod helpers; // --- helpers --- catch-up summary (studio 0.69)
 pub mod ids; // SubId, RemoteId: a reading post's two ids, typed apart
 pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod loose; // --- loose ends ---
+pub mod mark_read; // --- studio 0.71 --- readerMarkRead (contract 6.3.0)
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---

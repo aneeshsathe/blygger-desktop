@@ -518,13 +518,9 @@ fn the_picker_acts_on_the_picked_posts(cx: &mut TestAppContext) {
     let omar = (SubId::from("sub-omar"), RemoteId::from(OMAR_YEAR));
     let ada = (SubId::from("sub-ada"), RemoteId::from(ADA_TIDES));
     open(&view, ("sub-omar", OMAR_YEAR), cx);
-    // ⌘-click: the open post and Ada's are picked.
+    // ⌘-click (Ctrl+click on Windows): the open post and Ada's are picked.
     view.update(cx, |v, cx| {
-        let m = gpui_kit::Modifiers {
-            platform: true,
-            ..Default::default()
-        };
-        assert!(v.pick_click(&ada, m, cx));
+        assert!(v.pick_click(&ada, gpui_kit::Modifiers::secondary_key(), cx));
     });
     settle(cx);
     view.update_in(cx, |v, window, cx| v.open_hopper_picker(window, cx));

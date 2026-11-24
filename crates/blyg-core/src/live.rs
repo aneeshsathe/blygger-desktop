@@ -162,6 +162,12 @@ pub const DB_FILE: &str = "blygger.db";
 /// How long a fetched public changelog is trusted before refetching.
 pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 
+/// --- studio 0.71 --- How long an edit typed during a generate on the blyg
+/// waits for the writer's merge (`Backend::keep_generated`) before its push
+/// goes (and is refused). The window makes the merge as it takes the
+/// answer, well inside this.
+const GENERATE_MERGE_WAIT_MS: i64 = 3_000;
+
 /// --- contacts --- the address book as last fetched (JSON), and whether
 /// the blyg served it ("1"/"0").
 const CONTACTS_SERVED_META: &str = "contacts.served";
@@ -1147,6 +1153,68 @@ impl Backend for LiveBackend {
     ) -> Option<(String, Vec<Option<ScopeProvenance>>)> {
         let t = LiveBackend::tracked_provenance(self, id);
         Some((t.keyed_to?, t.scopes?))
+    }
+
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<crate::generate::GenerateOutcome> {
+        let sid = self.server_id(id)?;
+        // The blyg generates from its copy: a local edit not yet there
+        // would be overwritten by (or conflict with) the spliced text.
+        if self.row(id)?.item.pending_sync {
+            return Err(CoreError::NotSynced);
+        }
+        let _net = self.e().net_lock();
+        let out = self.command(id, &sid, |rev| {
+            self.e().api.generate(&sid, scope, Some(rev), proceed)
+        })?;
+        if let crate::generate::GenerateOutcome::Generated(g) = &out {
+            // That edit's push waits a moment for the writer's merge
+            // (`keep_generated`), which the window makes as it takes the
+            // answer; without one it goes, and is refused, as below. Held
+            // whether or not the blyg's copy can be read back.
+            let until = crate::util::now_ms() + GENERATE_MERGE_WAIT_MS;
+            self.e()
+                .store
+                .hold_for_merge(id, g.content_md.as_deref(), until)?;
+            // The spliced text and the provenance the blyg recorded, kept
+            // here so the writer shows what it read and an edit that moves
+            // the scopes carries it. The answer's revision isn't stored on
+            // its own: the merge stores the blyg's revision only with the
+            // text it accounts for. A keystroke during the request left a
+            // local edit that never saw the generated text; under it the
+            // old revision stays, so that edit's push is refused (409) and
+            // read again with conflict detection rather than going through
+            // over the generated words. Unread (offline), the old revision
+            // stays too, with the same effect.
+            if let Some(w) = self.refresh(id, &sid)
+                && let Some(p) = w.server_provenance()
+            {
+                self.e().store.adopt_prov(id, &w.content_md, &p)?;
+            }
+            self.e().emit(CoreEvent::ItemsChanged);
+        }
+        Ok(out)
+    }
+
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let kept = self
+            .e()
+            .store
+            .keep_generated(id, generated, revision, merged)?;
+        if kept {
+            self.wake();
+        }
+        Ok(kept)
     }
 
     fn provenance_available(&self) -> bool {
@@ -2269,6 +2337,48 @@ impl Backend for LiveBackend {
             order
         };
         store.set_meta(crate::order::READER_ORDER_META, kept.as_str())?;
+        Ok(kept)
+    }
+
+    // --- studio 0.71 --- readerMarkRead
+    fn reader_mark_read(&self) -> Option<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META, MarkRead};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return None;
+        }
+        Some(
+            store
+                .meta(MARK_READ_META)
+                .and_then(|s| MarkRead::parse(&s))
+                .unwrap_or_default(),
+        )
+    }
+
+    fn load_reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let got = self.e().track(self.e().api.reader_mark_read())?;
+        let store = &self.e().store;
+        store.set_meta(MARK_READ_SERVED_META, if got.is_some() { "1" } else { "0" })?;
+        if let Some(m) = got {
+            store.set_meta(MARK_READ_META, m.as_str())?;
+        }
+        Ok(got)
+    }
+
+    fn save_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return Err(CoreError::Other(
+                "your blyg doesn't have this setting".into(),
+            ));
+        }
+        let kept = self.e().track(self.e().api.put_reader_mark_read(m))?;
+        store.set_meta(MARK_READ_META, kept.as_str())?;
         Ok(kept)
     }
 

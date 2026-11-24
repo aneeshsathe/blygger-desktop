@@ -112,8 +112,8 @@ the top left of the window.
    site's composer didn't take the text, Burrow says so, leaves the text on
    your clipboard, and you paste it with **Ctrl+V** and click Post yourself.
 7. **Optional: start it by itself next time.** In the **Publish** sheet
-   (Ctrl+Enter), tick the sites under **Then cross-post to**. Burrow
-   remembers them for that post, and each time you publish it, the
+   (Ctrl+Enter), click the sites under **Then cross-post to** to tick
+   them. Burrow remembers them for that post, and each time you publish it, the
    cross-post starts on its own, one site after another. You still check
    each one and press Enter to post it. To change it later, untick the site
    there, or press **Ctrl+Shift+P** and pick **Cross-post automatically to
@@ -122,10 +122,11 @@ the top left of the window.
 A few things to know on Windows:
 
 - **Esc** closes either sheet, and nothing is posted. Between the sheets,
-  while the page loads, Esc folds the pane instead. If you've clicked into
+  while the page loads, Esc closes the pane instead. If you've clicked into
   the page, the first Esc only gives the keyboard back to Burrow (the site
-  sees it too, so its own pop-up closes), and a second Esc folds the pane.
-  The run keeps going while the pane is folded, and **Ctrl+Shift+B** or the
+  sees it too, so its own pop-up closes, and Burrow says "Keyboard back in
+  Burrow · Esc again closes the pane"), and a second Esc closes the pane.
+  The run keeps going while the pane is closed, and **Ctrl+Shift+B** or the
   status bar's **show pane** brings it back.
 - If a site has signed you out, the run stops with "Sign in to … in this
   pane" (on Farcaster, it stops because the composer never opens). Nothing is
@@ -222,8 +223,8 @@ extension-setting = cross-post farcaster-max-bytes=1024
 ### Cross-posting automatically, per post
 
 A post can start its cross-posts by itself when you publish it. In the
-**Publish** sheet (⌘⏎), tick the sites under **Then cross-post to**, or press
-⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
+**Publish** sheet (⌘⏎), click the sites under **Then cross-post to** to
+tick them, or, from the keyboard, press ⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
 (and the same for the other sites) to turn it on. The palette row then reads
 **on**, and choosing it again turns it off. The choice belongs to that post
 alone and is remembered: other posts are unaffected, and it lasts across

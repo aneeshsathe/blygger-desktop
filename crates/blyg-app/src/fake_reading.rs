@@ -37,6 +37,8 @@ pub const LIN_FORK: &str = "01k211n0f0rk00000000000001";
 pub const LIN_FORK_GENERATED: &str =
     "And yet we plan the day around them, as if the moon owed us something.";
 /// A fragment of Lin's with emphasis, code and a bare link.
+/// --- studio 0.71 --- the web page Lin's generated sentence read.
+pub const TIDE_PAGE: &str = "https://tides.example.org/harbour";
 pub const LIN_BENCH: &str = "01k211n0bench0000000000001";
 pub const LIN_REREAD: &str = "01k211n0reread000000000001";
 /// A blyg nobody here follows, and the post of Kit's that Lin's fork quotes:
@@ -388,6 +390,19 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         &format!("<span class=\"blyg-tk-gen\">{LIN_FORK_GENERATED}</span>"),
         1,
     );
+    // --- studio 0.71 --- and says what that text read: Kit's post (Kit
+    // was told) and a web page (no one was).
+    fork.generated = Some(vec![serde_json::json!({
+        "model": "sample-model",
+        "sources": [
+            {"id": KIT_TIDES, "version": 1, "origin": KIT},
+            {"url": TIDE_PAGE, "cited": {
+                "source": "Harbour tide tables",
+                "url": TIDE_PAGE,
+                "retrieved": (now - h(31)).to_rfc3339(),
+            }},
+        ],
+    })]);
     reading.push(fork);
     reading.push(post(
         &lin,

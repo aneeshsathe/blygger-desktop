@@ -319,6 +319,9 @@ impl MainView {
         }
         let backend = self.backend.clone();
         let (sub, rid) = key.clone();
+        // --- studio 0.71 --- opening counts as reading it, unless the
+        // blyg's "Count an entry as read" is "only when I mark it".
+        let mark = self.reading.count_read.on_open();
         let task = cx.background_spawn(async move {
             let fetched = (!tombstone).then(|| {
                 let base = backend.pinned_diff_base(&sub, &rid);
@@ -326,7 +329,9 @@ impl MainView {
                 let shown = backend.remote_shown_versions(&sub, &rid);
                 (base, log, shown)
             });
-            let _ = backend.mark_read(&sub, &rid);
+            if mark {
+                let _ = backend.mark_read(&sub, &rid);
+            }
             fetched
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -833,6 +838,7 @@ impl MainView {
             && !self.reading.feed_waiting(); // --- reader order ---
         let list = div()
             .id("reader-list-pane")
+            .debug_selector(|| "reader-list-pane".into())
             .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
             .flex_none()
             .h_full()
@@ -845,7 +851,9 @@ impl MainView {
             )
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
-            .when(agentic, |d| d.child(self.render_agentic_edition(cx)))
+            .when(agentic && self.reading.opened.is_some(), |d| {
+                d.child(self.render_agentic_edition(false, cx))
+            })
             .when(held == 0 && !agentic, |d| {
                 d.child(self.empty_note(crate::keymap::hint(
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
@@ -906,12 +914,22 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
-            // --- reader folders --- sources | list | post.
-            .child(self.render_three_panes(
-                list.into_any_element(),
-                self.render_reading_detail(body_font, cx),
-                cx,
-            ))
+            // --- reader folders --- sources | list | post. --- ux 0.28 ---
+            // The Agentic feed's edition is a page, as the studio's: with no
+            // post open it takes the reading pane, and no list column.
+            .child(if agentic && self.reading.opened.is_none() {
+                self.render_three_panes(
+                    div().into_any_element(),
+                    self.render_agentic_edition(true, cx),
+                    cx,
+                )
+            } else {
+                self.render_three_panes(
+                    list.into_any_element(),
+                    self.render_reading_detail(body_font, cx),
+                    cx,
+                )
+            })
             .children(self.render_compose_bar(cx)) // --- reading compose ---
             .into_any_element()
     }
@@ -969,6 +987,7 @@ impl MainView {
         let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
+            .debug_selector(move || format!("reading-row-{ix}"))
             .px(px(14.))
             .py(px(7.))
             .relative()
@@ -1075,7 +1094,21 @@ impl MainView {
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
-                    .child(div().flex_none().whitespace_nowrap().child(when)),
+                    // --- studio 0.71 --- the date opens the post (the row
+                    // does): it looks it, as in the Stream.
+                    .child(
+                        div()
+                            .id("reading-row-date")
+                            .debug_selector(move || format!("reading-row-date-{ix}"))
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .hover(|s| s.text_color(p.accent).underline())
+                            .tooltip(|_, cx| {
+                                cx.new(|_| super::Tip(super::stream::OPEN_ENTRY.into()))
+                                    .into()
+                            })
+                            .child(when),
+                    ),
             )
             .child(
                 div()

@@ -236,6 +236,15 @@ impl Backend for Recording {
         self.rec("provenance_available");
         self.inner.provenance_available()
     }
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> blyg_core::Result<blyg_core::generate::GenerateOutcome> {
+        self.rec("generate_on_blyg");
+        self.inner.generate_on_blyg(id, scope, proceed)
+    }
     fn tracked_tk_provenance(
         &self,
         id: &LocalId,
@@ -769,6 +778,17 @@ fn do_step(e: &mut Env, id: &str) {
         "full-editor" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-3")),
         "write-view" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-1")),
         "tk" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g")),
+        // --- studio 0.71 --- ⌘G on the tour's blyg, once the gap has
+        // reached it: the checkpoint sheet.
+        "tk-checkpoint" => {
+            gap_on_the_tours_blyg(e);
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+            crate::test_wait::poll("the checkpoint sheet", || {
+                e.cx.executor().advance_clock(Duration::from_millis(500));
+                e.cx.run_until_parked();
+                checkpoint_heading(e).is_some()
+            });
+        }
         "shorten" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-g"))
         }
@@ -877,6 +897,11 @@ fn do_step(e: &mut Env, id: &str) {
                 cx,
             )
         }),
+        // --- studio 0.71 --- a click on the selected card's date.
+        "count-read" => {
+            let at = crate::test_wait::still(e.cx, "stream-date-0");
+            e.cx.simulate_click(at.center(), gpui_kit::Modifiers::none());
+        }
         "agentic-edition" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(
@@ -940,10 +965,12 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-c"))
         }
         "cross-post" => e.cx.simulate_keystrokes("escape"),
-        // The Post menu's item (the palette has ⇧⌘P now).
-        "auto-crosspost" | "extensions" => {
-            e.cx.dispatch_action(crate::app::extensions::ShowExtensions)
+        // ⇧⌘P: the command palette, with the open post's on/off rows.
+        "auto-crosspost" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
         }
+        // The Post menu's item (the palette has ⇧⌘P now).
+        "extensions" => e.cx.dispatch_action(crate::app::extensions::ShowExtensions),
         // Manage extensions… is the palette's last row.
         "manage" => e.cx.simulate_keystrokes("up enter"),
         "consent" => {
@@ -1617,6 +1644,91 @@ fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
     assert!(text.contains("]("), "a mention link was inserted: {text}");
 }
 
+// --- studio 0.71 --- the AI tour's checkpoint step: ⌘G goes to the tour's
+// (fake) blyg, which can't read the gap's `.invalid` link.
+
+/// The tour's draft has reached the tour's blyg with its gap (⌘G on the
+/// blyg asks first).
+fn gap_on_the_tours_blyg(e: &mut Env) {
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the tour's draft on its blyg", move |cx| {
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            v.backend
+                .item(&LocalId(steps::DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md.contains("forecast.invalid"))
+        })
+    });
+}
+
+/// The checkpoint sheet's question, while it's up.
+fn checkpoint_heading(e: &mut Env) -> Option<String> {
+    e.view.read_with(e.cx, |v, _| {
+        v.sheet
+            .get::<crate::app::ai_view::checkpoint::TkCheckpointSheet>()
+            .map(|s| crate::app::ai_view::checkpoint::heading(&s.checkpoint))
+    })
+}
+
+/// ⌘G stops at the checkpoint (the canned AI would have filled the gap at
+/// once), the step stays for ⏎, and ⏎ fills the gap with what the blyg
+/// read listed under the preview.
+#[gpui_kit::test]
+fn the_checkpoint_step_stops_on_the_tours_blyg_then_generates_anyway(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    enter(&mut e, "tk-checkpoint");
+    do_step(&mut e, "tk-checkpoint");
+    assert_eq!(
+        checkpoint_heading(&mut e).as_deref(),
+        Some("1 of 2 links in this TK could not be read. Generate anyway?")
+    );
+    assert!(tour_done(&mut e), "the sheet is what the step waits for");
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("tk-checkpoint"), "it stays for ⏎");
+    e.cx.simulate_keystrokes("enter");
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the gap filled on the blyg", move |cx| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| v.editor.read(cx).value().contains("[=]"))
+    });
+    assert_eq!(tour_step(&mut e), Some("tk-checkpoint"));
+    let read = e.view.read_with(e.cx, |v, cx| v.tk_read(cx));
+    // What the preview lists under the page (headless, the preview itself
+    // isn't drawn).
+    assert_eq!(read.len(), 1, "what the blyg read: {read:?}");
+    let split = e.view.read_with(e.cx, |v, _| {
+        v.studio.view == crate::app::studio::ViewMode::Split
+    });
+    assert!(split, "the step shows the preview, where the list goes");
+    // Leaving the step puts the canned AI back: the next ⌘G never asks
+    // the blyg.
+    enter(&mut e, "tk");
+    assert_eq!(
+        checkpoint_heading(&mut e),
+        None,
+        "the sheet went with the step"
+    );
+    // Asked of the provider ⌘G would pick, not by waiting for the canned
+    // words: they land after a real-time sleep, and the "tk" step moves on
+    // (its next step rewrites the draft) once they do, so a wait for them
+    // raced the tour under a loaded test run.
+    let kind = e.cx.update(|_, cx| {
+        cx.global::<crate::ai::AiGlobal>()
+            .test_provider
+            .as_ref()
+            .map(|p| p.kind())
+    });
+    assert_eq!(
+        kind,
+        Some(blyg_ai::ProviderKind::LocalCodex),
+        "the canned AI, not the blyg"
+    );
+}
+
 // --- what's new --- the first launch after an update.
 
 static NEWS: super::whats_new::Release = super::whats_new::Release {
@@ -1789,6 +1901,60 @@ fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
     assert!(
         ring_now(&mut e, Region::MacroRun).is_some(),
         "the ring moves to the status bar"
+    );
+
+    // Automatic cross-post: the tour runs a sample cross-post, the
+    // published sample post is open with one site on, and ⇧⌘P lists its
+    // on/off rows (user testing, 0.28: the step showed none).
+    enter(&mut e, "auto-crosspost");
+    wait(&mut e, "the sample cross-post's sites", |e| {
+        e.view
+            .read_with(e.cx, |v, _| v.auto_crosspost_sites().len() >= 3)
+    });
+    do_step(&mut e, "auto-crosspost");
+    e.cx.run_until_parked();
+    assert!(tour_done(&mut e));
+    let auto: Vec<String> = e.view.read_with(e.cx, |v, _| {
+        v.cmd_palette
+            .open
+            .as_ref()
+            .map(|o| {
+                o.entries
+                    .iter()
+                    .filter(|x| x.label.starts_with("Cross-post automatically to"))
+                    .map(|x| x.label.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    assert_eq!(auto.len(), 3, "{auto:?}");
+    // The palette opens on them (typed for you), not on Post's commands.
+    let first = e.view.read_with(e.cx, |v, _| {
+        v.cmd_palette
+            .open
+            .as_ref()
+            .and_then(|o| o.shown.first().map(|&i| o.entries[i].label.clone()))
+    });
+    assert!(
+        first
+            .as_deref()
+            .is_some_and(|l| l.starts_with("Cross-post automatically to")),
+        "{first:?}"
+    );
+    assert_eq!(
+        auto.iter().filter(|l| l.ends_with(": on")).count(),
+        1,
+        "one site on in the sample: {auto:?}"
+    );
+    // Nothing loads a real website from the tour: a macro is refused.
+    let started = e.view.update_in(e.cx, |v, window, cx| {
+        let m = v.auto_crosspost_sites().remove(0);
+        v.ext_run_macro_for(m.ext, m.spec.id, None, window, cx)
+    });
+    assert!(!started, "the tour runs no macro");
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| !v.browser.automation.running())
     );
 
     // ⇧⌘P, then Manage: Turn off and Forget permissions on the sample.
@@ -2335,7 +2501,14 @@ fn the_extensions_tour_teaches_automatic_cross_posting() {
         .find(|s| s.id == "auto-crosspost")
         .expect("a step for automatic cross-posting");
     assert_eq!(step.since, "0.28.0");
-    assert!(matches!(step.setup, steps::Setup::Posts));
+    // A sample post with cross-post rows to show, and ⇧⌘P, which shows
+    // them (the Post menu's Extensions palette had none in the tour).
+    assert!(matches!(step.setup, steps::Setup::AutoCrossPost));
+    assert_eq!(step.keys, &[steps::Key::Palette]);
+    assert_eq!(
+        step.key_label.on(crate::platform_text::Platform::Mac),
+        "⇧⌘P"
+    );
     let tour = TOURS
         .iter()
         .find(|t| t.id == "extensions")
@@ -2347,4 +2520,59 @@ fn the_extensions_tour_teaches_automatic_cross_posting() {
         "{:?}",
         tour.steps
     );
+}
+
+/// User testing of 0.71: "Click this card's date" while the ring sat on a
+/// card the step's own panel covered (the selection an earlier step left,
+/// one down). The step selects the newest card, says to click the date on
+/// the highlighted card, and doesn't ask for "fully" on screen.
+#[gpui_kit::test]
+fn the_date_step_highlights_the_newest_card(cx: &mut TestAppContext) {
+    let mut e = setup_ext(cx);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
+    enter(&mut e, "count-read");
+    settle(&mut e);
+    let newest = |e: &mut Env| {
+        e.view.read_with(e.cx, |v, _| {
+            let first = v
+                .reading
+                .shown_rows()
+                .next()
+                .map(crate::app::reading::vm::key);
+            first.is_some() && v.reading.sel == first
+        })
+    };
+    // Entered straight away, before the Stream's list has filled.
+    assert!(newest(&mut e), "the newest card is selected");
+    // An earlier step's selection, further down.
+    e.view
+        .update_in(e.cx, |v, window, cx| v.stream_move(2, window, cx));
+    settle(&mut e);
+    enter(&mut e, "count-read");
+    settle(&mut e);
+    let (sel, first) = e.view.read_with(e.cx, |v, _| {
+        (
+            v.reading.sel.clone(),
+            v.reading
+                .shown_rows()
+                .next()
+                .map(crate::app::reading::vm::key),
+        )
+    });
+    assert!(first.is_some());
+    assert_eq!(sel, first, "the newest card is selected");
+    let step = &STEPS[steps::index("count-read").unwrap()];
+    for p in [
+        crate::platform_text::Platform::Mac,
+        crate::platform_text::Platform::Windows,
+    ] {
+        let caption = step.caption.on(p);
+        assert!(
+            caption.contains("Click the date on the highlighted card"),
+            "{caption}"
+        );
+        assert!(!caption.contains("fully on screen"), "{caption}");
+    }
 }

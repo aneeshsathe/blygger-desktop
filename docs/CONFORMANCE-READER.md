@@ -1,6 +1,6 @@
 # Reader conformance: Burrow against the blygger-spec reader suite
 
-blygger-spec's reader suite (`conformance/reader/`, blygger-spec#22) is 110
+blygger-spec's reader suite (`conformance/reader/`, blygger-spec#22) is 112
 fixtures: an item's `content_md` and the items it refers to, and what the
 0.4 text says the published `content_html`, `transclusions[]`, `links[]` and
 `generated[]` must contain. Expectations are written from the spec, not
@@ -75,10 +75,10 @@ node run.mjs --cmd "<target>/debug/examples/blyg-conformance --batch" --batch \
 ## Pin and results
 
 The pin, the per-suite results and the deviations are in
-`docs/CONFORMANCE.md`. At blygger-spec `fbc3f62` (110 fixtures, Burrow
-0.28.0), every case passes. 35 cases are "unreported": they pass on
-everything Burrow reports, but Burrow sends no `links[]`. The studio's
-reference run (v0.69.0) is in the suite's committed `out/`.
+`docs/CONFORMANCE.md`. At blygger-spec `f5817bd` (112 fixtures, Burrow
+0.28.0 with the studio 0.71.0 render re-sync), every case passes. 35 cases
+are "unreported": they pass on everything Burrow reports, but Burrow sends
+no `links[]`. The suite's committed `out/` is its own self-check run.
 
 The suite marks some fixtures ambiguous, where the spec text allows more
 than one reading. Burrow's readings: an inline `![[id@vN]]` is inert text;

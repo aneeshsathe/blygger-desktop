@@ -969,7 +969,7 @@ impl MainView {
             Pick::WritingFont(l) => format!("Trying {l} for writing"),
             Pick::UiFont(l) => format!("Trying {l} for the interface"),
             Pick::Size(s) => format!("Trying {s} px"),
-            Pick::Rule(_) => String::new(), // never tried
+            Pick::Rule(_) | Pick::CountRead(_) => String::new(), // never tried
         });
         let caption = div()
             .debug_selector(|| "settings-specimen-caption".into())

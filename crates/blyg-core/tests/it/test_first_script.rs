@@ -225,3 +225,118 @@ fn run_builds_the_old_commit_in_a_target_dir_of_its_own() {
     let built_in = std::fs::read_to_string(bin.path().join("built-in")).unwrap();
     assert_eq!(Path::new(&built_in), shared.join("test-first"));
 }
+
+/// Runs `--run <base> <tip>` with a stand-in `cargo` first on PATH (a real
+/// build never runs in a test) that logs each call to `calls` and reports one
+/// failing test. Returns the exit status, the output, and the logged calls.
+fn run_with_stub_cargo(r: &Repo, base: &str, tip: &str) -> (i32, String, String) {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = tempfile::tempdir().unwrap();
+    let cargo = bin.path().join("cargo");
+    let fake =
+        "#!/bin/sh\necho \"$@\" >>\"$(dirname \"$0\")/calls\"\necho 'test adds ... FAILED'\n";
+    std::fs::write(&cargo, fake).unwrap();
+    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+    let out = Command::new("bash")
+        .arg(script())
+        .args(["--run", base, tip])
+        .current_dir(r.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("PATH", path)
+        .env("CARGO_TARGET_DIR", bin.path().join("shared"))
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let calls = std::fs::read_to_string(bin.path().join("calls")).unwrap_or_default();
+    (out.status.code().unwrap(), text, calls)
+}
+
+const FIXTURE: &str = "crates/x/tests/fixtures/data.toml";
+
+/// A repository with the crate manifest in its base commit; returns it and
+/// the base.
+fn repo_with_crate() -> (Repo, String) {
+    let r = Repo::new();
+    r.write("crates/x/Cargo.toml", "[package]\nname = \"x\"\n");
+    let base = r.commit("crate", None);
+    (r, base)
+}
+
+#[test]
+fn run_skips_a_test_commit_that_adds_no_test_function() {
+    let (r, base) = repo_with_crate();
+    r.write(FIXTURE, "a = 1\n");
+    let fixture = r.commit("fixture", None);
+    r.write(TEST, "#[test]\nfn adds() {}\n");
+    let red = r.commit("red: add", None);
+    r.write(CODE, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n");
+    let tip = r.commit("green: add", None);
+    let (code, out, calls) = run_with_stub_cargo(&r, &base, &tip);
+    let short = |c: &str| r.git(&["rev-parse", "--short", c]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(&format!(
+            "test-first: {} changes test files but adds no #[test]; skipped\n",
+            short(&fixture)
+        )),
+        "{out}"
+    );
+    assert!(
+        out.contains(&format!("x at {}: adds", short(&red))),
+        "{out}"
+    );
+    assert!(out.contains("red before green at"), "{out}");
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+}
+
+#[test]
+fn run_without_any_test_function_on_the_branch_says_so_and_exits_1() {
+    let (r, base) = repo_with_crate();
+    r.write(FIXTURE, "a = 1\n");
+    r.commit("fixture", None);
+    r.write("crates/x/tests/fixtures/more.toml", "b = 2\n");
+    r.commit("another fixture", None);
+    r.write(CODE, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n");
+    let tip = r.commit("code", None);
+    let (code, out, calls) = run_with_stub_cargo(&r, &base, &tip);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("no test commit on") && out.contains("adds a #[test] function"),
+        "{out}"
+    );
+    assert!(!out.contains("adds no #[test] functions to run"), "{out}");
+    assert!(calls.is_empty(), "{calls}");
+}
+
+#[test]
+fn run_fails_when_the_first_commit_with_tests_comes_after_product_code() {
+    let (r, base) = repo_with_crate();
+    r.write(FIXTURE, "a = 1\n");
+    r.commit("fixture", None);
+    r.write(CODE, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n");
+    let product = r.commit("code", None);
+    r.write(TEST, "#[test]\nfn adds() {}\n");
+    let tip = r.commit("tests", None);
+    // The order check is unchanged: a test change (the fixture) came first.
+    assert!(r.run(&[&base, &tip]).0);
+    let (code, out, calls) = run_with_stub_cargo(&r, &base, &tip);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains(&format!(
+            "comes after product code at {}",
+            r.git(&["rev-parse", "--short", &product])
+        )) && out.contains("can't be red before the feature"),
+        "{out}"
+    );
+    assert!(calls.is_empty(), "{calls}");
+}

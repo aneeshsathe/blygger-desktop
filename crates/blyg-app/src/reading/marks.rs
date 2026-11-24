@@ -25,6 +25,8 @@ use super::vm::{self, Key};
 use super::{RSheet, View};
 use crate::app::MainView;
 
+gpui_kit::actions!(blygger, [PickAll]);
+
 /// The open "Mark all read?" question.
 pub struct MarkAll {
     /// "Rue", "All unread", "the stream".
@@ -65,14 +67,15 @@ impl MainView {
         self.reading.shown_rows().map(vm::key).collect()
     }
 
-    /// A row clicked with ⌘ or ⇧ (Reader mode): pick instead of opening.
-    /// False for a plain click, which lets go of the picks and opens it.
+    /// A row clicked with ⌘ (Ctrl on Windows) or ⇧ (Reader mode): pick
+    /// instead of opening. False for a plain click, which lets go of the
+    /// picks and opens it.
     pub(crate) fn pick_click(&mut self, key: &Key, m: Modifiers, cx: &mut Context<Self>) -> bool {
         if self.reading.mode != ReadMode::Reader {
             return false;
         }
         let current = self.reading.sel.clone();
-        if m.platform && !m.shift {
+        if crate::keymap::secondary_held(&m) && !m.shift {
             self.reading.picked.toggle(key, current.as_ref());
         } else if m.shift {
             let shown = self.shown_keys();
@@ -86,6 +89,25 @@ impl MainView {
         }
         cx.notify();
         true
+    }
+
+    /// `PickAll` (⌘A, Ctrl+A on Windows: the keymap's `Reading` row) on the
+    /// Reader. A text field there (search, compose, the trail bar) keeps its
+    /// own ⌘A: its `Input` binding is deeper, and the checks below pass the
+    /// key on when one has the keyboard anyway, or there's no Reader list.
+    pub(crate) fn on_pick_all(&mut self, _: &PickAll, window: &mut Window, cx: &mut Context<Self>) {
+        let typing = self.reading_search_focused(window, cx)
+            || self.reading.compose.has_keyboard(window, cx)
+            || self.trail_field_focused(window, cx);
+        if self.reading.sheet.is_some()
+            || typing
+            || self.reading.view != View::Reading
+            || self.reading.mode != ReadMode::Reader
+        {
+            cx.propagate();
+            return;
+        }
+        self.pick_all(cx);
     }
 
     /// ⌘A in the list: pick everything it shows.

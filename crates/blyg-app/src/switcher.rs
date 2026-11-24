@@ -272,6 +272,7 @@ impl MainView {
         // Never lose text: the editor autosaves on every change, but save
         // whatever it holds now in case the last edit hasn't landed.
         self.flush_editor(cx);
+        self.flush_seen_now(); // --- studio 0.71 --- seen marks, to this blyg
         self.remember_blyg_card(cx);
         let old_host = active_url(cx).and_then(|u| vm::url_host(&u));
         let pending = match self.backend.sync_status() {
@@ -352,7 +353,7 @@ impl MainView {
         // --- reading & versions --- a fresh reading state from the new
         // blyg, on the same screen.
         let view = self.reading.view;
-        self.reading = reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.refresh_problems(cx);
         self.remember_blyg_card(cx);
         if self.backend.sync_status() != SyncStatus::Synced || self.backend.items().is_empty() {
@@ -517,6 +518,7 @@ impl MainView {
         if self.tutorial_keeps_blyg(cx) {
             return; // --- onboarding --- the tour's sample blyg only
         }
+        self.flush_seen_now(); // --- studio 0.71 ---
         match crate::connection::disconnect_blyg(&url, delete_local, cx) {
             Ok(out) => {
                 let sub = Some(

@@ -28,7 +28,19 @@ mod view;
 #[cfg(test)]
 mod tests;
 
-gpui_kit::actions!(blygger, [ShowSite]);
+gpui_kit::actions!(
+    blygger,
+    [
+        ShowSite,
+        /// The sheet's Save (⌘⏎, also while typing in one of its fields).
+        SaveSite,
+    ]
+);
+
+/// The sheet's key context (`keymap::SITE_SHEET`): its ⌘⏎ lives in the
+/// keymap table and out-ranks the main window's (Publish), also while one
+/// of its fields has focus.
+pub const SHEET_CONTEXT: &str = "SiteSheet";
 
 /// How often the app asks the backend to refresh the studio's update state
 /// (the backend itself reads the network at most every six hours).
@@ -220,23 +232,20 @@ impl MainView {
         };
         let light = colours(false, window, cx);
         let dark = colours(true, window, cx);
-        // ⌘⏎ in any field saves.
+        // An edit clears "Saved". (⌘⏎ in a field saves through the keymap's
+        // `SiteSheet > Input` row, which out-ranks the field's own.)
         for e in [&author_url, &site_url, &posts_path, &theme_name, &feed_url]
             .into_iter()
             .chain(light.iter())
             .chain(dark.iter())
         {
-            let sub = cx.subscribe_in(e, window, |this, _, ev, window, cx| match ev {
-                InputEvent::PressEnter {
-                    secondary: true, ..
-                } => this.save_site(window, cx),
-                InputEvent::Change => {
+            let sub = cx.subscribe_in(e, window, |this, _, ev, _, cx| {
+                if let InputEvent::Change = ev {
                     if let Some(s) = this.site.sheet.as_mut() {
                         s.saved = false;
                     }
                     cx.notify();
                 }
-                _ => {}
             });
             self._subs.push(sub);
         }

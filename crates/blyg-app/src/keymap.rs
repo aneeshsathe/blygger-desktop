@@ -14,6 +14,8 @@
 //!   sheets (`MacroSheet`, and `MacroSheet > Input` for the Preview's text
 //!   box). Deeper than, or as deep as and later than, the main window's
 //!   rows, so ⌘⏎ continues there instead of reaching Publish.
+//! - `SiteSheet` / `SiteSheetInput`: Blyg › Site…'s sheet, and its fields
+//!   (`SiteSheet > Input`); ⌘⏎ saves there, the same way.
 
 use gpui_kit::{
     Action, App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate,
@@ -61,7 +63,7 @@ use crate::app::reading::hoppers::{HopperPicker, NewHopper};
 use crate::app::reading::contacts::{AddAuthorToContacts, ShowContacts};
 
 // --- site ---
-use crate::app::site::ShowSite;
+use crate::app::site::{SaveSite, ShowSite};
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
@@ -69,7 +71,9 @@ use crate::app::discard::{DeleteDraft, DiscardChanges, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
 // --- about ---
-use crate::about::ShowAbout;
+use crate::about::{CloseAbout, ShowAbout};
+// --- read/unread ---
+use crate::app::reading::marks::PickAll;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
 // --- notes ---
@@ -126,6 +130,14 @@ pub const BROWSER: &str = "Blygger > Browser";
 pub const MACRO_SHEET: &str = crate::app::browser::automation::SHEET_CONTEXT;
 /// --- browser macros --- The Preview sheet's text box.
 pub const MACRO_SHEET_INPUT: &str = "MacroSheet > Input";
+/// --- site --- Blyg › Site…'s sheet.
+pub const SITE_SHEET: &str = crate::app::site::SHEET_CONTEXT;
+/// --- site --- A field of the Site sheet.
+pub const SITE_SHEET_INPUT: &str = "SiteSheet > Input";
+/// --- read/unread --- The reading screen's body.
+pub const READING: &str = crate::app::reading::CONTEXT;
+/// The About window.
+pub const ABOUT: &str = crate::about::CONTEXT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -139,10 +151,21 @@ pub enum Scope {
     /// --- browser macros --- `MacroSheet > Input`: the Preview's text box
     /// (out-ranks gpui-base's and the main window's keys there).
     MacroSheetInput,
+    /// --- site --- `SiteSheet`: Blyg › Site…'s sheet (out-ranks the main
+    /// window's ⌘⏎, Publish).
+    SiteSheet,
+    /// --- site --- `SiteSheet > Input`: a field of the Site sheet.
+    SiteSheetInput,
+    /// --- read/unread --- `Reading`: the reading screen's body. Its text
+    /// fields' own keys (gpui-base's `Input`, deeper) win while they have
+    /// the keyboard: ⌘A in the search field selects the query.
+    Reading,
+    /// `About`: the About window (its own window: only global keys reach it).
+    About,
 }
 
 impl Scope {
-    fn context(self) -> Option<&'static str> {
+    pub(crate) fn context(self) -> Option<&'static str> {
         match self {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
@@ -150,6 +173,10 @@ impl Scope {
             Scope::Browser => Some(BROWSER), // --- browser ---
             Scope::MacroSheet => Some(MACRO_SHEET),
             Scope::MacroSheetInput => Some(MACRO_SHEET_INPUT),
+            Scope::SiteSheet => Some(SITE_SHEET),
+            Scope::SiteSheetInput => Some(SITE_SHEET_INPUT),
+            Scope::Reading => Some(READING),
+            Scope::About => Some(ABOUT),
         }
     }
 
@@ -160,6 +187,8 @@ impl Scope {
         match self {
             Scope::Browser => "browser pane", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::SiteSheet | Scope::SiteSheetInput => "site sheet",
+            Scope::About => "about window",
             _ => "main window",
         }
     }
@@ -1127,6 +1156,25 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         // --- end browser macros ---
+        // --- site --- (after Publish's rows: on a tie in depth, the later
+        // binding wins)
+        kb!("cmd-enter", SiteSheet, SaveSite, "Site sheet: save", None),
+        kb!(
+            "cmd-enter",
+            SiteSheetInput,
+            SaveSite,
+            "Site sheet: save (typing in a field)",
+            None
+        ),
+        // --- read/unread --- (the search field's own ⌘A is the field's)
+        kb!(
+            "cmd-a",
+            Reading,
+            PickAll,
+            "Reader: pick every post the list shows (r marks them read, u unread)",
+            None
+        ),
+        kb!("cmd-w", About, CloseAbout, "About window: close it", None),
         // --- notes --- (esc, which closes the drawer, is the drawer's own key)
         kb!(
             "cmd-shift-n",
@@ -1272,6 +1320,24 @@ fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
     rows
 }
 
+/// The ⌘ of a ⌘-click as this platform holds it: Cmd on a Mac, Ctrl on
+/// Windows (`Modifiers::secondary`). A click has no binding, so read held
+/// keys through this, never `platform` alone (the Windows key on
+/// Windows). A Mac turns Ctrl+click into a right-click before the app
+/// sees it, so Ctrl here never clashes with the context menu. Tests that
+/// bind a platform's table (`windows_keys_tests::bind_keys_as`) read its
+/// clicks as that platform does.
+pub fn secondary_held(m: &gpui_kit::Modifiers) -> bool {
+    #[cfg(test)]
+    if let Some(p) = crate::windows_keys_tests::bound_as() {
+        return match p {
+            crate::platform_text::Platform::Mac => m.platform,
+            crate::platform_text::Platform::Windows => m.control,
+        };
+    }
+    m.secondary()
+}
+
 /// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-t` → `ctrl-alt-t`).
 /// Interned, so the table can keep `&'static str` keys.
 #[cfg(target_os = "windows")]
@@ -1372,10 +1438,11 @@ pub fn respell_for_windows(key: &str) -> String {
 /// (`⇧⌘G` → `Ctrl+Shift+G`, `⌘Y` → `Ctrl+Shift+Y`). Interned, so it can
 /// stand wherever the literal did.
 pub fn hint(text: &'static str) -> &'static str {
-    // Compiled on Windows, and in tests on every platform (a test can ask
-    // for Windows' spelling: `platform_text::spelled_as`). A macOS build
-    // is just `text`.
-    #[cfg(any(target_os = "windows", test))]
+    // Compiled on Windows, in tests on every platform (a test can ask for
+    // Windows' spelling: `platform_text::spelled_as`), and in debug builds
+    // (`BLYGGER_TEST_SPELLING=windows` shows a scene in Windows' words). A
+    // macOS release build is just `text`.
+    #[cfg(any(target_os = "windows", test, debug_assertions))]
     {
         use crate::platform_text::Platform;
         use std::collections::HashMap;
@@ -1396,7 +1463,7 @@ pub fn hint(text: &'static str) -> &'static str {
             .entry((p, text))
             .or_insert_with(|| Box::leak(windows_hint(text).into_boxed_str()))
     }
-    #[cfg(not(any(target_os = "windows", test)))]
+    #[cfg(not(any(target_os = "windows", test, debug_assertions)))]
     text
 }
 
@@ -1572,6 +1639,7 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
     ("while macOS is dark", "while Windows is dark"),
     ("your other Macs", "your other PCs"),
     ("this Mac", "this PC"),
+    ("This Mac", "This PC"),
     ("your Mac", "your PC"),
     ("another Mac", "another PC"),
     // Windows has no menu bar; the Menu button lists the same items.
@@ -1900,7 +1968,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-z", "Undo", None),
     ("ctrl-y", "Redo", None),
     ("ctrl-shift-z", "Redo", None),
-    ("ctrl-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("ctrl-a", "Select all", Some("PickAll")),
     // The input-language hotkey on many setups; GPUI never sees it.
     ("ctrl-shift-0", "Switch input language", None),
 ];
@@ -1910,7 +1979,8 @@ pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
 #[cfg(all(test, not(target_os = "windows")))]
 pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-q", "Quit", Some("Quit")),
-    ("cmd-w", "Close window", None),
+    // The About window's own close.
+    ("cmd-w", "Close window", Some("CloseAbout")),
     ("cmd-h", "Hide app", None),
     ("cmd-alt-h", "Hide others", None),
     ("cmd-m", "Minimize", None),
@@ -1932,7 +2002,8 @@ pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-x", "Cut", None),
     ("cmd-z", "Undo", None),
     ("cmd-shift-z", "Redo", None),
-    ("cmd-a", "Select all", None),
+    // In the Reader the list's own select all: pick every post.
+    ("cmd-a", "Select all", Some("PickAll")),
 ];
 
 /// Toolbar buttons with no key on purpose: Withdraw is permanent, so it's
@@ -1964,6 +2035,9 @@ pub fn list() -> String {
             Scope::MainInput => "text fields",
             Scope::Browser => "browser", // --- browser ---
             Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
+            Scope::SiteSheet | Scope::SiteSheetInput => "site sheet",
+            Scope::Reading => "reader",
+            Scope::About => "about window",
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -2178,11 +2252,21 @@ mod tests {
         for k in live()
             .iter()
             // --- browser macros --- The sheets' keys out-rank Input on
-            // purpose (their own `MacroSheet > Input` rows).
+            // purpose (their own `MacroSheet > Input` rows), as the Site
+            // sheet's do (`SiteSheet > Input`).
+            // --- read/unread --- The Reader's ⌘A yields to its text fields'
+            // own select all on purpose; About has no text fields.
             .filter(|k| {
                 !matches!(
                     k.scope,
-                    Scope::Global | Scope::Browser | Scope::MacroSheet | Scope::MacroSheetInput
+                    Scope::Global
+                        | Scope::Browser
+                        | Scope::MacroSheet
+                        | Scope::MacroSheetInput
+                        | Scope::SiteSheet
+                        | Scope::SiteSheetInput
+                        | Scope::Reading
+                        | Scope::About
                 )
             })
         {

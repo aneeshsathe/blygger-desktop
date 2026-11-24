@@ -34,6 +34,7 @@ pub(crate) mod site_view;
 mod site_view_tests;
 // --- reading compose --- the compose box along the reading screen's foot.
 pub(crate) mod compose;
+pub(crate) mod count_read; // --- studio 0.71 --- when an entry counts as read
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
 #[cfg(test)]
@@ -43,7 +44,8 @@ pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
-pub(crate) mod marks; // --- read/unread --- (and Mark All Read…)
+pub(crate) mod marks;
+pub(crate) mod maths_text; // --- ux 0.28 --- formulas in cards, as text // --- read/unread --- (and Mark All Read…)
 // --- catch up --- the conversation leading to a post, oldest first (⇧C).
 pub(crate) mod catchup;
 mod mentions;
@@ -99,9 +101,15 @@ pub(crate) mod vm;
 #[cfg(test)]
 mod compose_tests; // --- reading compose ---
 #[cfg(test)]
+mod count_read_tests; // --- studio 0.71 --- when an entry counts as read
+#[cfg(test)]
+mod link_click_keys_tests;
+#[cfg(test)]
 mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod perf_tests; // the reading screens at scale
+#[cfg(test)]
+mod pick_all_keys_tests;
 mod read_mark; // opening a post marks its row, in place
 #[cfg(test)]
 mod read_mark_tests;
@@ -113,6 +121,8 @@ mod stream_tests;
 mod studio069_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ux_reading_tests; // --- ux 0.28 ---
 
 use std::collections::{HashMap, HashSet};
 
@@ -484,6 +494,8 @@ pub struct State {
     pub background: background::Background,
     /// --- reader order --- the Feed's order and each row's place in it.
     pub feed: feed::Feed,
+    /// --- studio 0.71 --- when an entry counts as read (`readerMarkRead`).
+    pub count_read: count_read::CountRead,
 }
 
 impl State {
@@ -563,6 +575,7 @@ impl State {
             changelogs: Default::default(),
             background: Default::default(),
             feed,
+            count_read: count_read::CountRead::new(backend.reader_mark_read()), // --- studio 0.71 ---
         }
         .refiltered()
     }
@@ -897,6 +910,7 @@ impl MainView {
                 r.background.set_rows(&r.rows); // --- background --- "+N parts"
                 self.feed_rebuild(cx); // --- reader order ---
                 self.reader_order_refresh(false, cx);
+                self.count_read_refresh(false, cx); // --- studio 0.71 ---
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);
@@ -1032,6 +1046,7 @@ impl MainView {
                 .id("reading-body")
                 .key_context(CONTEXT)
                 .track_focus(&self.reading.focus)
+                .on_action(cx.listener(Self::on_pick_all)) // --- read/unread ---
                 .on_key_down(cx.listener(Self::reading_key_down))
                 .flex_1()
                 .min_h_0()
@@ -1065,42 +1080,20 @@ impl MainView {
         // ⌘F searches the reading list. Handled here, not in the keymap
         // table: gpui-base's inputs bind ⌘F themselves, and this is the
         // reading list's own key like `/`, ↑/↓ and ←/→.
-        // `secondary` is ⌘ on macOS and Ctrl on Windows; nothing else held.
+        // `secondary` is ⌘ on macOS and Ctrl elsewhere, and nothing else
+        // held: of Ctrl and the platform key, only the one `secondary`
+        // reads (exactly one of the two is down).
         let m = &k.modifiers;
-        let other = if cfg!(target_os = "macos") {
-            m.control
-        } else {
-            m.platform
-        };
-        if self.reading.view == View::Reading
-            && m.secondary()
-            && !(other || m.alt || m.shift)
-            && k.key == "f"
-        {
+        let secondary_alone = m.secondary() && m.control != m.platform && !(m.alt || m.shift);
+        if self.reading.view == View::Reading && secondary_alone && k.key == "f" {
             self.focus_reading_search(window, cx);
             cx.stop_propagation();
             return;
         }
         // --- browse --- ⌘[ goes back along the walk (the reading screen's
         // own key, as ⌘F: gpui-base's inputs bind ⌘[ too).
-        if self.reading.view == View::Reading
-            && m.secondary()
-            && !(other || m.alt || m.shift)
-            && k.key == "["
-        {
+        if self.reading.view == View::Reading && secondary_alone && k.key == "[" {
             self.reader_back(window, cx);
-            cx.stop_propagation();
-            return;
-        }
-        // --- read/unread --- ⌘A picks every post the Reader's list shows
-        // (the search field's own ⌘A is the field's).
-        if self.reading.view == View::Reading
-            && self.reading.mode == stream_vm::ReadMode::Reader
-            && k.modifiers.platform
-            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
-            && k.key == "a"
-        {
-            self.pick_all(cx);
             cx.stop_propagation();
             return;
         }
@@ -1171,6 +1164,19 @@ impl MainView {
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);
+                true
+            }
+            // --- ux 0.28 --- esc on the Agentic feed closes the post: the
+            // edition takes the reading pane again.
+            (View::Reading, "escape")
+                if !stream
+                    && self.reading.opened.is_some()
+                    && self.reading.source
+                        == sources_vm::Source::Smart(sources_vm::Smart::Agentic) =>
+            {
+                self.reading.opened = None;
+                self.set_pane(sources_vm::Pane::List, cx);
+                cx.notify();
                 true
             }
             (View::Reading, "/") => {

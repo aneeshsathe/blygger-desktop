@@ -34,6 +34,8 @@ mod reader_order;
 mod reading;
 mod save_if_base;
 mod scratch;
+mod shell_scripts;
+mod studio071;
 mod sync;
 mod syndication_contract;
 mod test_first_script;

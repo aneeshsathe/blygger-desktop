@@ -28,6 +28,8 @@ mod dev_flags;
 mod fake;
 mod fonts;
 mod images;
+#[cfg(test)]
+mod key_handlers_tests;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;
@@ -45,6 +47,8 @@ mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
+#[cfg(test)]
+mod windows_keys_tests;
 // The WebView2 hosting shared by the preview and the browser pane.
 #[cfg(all(target_os = "windows", not(test)))]
 mod webview2_host;
@@ -79,6 +83,12 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = cli::run(&args) {
         return code;
+    }
+    // Past `--version`, `--help` and every `+action`: this is an app start.
+    // Before any window, config or backend work.
+    if let Err(e) = dev_flags::refuse_ignored() {
+        eprintln!("blygger: {e}");
+        return ExitCode::from(2);
     }
     let launched = Instant::now();
 

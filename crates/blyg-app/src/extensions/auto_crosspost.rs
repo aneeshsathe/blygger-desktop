@@ -43,6 +43,23 @@ pub(crate) struct Auto {
     running: Option<(LocalId, String, String)>,
 }
 
+/// Which macro run ended, for `auto_crosspost_after_run`: its post (a
+/// macro on a published post makes a copy of one; `None` otherwise), its
+/// extension and its macro id.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Ran<'a> {
+    pub post: Option<&'a LocalId>,
+    pub ext: &'a str,
+    pub macro_id: &'a str,
+}
+
+impl Ran<'_> {
+    /// It is the queued run `(post, extension, macro id)`.
+    fn is(&self, queued: &(LocalId, String, String)) -> bool {
+        self.post == Some(&queued.0) && self.ext == queued.1 && self.macro_id == queued.2
+    }
+}
+
 /// A macro's key in the choices.
 pub fn macro_key(ext: &str, id: &str) -> String {
     format!("{ext}/{id}")
@@ -62,6 +79,22 @@ pub fn goes_on_after(out: &Outcome) -> bool {
             | Outcome::Cancelled {
                 after_submit: false
             }
+    )
+}
+
+/// A chip's text: its tick and its site (`☑ Bluesky`). The chips are
+/// clicked; the keyboard's way to a site is the palette (`keys_hint`).
+pub fn chip_label(site: &str, on: bool) -> String {
+    let tick = if on { "☑" } else { "☐" };
+    format!("{tick} {site}")
+}
+
+/// The line under the chips: the keyboard's way to them (the palette's
+/// "Cross-post automatically to <site>" rows), and what ticking one means.
+pub(crate) fn keys_hint() -> &'static str {
+    crate::keymap::hint(
+        "Or ⇧⌘P and type “automatically” to pick one by keyboard. Remembered for this post. \
+         Each one still shows you the text, and posts only when you click Post.",
     )
 }
 
@@ -123,7 +156,24 @@ impl MainView {
     }
 
     /// Turn cross-posting to one site on (`on`) or off for post `id`, and
-    /// write it to `state.json`.
+    /// write it to `state.json` (in the tour, for the session only).
+    pub(crate) fn auto_crosspost_set(
+        &mut self,
+        id: &LocalId,
+        ext: &str,
+        macro_id: &str,
+        on: bool,
+        cx: &App,
+    ) {
+        self.auto_set_choice(id, ext, macro_id, on, cx);
+    }
+
+    /// Forget the choices read, so the next use reads `state.json` again
+    /// (the tour's sample choice goes with the tour).
+    pub(crate) fn auto_crosspost_reload(&mut self) {
+        self.ext.auto.chosen = None;
+    }
+
     fn auto_set_choice(&mut self, id: &LocalId, ext: &str, macro_id: &str, on: bool, cx: &App) {
         let key = post_key(&self.auto_host(cx), id);
         let m = macro_key(ext, macro_id);
@@ -137,6 +187,9 @@ impl MainView {
         let now: Vec<String> = set.iter().cloned().collect();
         if now.is_empty() {
             chosen.remove(&key);
+        }
+        if self.ext_tour_on() {
+            return; // --- onboarding --- the sample's, never written.
         }
         if let Some(d) = Self::tray_data_dir(cx) {
             let _ = blyg_core::state::AppState::update(&d, |s| {
@@ -217,23 +270,33 @@ impl MainView {
         self.auto_crosspost_next(window, cx);
     }
 
-    /// Hook (a macro run ended with `out`; `listed`: its copy was recorded
-    /// on the post): a queued run that posted without a record turns its
-    /// site off for the post, which couldn't tell next time. Then start the
-    /// next queued run, or, when the page still needs the user, stop the
-    /// rest. What to add to the run's toast in that case.
+    /// Hook (macro run `ran` ended with `out`; `listed`: its copy was
+    /// recorded on the post): a queued run that posted without a record
+    /// turns its site off for the post, which couldn't tell next time. Then
+    /// start the next queued run, or, when the page still needs the user,
+    /// stop the rest. What to add to the run's toast in that case.
+    ///
+    /// A queued run counts as running from the moment it's handed over,
+    /// while its text is still being prepared and no macro runs in the pane:
+    /// another run (a manual one) can start and end in that gap. Its end
+    /// leaves the queued run, its choice and the rest of the queue alone.
     pub(crate) fn auto_crosspost_after_run(
         &mut self,
+        ran: Ran<'_>,
         out: &Outcome,
         listed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
-        if let Some((id, ext, macro_id)) = self.ext.auto.running.take()
-            && out.counts_as_post()
-            && !listed
-        {
-            self.auto_set_choice(&id, &ext, &macro_id, false, cx);
+        match self.ext.auto.running.take() {
+            Some(queued) if !ran.is(&queued) => {
+                self.ext.auto.running = Some(queued);
+                return None;
+            }
+            Some((id, ext, macro_id)) if out.counts_as_post() && !listed => {
+                self.auto_set_choice(&id, &ext, &macro_id, false, cx);
+            }
+            _ => {}
         }
         if self.ext.auto.queue.is_empty() {
             return None;
@@ -365,7 +428,7 @@ impl MainView {
                     .when(on, |d| d.text_color(p.accent))
                     .cursor_pointer()
                     .hover(|s| s.border_color(p.accent))
-                    .child(format!("{} {}", if on { "☑" } else { "☐" }, m.site.title))
+                    .child(chip_label(&m.site.title, on))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_auto_crosspost(&pid, &ext, &macro_id, cx)
                     })),
@@ -376,13 +439,12 @@ impl MainView {
                 .child(row)
                 .child(
                     div()
+                        .id("auto-crosspost-keys")
+                        .debug_selector(|| "auto-crosspost-keys".into())
                         .mt(px(4.))
                         .text_size(px(11.5))
                         .text_color(p.muted)
-                        .child(
-                            "Remembered for this post. Each one still shows you the text, \
-                             and posts only when you click Post.",
-                        ),
+                        .child(keys_hint()),
                 )
                 .into_any_element(),
         )

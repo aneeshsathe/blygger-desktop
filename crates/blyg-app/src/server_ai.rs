@@ -33,7 +33,13 @@ gpui_kit::actions!(
 );
 
 /// The one line that tells this sheet from Settings › AI.
-pub const DIFFERENCE: &str = "These models run on your blyg, for things your blyg does: TK filled on the server, change notes, the change classifier. Burrow's own AI (Settings › AI) runs from this computer and is set up there.";
+pub const DIFFERENCE: &str = "These models run on your blyg, for what your blyg does: TK filled on the server, Catch up's summaries, change notes and their labels. Burrow's own AI runs from this computer: Settings › AI.";
+
+/// Where the models and their keys come from, in plain words (user
+/// testing, 0.28: it said "models.json" and "wrangler").
+pub const MODELS_FROM: &str = "Your blyg's studio decides which models it offers and keeps their keys; whoever runs your blyg changes them there.";
+/// [`MODELS_FROM`] when the studio adds models of its own.
+pub const MODELS_FROM_LOCAL: &str = "Your blyg's studio decides which models it offers (some added just for your blyg) and keeps their keys.";
 
 // --- dictionary --- Blyg › Dictionary… (studio 0.69), a sheet beside this one.
 #[path = "dictionary.rs"]
@@ -52,16 +58,18 @@ pub enum Row {
 }
 
 /// The rows, in order.
+/// Studio 0.69's text helpers and Agentic feed come right after TK, above
+/// the fold (user testing, 0.28: they were at the bottom).
 pub const ROWS: [Row; 9] = [
     Row::Model(AiFunction::Tk),
+    Row::Model(AiFunction::Helpers),
+    Row::Model(AiFunction::Feed),
     Row::Model(AiFunction::Changelog),
     Row::AutoNotes,
     Row::Model(AiFunction::Classify),
     Row::CategoryInNote,
     Row::JudgeImported,
     Row::FlagDisagreement,
-    Row::Model(AiFunction::Helpers),
-    Row::Model(AiFunction::Feed),
 ];
 
 /// A row's place in [`ROWS`].
@@ -585,16 +593,13 @@ impl MainView {
                     .line_height(relative(1.45))
                     .child(line),
             );
-            body = body.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(p.muted)
-                    .child(if s.models.local {
-                        "Models come from your studio's models.json and its models.local.json; keys are Worker secrets."
-                    } else {
-                        "Models come from your studio's models.json; keys are Worker secrets, set with wrangler."
-                    }),
-            );
+            body = body.child(div().text_size(px(11.)).text_color(p.muted).child(
+                if s.models.local {
+                    MODELS_FROM_LOCAL
+                } else {
+                    MODELS_FROM
+                },
+            ));
         }
         let row = |i: usize, label: &'static str, value: String, enabled: bool| {
             let selected = i == s.sel;
@@ -690,6 +695,48 @@ impl MainView {
                 ))
                 .child(area(&s.style, 56.))
             })
+            .when(row_shown(Row::Model(AiFunction::Helpers), &s.settings), |d| {
+                d.child(section("TEXT HELPERS"))
+                    .child(row(
+                        ix(Row::Model(AiFunction::Helpers)),
+                        "Model",
+                        model_value(AiFunction::Helpers),
+                        true,
+                    ))
+                    .children(other_box(AiFunction::Helpers))
+                    .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
+                        "Small writing jobs you and your agents ask your blyg for, such as Catch up's summary. Each is written once for the versions it reads and kept. None uses the change-notes model.",
+                    ))
+            })
+            .child(section("AGENTIC FEED"))
+            .when(s.settings.agentic_title.is_some(), |d| {
+                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
+                    "Tab name: what you call it in Reading, and the heading of each edition",
+                ))
+                .child(
+                    crate::theme_ext::field_box(div(), theme)
+                        .mx(px(8.))
+                        .mt(px(2.))
+                        .px(px(10.))
+                        .py(px(6.))
+                        .text_size(px(13.))
+                        .debug_selector(|| "server-ai-agentic-title".into())
+                        .child(gpui_kit::base::input::Input::new(&s.agentic_title)),
+                )
+            })
+            .child(row(
+                ix(Row::Model(AiFunction::Feed)),
+                "Model · not used yet",
+                model_value(AiFunction::Feed),
+                true,
+            ))
+            .children(other_box(AiFunction::Feed))
+            .when(s.settings.feed_prompt.is_some(), |d| {
+                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
+                    "Agentic feed prompt: how your assistant should organize what you read",
+                ))
+                .child(area(&s.feed, 56.))
+            })
             .child(section("CHANGE NOTES"))
             .child(row(
                 ix(Row::Model(AiFunction::Changelog)),
@@ -754,47 +801,6 @@ impl MainView {
                     switch(Some(judging.flag_on)),
                     true,
                 ))
-            })
-            .when(row_shown(Row::Model(AiFunction::Helpers), &s.settings), |d| {
-                d.child(section("TEXT HELPERS"))
-                    .child(row(
-                        ix(Row::Model(AiFunction::Helpers)),
-                        "Model",
-                        model_value(AiFunction::Helpers),
-                        true,
-                    ))
-                    .children(other_box(AiFunction::Helpers))
-                    .child(div().mx(px(8.)).text_size(px(11.)).text_color(p.muted).child(
-                        "Small writing jobs you and your agents ask your blyg for, such as Catch up's summary. Each is written once for the versions it reads and kept. None uses the change-notes model.",
-                    ))
-            })
-            .child(section("AGENTIC FEED"))
-            .when(s.settings.agentic_title.is_some(), |d| {
-                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
-                    "Tab name: what you call it in Reading, and the heading of each edition",
-                ))
-                .child(
-                    crate::theme_ext::field_box(div(), theme)
-                        .mx(px(8.))
-                        .mt(px(2.))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .text_size(px(13.))
-                        .child(gpui_kit::base::input::Input::new(&s.agentic_title)),
-                )
-            })
-            .child(row(
-                ix(Row::Model(AiFunction::Feed)),
-                "Model · not used yet",
-                model_value(AiFunction::Feed),
-                true,
-            ))
-            .children(other_box(AiFunction::Feed))
-            .when(s.settings.feed_prompt.is_some(), |d| {
-                d.child(div().mx(px(8.)).mt(px(4.)).text_size(px(11.5)).text_color(p.muted).child(
-                    "Agentic feed prompt: how your assistant should organize what you read",
-                ))
-                .child(area(&s.feed, 56.))
             });
         body = body.child(rows);
         if let Some(e) = &s.error {

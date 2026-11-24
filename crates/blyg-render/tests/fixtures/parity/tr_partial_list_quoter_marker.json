@@ -1,0 +1,21 @@
+{
+  "name": "tr_partial_list_quoter_marker",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> - Small tools",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · excerpt of v3</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3,
+      "selector": {
+        "exact": "Small tools",
+        "suffix": ", used daily, beat big tools use"
+      }
+    }
+  ],
+  "errors": []
+}

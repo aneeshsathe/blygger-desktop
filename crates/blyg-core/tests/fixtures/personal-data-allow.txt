@@ -61,3 +61,4 @@ email 192.168.1.1@gmail.com | linkify-it test vector
 email someone@ibm.com | linkify-it test vector
 email test@google.com | linkify-it test vector
 email a.b+c@example.co.uk | invented (linkify edge cases)
+github github.com/blygger/blygger-spec | the Blygger spec, upstream (the conformance pin)

@@ -33,6 +33,16 @@ pub fn kind_label(s: Smart) -> &'static str {
     }
 }
 
+/// An order's name, wherever it's chosen (the reading header, Settings ›
+/// READER ORDER): the studio's words, as `ReaderOrder::label` has them,
+/// written here so the tour's quotes of it are checked against the app.
+pub fn order_label(o: ReaderOrder) -> &'static str {
+    match o {
+        ReaderOrder::PaceLayered => "Pace-layered",
+        ReaderOrder::Newest => "Chronological",
+    }
+}
+
 /// The Feed's order and each row's place in it.
 #[derive(Debug, Default)]
 pub struct Feed {

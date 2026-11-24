@@ -109,6 +109,24 @@
 | ⏎ | Macro Post sheet: post |  |
 | esc | Macro Preview or Post sheet: cancel |  |
 
+### On the Site sheet
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘⏎ | Site sheet: save |  |
+
+### In the Reader's list
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘A | Reader: pick every post the list shows (r marks them read, u unread) |  |
+
+### In the About window
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘W | About window: close it |  |
+
 ### In the menus, without a key
 
 | What it does | Menu |

@@ -161,7 +161,8 @@ impl MainView {
         }
         let p = self.palette.on_page();
         let corner = self.theme.corner(5.);
-        let seg = |id: String, label: &'static str, on: bool| {
+        // `group`: the control's name, for the label's selector (tests).
+        let seg = |group: &'static str, id: String, label: &'static str, on: bool| {
             div()
                 .id(SharedString::from(id.clone()))
                 .debug_selector(move || id.clone())
@@ -173,7 +174,11 @@ impl MainView {
                 .when(!on, |d| {
                     d.text_color(p.muted).hover(|s| s.text_color(p.ink))
                 })
-                .child(label)
+                .child(
+                    div()
+                        .debug_selector(move || format!("{group}-label-{label}"))
+                        .child(label),
+                )
         };
         let group = |id: &'static str| {
             div()
@@ -195,6 +200,7 @@ impl MainView {
         if kinds {
             row = row.child(group("feed-kinds").children(KINDS.map(|s| {
                 seg(
+                    "feed-kind",
                     format!("feed-kind-{}", kind_label(s).to_lowercase()),
                     kind_label(s),
                     *source == Source::Smart(s),
@@ -207,13 +213,16 @@ impl MainView {
         if order {
             let now = self.reading.feed.order;
             row = row.child(group("feed-order").children(ReaderOrder::ALL.map(|o| {
-                let label = match o {
-                    ReaderOrder::PaceLayered => "Pace-layered",
-                    ReaderOrder::Newest => "Chronological",
-                };
-                seg(format!("feed-order-{}", o.as_str()), label, now == o)
-                    .tooltip(move |_, cx| cx.new(|_| super::Tip(o.hint().to_string())).into())
-                    .on_click(cx.listener(move |this, _, _, cx| this.set_reader_order(o, cx)))
+                // The studio's words, as Settings › READER ORDER says them.
+                let label = order_label(o);
+                seg(
+                    "feed-order",
+                    format!("feed-order-{}", o.as_str()),
+                    label,
+                    now == o,
+                )
+                .tooltip(move |_, cx| cx.new(|_| super::Tip(o.hint().to_string())).into())
+                .on_click(cx.listener(move |this, _, _, cx| this.set_reader_order(o, cx)))
             })));
         }
         Some(row.into_any_element())
@@ -225,12 +234,11 @@ impl MainView {
         let theme = &*self.theme;
         let now = self.reading.feed.order;
         let mut col = div().flex().flex_col().gap(px(6.));
-        for o in [ReaderOrder::Newest, ReaderOrder::PaceLayered] {
+        // The reading header's words, in its order (`ReaderOrder::label`,
+        // the studio's): one name for each order wherever it's chosen.
+        for o in ReaderOrder::ALL {
             let on = now == o;
-            let label = match o {
-                ReaderOrder::Newest => "Newest first",
-                ReaderOrder::PaceLayered => "Pace-layered",
-            };
+            let label = order_label(o);
             let id = format!("reader-order-{}", o.as_str());
             col = col.child(
                 div()
@@ -251,7 +259,11 @@ impl MainView {
                             .cursor_pointer()
                             .hover(|s| s.border_color(p.accent).bg(p.hover()))
                             .child(if on { "●" } else { "○" })
-                            .child(label)
+                            .child(
+                                div()
+                                    .debug_selector(move || format!("reader-order-label-{label}"))
+                                    .child(label),
+                            )
                             .on_click(
                                 cx.listener(move |this, _, _, cx| this.set_reader_order(o, cx)),
                             ),

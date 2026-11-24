@@ -1,0 +1,21 @@
+{
+  "name": "tr_partial_text_details_figure",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]\n> More\n>\n> Hidden text\n>\n> A drawing\n>\n> Fig. 1",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq4\" data-blyg-version=\"1\">\n<p>More</p>\n<p>Hidden text</p>\n<p>A drawing</p>\n<p>Fig. 1</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq4/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq4",
+      "version": 1,
+      "selector": {
+        "exact": "More\nHidden text\nA drawing\nFig. 1",
+        "prefix": "ing holes\nbodkin\na blunt needle\n"
+      }
+    }
+  ],
+  "errors": []
+}

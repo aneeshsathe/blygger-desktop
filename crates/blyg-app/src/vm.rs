@@ -769,26 +769,7 @@ pub fn remove_placeholder(text: &str) -> Option<String> {
 /// replace and the text to put there (common prefix/suffix trimmed, on char
 /// boundaries).
 pub fn splice<'a>(old: &str, new: &'a str) -> (Range<usize>, &'a str) {
-    let mut pre = old
-        .bytes()
-        .zip(new.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(pre) || !new.is_char_boundary(pre) {
-        pre -= 1;
-    }
-    let max_suf = (old.len() - pre).min(new.len() - pre);
-    let mut suf = old
-        .bytes()
-        .rev()
-        .zip(new.bytes().rev())
-        .take(max_suf)
-        .take_while(|(a, b)| a == b)
-        .count();
-    while !old.is_char_boundary(old.len() - suf) || !new.is_char_boundary(new.len() - suf) {
-        suf -= 1;
-    }
-    (pre..old.len() - suf, &new[pre..new.len() - suf])
+    blyg_core::text::splice(old, new)
 }
 
 /// Where a caret at `cursor` ends up after replacing `range` with `inserted` bytes.

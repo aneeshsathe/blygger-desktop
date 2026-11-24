@@ -48,6 +48,11 @@ gpui_kit::actions!(
 /// read it again.
 pub const READ_EVERY: Duration = Duration::from_secs(300);
 
+/// The sheet's first lines. Short (user testing, 0.28): Learn Spelling
+/// unlearns on this computer only a word it taught it (`settle`).
+pub const INTRO: &str = "Words your blyg's spellcheck accepts, in every app you write in. \
+     Learn Spelling adds one; remove it here and this computer unlearns it too.";
+
 /// What the sheet says to a sign-in that can't change the dictionary.
 pub const READ_ONLY_NOTE: &str = "This sign-in can read your blyg's dictionary but can't add words \
      to it. Learn Spelling keeps a word on this computer only.";
@@ -440,14 +445,7 @@ impl MainView {
                     .text_size(px(13.))
                     .child("Your blyg's dictionary"),
             )
-            .child(muted(
-                "Words your blyg's spellcheck accepts, in Burrow, in Studio and in every other \
-                 client. Learn Spelling in the editor adds a word here too. When a word \
-                 Burrow's Learn Spelling taught this computer leaves your blyg's dictionary, \
-                 here or in Studio, it's unlearned on this computer too; a word this computer \
-                 learned any other way is never touched."
-                    .into(),
-            ));
+            .child(muted(INTRO.into()));
         let d = match &s.load {
             DictLoad::Loading => {
                 return (

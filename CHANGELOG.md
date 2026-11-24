@@ -22,6 +22,608 @@ teaches something new in the tour, set the newest entry's `version` in
 Pending changes are fragments in `changes/unreleased/`; the release stitches
 them in here.
 
+## [0.28.0] - 2026-11-23
+
+Burrow 0.28.0 syncs to blygger-studio 0.71 (contract 6.3.0). It reads the
+studio's tabs, the pace-layered Feed, the Agentic feed's edition and your
+blyg's dictionary; asks before ⌘G on your blyg generates past a link it
+can't read, and lists what each generation read; and lets you choose what
+counts an entry as read. It fixes a data loss where editing a post whose
+generated text read a web page dropped that disclosure on a 0.70+ blyg, and
+lets you keep typing while your blyg generates.
+
+### Added
+- **Cross-post automatically, per post.** The Publish sheet has **Then
+  cross-post to** with a chip per granted cross-post site (Substack Notes,
+  Bluesky, Farcaster). Tick one, and every time that post is published
+  Burrow starts that cross-post by itself, one site after another. ⇧⌘P with
+  the post open has **Cross-post automatically to <site>: on/off** rows to
+  turn each one on or off. The choice is remembered per post (in
+  `state.json`, never on your blyg), and other posts are unaffected. It only
+  starts the run: each one still shows the text and posts only when you
+  click Post. Cancelling one skips to the next. A run that leaves the page
+  to you stops the rest, and its toast names the sites still to do. Each
+  site posts once per post: a later publish skips a site the post's copies
+  elsewhere already list, and a run that posted without recording its copy
+  turns that site off for the post
+  (`crates/blyg-app/src/extensions/auto_crosspost.rs`). Thanks to @patwater
+  ([#83](https://github.com/aneeshsathe/blygger-desktop/pull/83)).
+- **Docs: cross-posting on Windows, step by step.** The extensions guide has
+  a numbered path for Windows: turning cross-post on from Menu › Post ›
+  Extensions…, choosing the sites in the consent sheet, signing in to each
+  site once in the pane, and the two sheets with their Windows keys. The
+  install guide links to it, and says how Esc works on Windows. Thanks to
+  @patwater ([#83](https://github.com/aneeshsathe/blygger-desktop/pull/83)).
+- **AI: ⌘G on your blyg asks before generating past a link it can't read**
+  (blygger-studio 0.70). With the blyg as the provider, a sheet says how many
+  links in this TK could not be read and asks whether to generate anyway.
+  Details names the failed links (open by itself when three or fewer failed;
+  `d` shows or hides it). ⏎ generates anyway, esc leaves the draft alone and
+  says to remove or replace the link, and ⏎ while another AI job runs keeps
+  the sheet and says why. Local providers are unchanged.
+  `crates/blyg-app/src/ai/checkpoint.rs`.
+- **AI: what each generation read** (blygger-studio 0.70). Under the
+  preview and in the Publish sheet, each TK lists the posts it drew on (by
+  title, opening on a click; never by id) and the web pages it read. Only
+  entries that tell someone are marked. Posts you read list the same, under
+  the same TK numbers, when their publisher disclosed it. Long lists show
+  the first 50 entries and scroll, so the Publish sheet's keys stay on
+  screen. `crates/blyg-app/src/ai/read.rs`, `crates/blyg-app/src/studio/reader.rs`.
+- **Reading: Count an entry as read** (blygger-studio 0.70). Settings ›
+  READ MARKS offers the studio's choice (when I see it, when I open it, only
+  when I mark it), each with what it means, reachable by ⇥. Your blyg keeps
+  it: connecting or switching blygs puts the blyg's choice in force at once,
+  and a change made in Studio on the web is picked up when Burrow's window
+  comes back to the front. "When I see it" uses the studio's rule and sends
+  marks in batches; marks still waiting are written when Burrow quits, the
+  window closes or the blyg changes, always to the blyg they were seen on. A
+  value Burrow doesn't know reads as "when I open it". Without the setting,
+  Burrow's earlier marks hold. `crates/blyg-app/src/reading/count_read.rs`.
+- **Reading: a card's date opens its post** in the stream's side pane, and a
+  Reader row's date opens it too; both underline on hover.
+- **Tour: "When your blyg can't read a link"** in the AI and TK tour, the
+  first step What's new shows: ⌘G on the tour's sample blyg stops at the
+  checkpoint sheet, with Details (d), ⏎ and esc live, and lists what it read
+  under the preview (`crates/blyg-app/src/onboarding/tutorial.rs`).
+- **Tour: "Open a post from its date"** in the reading tour highlights a
+  card, has you click its date, and points to READ MARKS.
+- **Reading: blygger-studio 0.68's tabs.** The Reader's sources now have the
+  studio's Feed (the All feed, renamed), Agentic feed (a placeholder, as
+  upstream; its prompt is Settings › AI's *Agentic feed prompt*), Saved,
+  Background and Raw (what came in, newest first, with nothing moved to
+  Background or folded). Burrow's other sources stay
+  (`crates/blyg-app/src/reading/feed.rs`, `reading/sources_vm.rs`).
+- **Reading: the pace-layered Feed.** The Feed is pace-layered by default,
+  ported from the studio's reader order: new posts arrive on top and sink as
+  others come, more slowly the more their blyg pinned them, and a new version
+  climbs one place. Chronological is newest first. The choice is in the
+  reading header and in Settings › READER ORDER, and is saved on the blyg as
+  `readerOrder` (studio 0.68), else on this computer
+  (`crates/blyg-core/src/pace.rs`, `order.rs`). Mentions and Background
+  follow it too, as in the studio. The order approximates the studio's: it
+  is worked out on this computer, a version counts as maintenance (and
+  doesn't climb) only when your blyg's Background says so, so switching
+  such a rule off makes those versions climb, and a post you haven't opened
+  counts as its first and latest versions. By default, posts edited since
+  you read them are no longer listed on top: a new version climbs one
+  place. Chronological keeps the old order, edits on top.
+- **Background: four more rules (studio 0.68).** Quotes refreshed, Including
+  rewritten quotes, Small edits and Followed within 15 minutes, each with its
+  badge and a switch in Settings, on by default; Including rewritten quotes
+  acts only while Quotes refreshed is on (`crates/blyg-core/src/background.rs`,
+  `change_size.rs`).
+- **Reading: the shelf is called Saved**, as studio 0.68 calls it: “+ Save” and
+  “✓ Saved” under a post, Post › Saved… (⌘B) and Post › Save / Remove from
+  Saved (⌥⌘B; Ctrl+B and Ctrl+Shift+A on Windows), with the toast “Added to
+  Saved”. Display only: nothing stored or synced is renamed.
+- **Reading: the Agentic feed shows its edition (blygger-studio 0.69).** When
+  an assistant has written an edition on your blyg (`PUT
+  /api/agentic/default`), the Agentic feed tab draws it as Studio does: a
+  masthead with the edition's title, its lede and who wrote it ("✦ written
+  by your assistant"), then its sections, each post as a card with the
+  assistant's headline, summary and reason. Posts not yet on this computer
+  say so and arrive with the next sync. The tab takes the blyg's name for it
+  (`agenticTitle`). Burrow reads editions only; it never writes one
+  (`crates/blyg-app/src/reading/agentic.rs`, `crates/blyg-core/src/agentic.rs`).
+- **Catch up: the blyg's summary first.** On a studio offering
+  `summarizeCatchUp`, Catch up's summary (s) is asked of your blyg's text
+  helpers model, written once per set of versions and kept there; Burrow's
+  own AI writes it when the blyg doesn't offer one, can't write it, or
+  "whole conversation" is on (`crates/blyg-app/src/reading/catchup.rs`).
+- **Blyg › Dictionary…: your blyg's spellcheck words.** On studio 0.69 the
+  blyg keeps a dictionary shared with Studio and other clients. Burrow's
+  spellcheck accepts every word in it, Learn Spelling in the editor adds the
+  word there too, and Blyg › Dictionary… lists your words, adds and takes
+  them out (a write that meets another client's merges onto it; one made
+  offline waits on this computer and is sent when the blyg is back, and only
+  to that blyg). A word Burrow's Learn Spelling taught this computer is
+  unlearned here once it leaves your blyg's dictionary, here or in Studio;
+  words this computer learned any other way are never touched. A sign-in
+  that can read the dictionary but not change it keeps Learn Spelling's
+  words on this computer, and the sheet says so. Installed sets are listed
+  by name (`crates/blyg-app/src/dictionary.rs`,
+  `crates/blyg-core/src/dictionary.rs`).
+- **Blyg › AI on Your Blyg…: studio 0.69's settings.** A text helpers model,
+  the Agentic feed tab's name, and, under the change classifier, judging
+  other blygs' changes (with an optional instruction, and keeping a post in
+  view when its note understates the change). Each shows only where the
+  studio has its key, and saving sends only what's shown
+  (`crates/blyg-app/src/server_ai.rs`).
+
+### Changed
+- **Responses: a response opens its post in Burrow.** On the Responses
+  screen (⇧⌘M), clicking who responded, or ⏎ on the row cursor, opens the
+  post that mentioned yours in the reader, as a blyg link in a post does,
+  rather than in the default browser. Its ↗ now opens the post's page in
+  Burrow's browser pane (where links go; the default browser if the pane is
+  off), not straight in the default browser; **o** on the row cursor still
+  opens the default browser, and the header says so ("⏎ open · o open in
+  browser ↗"). **On “…”** above each group opens your own post, the one
+  those responses point at, in Posts, and underlines on hover as a link does
+  (`crates/blyg-app/src/reading/mentions.rs`).
+  Thanks to @patwater
+  ([#83](https://github.com/aneeshsathe/blygger-desktop/pull/83)).
+- **Quotes read text as the spec defines it** (blygger-studio 0.71, spec §2,
+  decision #118). A partial quote's text now breaks at the start and end of
+  every block: list items and lists, table cells and rows, definition lists,
+  `div`s, figures, sections, `details` and `summary`, as well as paragraphs,
+  headings, `br` and `hr`. A tight list item and the list nested in it are
+  two lines, so a quote of both keeps the nesting, and table cells are
+  quoted one per line. A draft quoting a parent item and its nested item as
+  one line, or a table row as one line, now shows "quoted passage not found"
+  until the quote is split into lines; a quote highlighted in the Reader
+  across table cells comes in as an ordinary blockquote. An unlabelled
+  `[[id]]` link's excerpt no longer runs table cells together
+  (`crates/blyg-render/src/links.rs`).
+- **A partial quote of list items keeps its bullets** (blygger-studio 0.69,
+  spec §16.15, decision #114). Quoted lines that are list items in the
+  quoted post bake as list items, in a list like the original's: an ordered
+  run keeps its first number, and nesting is kept where both lines are
+  quoted. The structure comes from the quoted post, never from the markers
+  you type. Before, they baked as paragraphs
+  (`crates/blyg-render/src/transclusion.rs`). The preview's parity fixtures
+  come from Studio 0.71 (`docs/RENDER.md`).
+- **Tour: the automatic cross-post step shows what it teaches.** The tour
+  runs a sample cross-post, opens the sample's published post set to
+  cross-post to Bluesky, and waits for ⇧⌘P, whose rows for the post (one on,
+  two off) are the ones the caption describes. Its macros and "Open <site>"
+  rows say what they would do and load nothing (`extensions/tour.rs`).
+- **Publish sheet: the line under the "Then cross-post to" chips names the
+  keyboard's way to them.** "Or ⇧⌘P and type “automatically” to pick one by
+  keyboard" (Ctrl+Shift+P on Windows): the palette's "Cross-post
+  automatically to <site>" rows reach every site. The chips themselves are
+  clicked (`extensions/auto_crosspost.rs`).
+- **Extensions palette: a long list scrolls under its heading,** with the
+  key row always in view; ↑/↓ keep the chosen row in view, and the tenth row
+  has a key (0). A macro whose title names its site no longer repeats it
+  ("Cross-post to Bluesky…", not "Cross-post to Bluesky… ↗ Bluesky").
+- **A blyg on a newer studio: the toast speaks plainly.** No contract number;
+  it says the blyg's studio is newer than this Burrow, and on Windows, where
+  there's no updater, that the newest Burrow is on the Releases page on
+  GitHub (`server_notice.rs`).
+- **Windows: the browser pane's first Esc says what it did.** "Keyboard back
+  in Burrow · Esc again closes the pane", so that Esc no longer looks like it
+  did nothing. The guides say "closes" for the second Esc throughout.
+- **Shorter Dictionary intro; AI on Your Blyg puts studio 0.69's rows
+  first.** The text helpers' model and the Agentic feed's tab name come right
+  after TK, and the header says where models and keys come from without
+  "models.json" or "wrangler". The sample Catch up summary is about the
+  sample thread (quotes and links).
+- **Development: `BLYGGER_TEST_SPELLING=windows` works in debug builds.** A
+  `burrow-verify.sh` scene shows the app's text as Windows spells it (read
+  through `DevFlags`); release builds ignore it.
+- **Reading: one name for the reader order.** Settings › READER ORDER now
+  says what the reading header says, in the same order: Pace-layered and
+  Chronological (the studio's words), not "Newest first"
+  (`crates/blyg-app/src/reading/feed.rs`).
+- **Agentic feed: the edition is a page.** With no post open, the edition
+  (masthead, sections and cards) takes the reading pane in larger type, as
+  the studio sets it, rather than the list column beside an empty pane. A
+  card, or j/k, opens its post with the edition beside it; esc brings the
+  page back (`crates/blyg-app/src/reading/agentic.rs`, `reading/list.rs`).
+- **Reading: formulas in cards read as text.** Agentic feed cards and stream
+  cards showed TeX (`$e^{i\pi}$`, `\int_0^1 …`). A formula now reads as
+  text, `e^(iπ)` or `∫₀¹ x² dx = 1/3`, in the post's words, the
+  assistant's headline and summary, and the stream; the Reader still draws
+  it (`crates/blyg-app/src/reading/maths_text.rs`, `reading/stream.rs`).
+- **Saved: the empty list names the key.** "Nothing saved yet. ⌥⌘B or
+  “+ Save” on any post puts it here" (Ctrl+Shift+A on Windows)
+  (`crates/blyg-app/src/reading/sources_vm.rs`).
+- **Reading: copies elsewhere show on every stream card.** When an author
+  lists where else they posted something (`syndication`, studio 0.67.1),
+  each stream card says "the author says it is also at …" under its source
+  line, and so does the full view, however it was opened. The wording is
+  Studio's. A click on a copy opens it and leaves the card alone
+  (`crates/blyg-app/src/syndication_ui.rs`).
+- **Sync: studio 0.67+ without `/changes`.** The real-studio e2e now checks
+  sync on a studio that has removed `GET /api/changes` (contract 6.0.0):
+  one 404, then conditional reads only, an idle pull that reads only the
+  reading list's first page, and settings writes that keep `readerOrder`
+  and the new Background rules (contract 6.1.0). Copies elsewhere follow
+  the released `getSyndication`/`putSyndication` shapes
+  (`crates/blyg-core/tests/it/syndication_contract.rs`).
+- **Mentions read in natural grammar** (blygger-studio 0.66). On a blyg that
+  turns `@handle`s into contact cards and runs Studio 0.66 or later,
+  `@lin's notes` and an `@lin-driven agenda` both name Lin in the preview: a
+  handle that names no contact falls back to the longest part before a `-`
+  or `_` that does, and an exact or longer handle still wins. There, picking
+  a contact from the `@` popup writes `@handle ` with a space, as Studio
+  does; a possessive, hyphen or closing punctuation typed straight after the
+  pick takes the space's place, and one undo takes it back to the pick (a
+  dead key or input method leaves the space, as in `@lin '`). On
+  Studio 0.56 to 0.65, which publish `@lin-driven` as plain text, the preview
+  and the pick work as before, as they do until Burrow has seen which Studio
+  the blyg runs (it remembers that across launches).
+- **The `[[` / `![[` picker stays shut in a finished reference** (blygger-studio
+  0.66). Retyping a bracket of a `[[id | label]]` or `![[id]]` that a `]]`
+  already closes no longer opens the picker, and the picker closes once you
+  type a label's `|`. Shift+Enter stays a plain new line, as Studio now has
+  it.
+- **A fragment's quote line says what to do instead** (blygger-studio 0.67).
+  The publish refusal, the status bar and the preview warning for an
+  own-line `![[id]]` in a fragment now say "make this a thread, or link it
+  with [[id]]", as Studio does, which now refuses the line too. The preview's
+  parity fixtures come from Studio 0.68 (`docs/RENDER.md`).
+- **Sync: a blyg on a newer studio keeps syncing.** When a blyg's studio moves to
+  an API contract newer than this Burrow knows (or one that isn't a number),
+  Burrow no longer stops syncing until it's updated. It syncs what the blyg's
+  capabilities offer, sends your posts and changes as usual, and says once a
+  session "Your blyg runs a newer studio". Until Burrow is updated it removes
+  nothing on this Mac on that studio's word: items, reading posts,
+  subscriptions, hoppers, thumbs, read marks, contacts and Saved posts it
+  doesn't list stay here (`api::Contract::Newer`, `api::Prune`,
+  `sync/newer.rs`). The contract is checked again while Burrow runs, so a
+  studio upgraded mid-session is seen before anything is removed. Saved is
+  read but not written to such a blyg: a change to it waits until Burrow is
+  updated. Your own removals still apply at once: unsubscribing takes that
+  blyg's posts off this Mac. Connecting to such a blyg works too.
+- **Features follow what the blyg lists, not its version number.** Contacts,
+  changelog summaries and sent-mention groups are offered when the blyg's
+  capabilities list their operations (`listContacts`, `summarizeChangelog`,
+  `listMentionGroups` and `getMentionSummary`), so a newer or unnumbered
+  contract gets them too (`api::offers`). Changelog display settings follow
+  what the blyg's settings show, so a token that can't draft still sees them.
+  Following a whole blyg (`wholeBlyg`) is sent to every studio but the
+  oldest, and asked again without it only when the blyg refuses that key.
+- **A read-only sign-in sees Background and Saved.** The Background lens is read
+  with `listReading` and Saved with `getShelf`, both owner:read; placing posts
+  needs `setReadingPlacement` and writing Saved needs `putShelf`. With read access
+  only, Background shows without its chips, and a change to Saved is kept on this
+  Mac, which Saved now says (as it does on a newer studio) instead of "syncing".
+
+### Fixed
+- **Preview: a quote that leads back to the post is refused before
+  publish.** When a thread quotes one of your own threads that quotes it
+  back, the preview now shows that quote as unresolved ("circular
+  transclusion") and blocks publishing, as the studio does (spec §10.2).
+  Before this fix, the cycle showed only as a marker one level down, and
+  publishing failed on the server (`crates/blyg-app/src/studio/resolver.rs`).
+- **Preview: numbered lists keep their first number.** A thread's list that
+  starts at 3, or a quoted list that starts at 7, now keeps that number,
+  as studio 0.69 does (spec §16.15, decision #114).
+  Before this fix, it restarted at 1 (`crates/blyg-render/src/sanitize.rs`).
+- **Ctrl+click works on Windows as ⌘-click does on a Mac.** In the
+  Reader, Ctrl+click picks a post instead of opening it. In the stream,
+  Ctrl+click on a link to a blyg post keeps it a link and opens it in the
+  browser pane over the whole reading area. Clicks used to read the
+  Windows key, which Windows keeps for itself. A Mac turns Ctrl+click into
+  a right-click (the post's menu) before Burrow sees it, so nothing changes
+  there (`keymap::secondary_held`).
+- **⌘⏎ (Ctrl+Enter on Windows) saves Blyg › Site….** Publish's ⌘⏎ took
+  the key first, so the sheet's own handler never ran, on either
+  platform. It's now a keymap row for the sheet (`SiteSheet`) and its
+  fields, listed in the shortcut reference.
+- **Windows: Esc closes sheets, palettes, the Menu and the pane, even after a
+  click in a web page.** A WebView2 that has the keyboard (the browser pane's
+  page, the preview, the reader's post) keeps every key from the app, so
+  after a click in a page Esc did nothing to an open sheet, palette or the
+  pane. Each web view now passes Esc on: the keyboard comes back to the app
+  and Esc is handled there, as on the Mac. In the browser pane the page
+  still sees the key too (a site's own pop-up closes), so there the first
+  Esc only takes the keyboard back and closes an open sheet or palette, and
+  never closes the pane, which could hold a half-written post; a second Esc
+  does. A page in full screen keeps Esc to leave full screen. The Menu
+  button's panel closes on Esc before the search field can take the key. A
+  click anywhere in the window (outside a page) takes the keyboard back from
+  the web views, as clicking the app does on the Mac
+  (`crates/blyg-app/src/app/esc.rs`, `webview2_host::on_escape`). Thanks to
+  @patwater ([#83](https://github.com/aneeshsathe/blygger-desktop/pull/83)).
+- **Reading: a post whose current version is pinned can be forked.** The
+  version pill shows such a version once, as the current one, so Fork stayed
+  greyed out and its tooltip pointed to a pin there was no way to reach (or
+  said the post had none). Fork is now live there: ⋯ More lists it as **Fork
+  this pin**, and the pill reads `📌 vN · current`
+  (`ActionCtx::current_pinned` in `crates/blyg-app/src/reading/vm.rs`).
+  Thanks to @patwater
+  ([#88](https://github.com/aneeshsathe/blygger-desktop/pull/88)).
+- **Full editor: the live preview no longer jumps when you start a new
+  line.** Pressing ⏎ moved the caret before the preview had re-rendered, so
+  the preview scrolled by the old line numbers, often to the next paragraph,
+  and then back once the render landed. It now waits for the render
+  (`Studio::renders` in `crates/blyg-app/src/studio/mod.rs`). The wait is
+  longest on Windows, where the preview renders more slowly. Thanks to @patwater
+  ([#88](https://github.com/aneeshsathe/blygger-desktop/pull/88)).
+- **Ctrl+click on Windows follows a link in the editor and keeps the
+  command palette open.** A ⌘-click (Ctrl+click on Windows) on a link in
+  the editor opens what it names, and on a palette row runs it and keeps
+  the palette open, as ⌘⏎ does. Both now read the held keys through
+  `keymap::secondary_held`, as the Reader's clicks do, so the tests check
+  the Windows Ctrl+click on a Mac too.
+- **A cross-post started by hand no longer turns off an automatic one.**
+  After a publish, an automatic cross-post counts as running while its
+  text is still being prepared, before anything shows in the browser
+  pane. A cross-post run by hand that ended in that moment, having posted
+  without its copy being recorded, was taken for the automatic one, and
+  turned that site off for the published post. The end of a run is now
+  matched to the post and site it was for
+  (`crates/blyg-app/src/extensions/auto_crosspost.rs`).
+- **Sync: a post whose generated text read a web page keeps that
+  disclosure.** Studio 0.70 records the web pages a `[TK]` scope's model
+  read as `{url, cited}` sources (decision #117). Burrow read such a scope
+  as having no provenance, so an edit that moved the post's scopes sent it
+  back as `null` and the blyg lost the disclosure. Web-page sources now read
+  into `ScopeProvenance::pages` (posts stay in `sources`, and a remote
+  post's `cited` is kept too), follow their scope through edits, and go
+  back to the blyg as they came. A followed post's `generated` reads the
+  same way (`ReadingItem::generation`). A web page tells no one and is no
+  lineage (`ScopeProvenance::notifies`).
+- **⌘G on the blyg: typing while it generates no longer loses the
+  generated text.** An edit typed during the request was pushed over the
+  words the blyg had just written (their provenance stayed). Now what you
+  type elsewhere in the post is merged with the generated text and pushed,
+  also for a post you left meanwhile. A keystroke inside the scope the blyg
+  filled ends in the conflict sheet, at once, so neither text is lost
+  (`crates/blyg-app/src/ai/generate.rs`, `crates/blyg-core/src/live.rs`).
+- **A link to a post with a formula reads the formula as TeX.** An
+  unlabelled `[[id]]` link whose target holds a formula now shows it as
+  `$e^{i\pi}$`, as Studio does, instead of the formula's symbols run into
+  its source (`crates/blyg-render/src/links.rs`).
+- **Provenance: a refused citation keeps the scope's web pages.** When the
+  blyg refuses the provenance of an edit (a cited post that no longer
+  resolves), Burrow retries without the posts and keeps the pages first,
+  before it drops every source (`crates/blyg-core/src/sync/mod.rs`).
+- **Provenance: sources and fields Burrow doesn't know are kept.** A source
+  of a new kind, a page without its citation, a post whose version isn't a
+  number, or a field Burrow doesn't know on a scope or a source no longer
+  drops the whole scope's disclosure (pushed back as `null` on the next
+  edit); each is written back as the blyg served it
+  (`crates/blyg-core/src/model.rs`).
+- **Settings: locked Background rules don't act like buttons.** For a
+  sign-in that can read Background but not change it, the greyed rules no
+  longer take a keyboard stop (where space did nothing), a pointer cursor or
+  a hover (`crates/blyg-app/src/reading/background.rs`).
+- **Windows: Settings › NEARBY says "this PC"**, not "this Mac".
+- **Saved no longer says "until Burrow is updated" before it has checked.**
+  Opened offline with a Saved change waiting, Saved said the change was held
+  for a newer Burrow. Until the blyg's contract is checked, the change now
+  waits as "syncing" and nothing is removed (`Store::newer_contract`).
+- **A studio upgraded mid-session removes nothing between safety nets.**
+  On a blyg without change counters, every pull lays your items, thumbs,
+  hoppers and read marks over what's held here. A removal on a check from an
+  earlier pull now reads the contract again first (`Engine::lay_list`).
+- **A read-only sign-in follows Saved.** It now merges the blyg's Saved list
+  three ways, as a writer does, without sending anything: a post another
+  device took off comes off here too, and what you took off here stays off.
+- **A post taken off Saved stays off with no sync behind it.** On a fresh
+  install on a newer studio, or a sign-in that has only ever read Saved, what
+  you take off is recorded as you take it off (`shelf::TAKEN_OFF_META`).
+- **Background on studios 0.49.12 to 0.60 is asked once.** A studio that
+  ignores the Background filter is judged on the lens's first page, and
+  remembered for that studio's contract version, not just the session.
+- **Background rules are greyed for a sign-in that can't change them**, with
+  the reason shown, instead of failing when turned.
+- **On a newer studio, a Saved list, a hopper the blyg can't find, and the
+  contact book remove nothing here.** Each now takes the remove-or-keep
+  decision itself (`Store::apply_shelf`, `Store::hopper_not_found`,
+  `Store::take_served_contacts`) rather than relying on its caller. A hopper
+  your blyg answers "not found" for while saving an edit stays, with its
+  waiting changes, until Burrow knows the contract.
+- **A post's version history keeps its versions on a newer studio.** A
+  version list that reads short or empty there adds and updates versions
+  but removes none held here.
+- Changelog display is read once a pull rather than on each call.
+- **Sync: a list that keeps changing no longer fails the sync.** While a
+  new subscription's posts are being imported, a studio changes its reading
+  list with every post, so a long read of it (the Background lens, the
+  hoppers, the signals) could be cut off every time it was tried, and the
+  whole sync failed with an error. Burrow now keeps what it holds of that
+  list and reads it again on the next sync; nothing is removed. A list
+  cut off three syncs in a row waits a few syncs before the next try
+  (doubling, up to 32; Sync now still reads it), and Burrow says once
+  what that means for the list: for Background, newly imported posts may
+  show in the Feed until it settles (`crates/blyg-core/src/sync/churn.rs`).
+- **Windows: Ctrl+W closes the About window, and Ctrl+A picks every post in
+  the Reader.** Both read the ⌘ modifier, which on Windows is the Windows
+  key, so they did nothing there although the Reader's header says Ctrl+A.
+  They are keymap actions now (`CloseAbout`, `PickAll`), bound in the About
+  window's and the reading screen's key contexts; the Reader's search field
+  keeps its own Ctrl+A (`keymap.rs`).
+
+### Security
+- **cookie 0.18.3 (RUSTSEC-2026-0594).** A private cookie nonce could repeat
+  in a process that forks. Burrow takes the fixed release.
+
+### Development
+- **Conformance: three suites run at blygger-spec fbc3f62 (protocol 0.4
+  r21, studio 0.69.0), and every case passes.** The reader suite passes
+  110 of 110 (35 of them without `links[]`, which the studio computes).
+  The schemas suite's §10.1 grammar corpus passes 28 of 28, through the new
+  adapter `scripts/conformance/schemas-adapter.mjs` and
+  `scripts/schemas-conformance.sh`. The pace-layered order's nine RFC-3
+  fixtures pass too. They are vendored in
+  `crates/blyg-core/tests/fixtures/feeds/` and run in every `cargo test`;
+  `scripts/feeds-conformance.sh` checks the copy against the spec. The pin
+  lives in one place, `scripts/conformance/spec.sh`. `docs/CONFORMANCE.md`
+  has the results, the deviations and how to re-run.
+- **Contract coverage: a label no longer counts as a parameter.** A path or
+  query parameter in the studio's contract is covered by a test holding its
+  name in the contract's own case, or by a query string that sends it
+  (`?raw=` or `&raw=`); header names still match in any case. The Raw tab's
+  label `"Raw"` had counted as the `raw` query parameter, which Burrow never
+  sends, so the parameter's exemption is back in `contract-coverage.toml`
+  (`crates/blyg-core/tests/it/contract_coverage.rs`).
+- **Contract coverage: the vendored contract is one Burrow accepts.** The
+  same file's `burrow_accepts_the_vendored_contract` fails when
+  `openapi-current.json` carries a contract version that `api::contract`
+  refuses. Release 0.28.0's first commit vendored contract 6.1.0 while the
+  guard accepted major 5 only.
+- **`skills/burrow-pr-gate`: a test drives the path the app runs.** A
+  test-only twin of a production function proves the twin only.
+- **Store: a served subscription list can't replace the table without the
+  prune decision.** `Store::take_served_subscriptions(list, prune)` is the
+  one way in for a list the blyg served; the wipe-and-rewrite beneath it is
+  private, and a subscription made here goes through
+  `Store::add_subscription`. A scan (`tests/it/list_prune_scan.rs`, with
+  `tests/fixtures/list-prune-allow.txt`) fails when a function that deletes
+  rows of a list table neither names `api::Prune` nor is private nor is on
+  the reviewed list.
+- **Checks: a contract property's anchor must be a real one.**
+  `blyg-core/tests/it/contract_coverage.rs` let a plain-word property count
+  as covered next to its schema's name matched as a substring, so a test about
+  `AgenticEditionInput` anchored `AgenticEdition`'s properties; the owner now
+  has to appear as a whole identifier. It also let common words anchor each
+  other as siblings (`origin`, `version`, `source`, `label`, `partial` sit
+  together in unrelated reading and lineage rows), so `CatchUp.cards[].id`
+  looked tested by `crates/blyg-ext/tests/reading.rs`; the plain words listed
+  in `COMMON` no longer count as siblings. The catch-up card properties
+  Burrow doesn't read moved into the existing catch-up exemption group.
+- **Checks: a contract property named by one plain word needs an anchor.**
+  `blyg-core/tests/it/contract_coverage.rs` counted a schema property as
+  covered when any test held its name in quotes, so an unrelated JSON key
+  `"why"` made `SpellcheckIssue.why` look tested, its honest exemption failed
+  as stale and was deleted. A property whose name is one lowercase word
+  (`why`, `raw`, `id`, `kind`) is now covered only by its quoted name within 6
+  lines of its schema's or operation's name (or the operation's path), or of
+  a sibling property that is not itself a short plain word. A failure for such
+  a property says what the test must hold. Names like `ifNoneMatch` keep the
+  bare rule.
+- **Checks: a covered contract item says where and by what.**
+  `blyg-core/tests/it/contract_coverage.rs` now keeps each test file's path
+  and reports, for an item a test covers, the file, line and anchor that
+  counted (`crates/…/file.rs:522 ("html" near sibling "…")`). The failure for a
+  stale `[[exempt]]` or a covered `[[pending]]` prints it and says to report a
+  line that is about something else as a false cover instead of deleting the
+  entry: twice an honest exemption was nearly deleted because the message only
+  said "stale".
+- **The caret and edit-keys scan skips raw string literals.** A scan
+  self-test that holds a sample `simulate_keystrokes("… cmd-shift-z")` call
+  as data in an `r#"…"#` literal was read as a real call and failed
+  `tests_dont_send_macos_only_caret_keys`. The scan now blanks raw strings
+  (`r"…"`, `r#"…"#`, `br#"…"#`) before it reads a file, and still reads
+  ordinary string literals, where real keystrokes are written
+  (`crates/blyg-app/src/platform_text.rs`).
+- **Check: a `BLYGGER_*` variable the build ignores is said at startup, and
+  every name has a class.** `crates/blyg-app/src/dev_flags.rs` lists each
+  `BLYGGER_*` name in `CLASSES` as read in every build, read by debug builds
+  only, read only by the test suite, or read elsewhere (another crate, or a
+  script that exports it). A tester who set `BLYGGER_TEST_SPELLING=windows`
+  against a build that ignored it saw Mac wording and was told nothing; a
+  misspelt name (`BLYGGER_FAKEE=1`) or a debug-only name set against a
+  release build did the same. What a developer sees now: a debug build
+  refuses to start when such a variable is set, and prints each name with why
+  (not a variable Burrow reads, with a "did you mean" when one name is a
+  single edit away; read only by the test suite; read only by debug builds),
+  then exits with code 2. A release build starts, and says each one once on
+  stderr. Values are never read or printed. A new variable cannot be added
+  without a class: the test `every_blygger_name_has_a_class` fails first.
+  The check runs only when `main` has decided to start the app, after
+  `cli::run`, so `blygger --version`, `--help` and every `+action` are never
+  blocked or delayed by it. `tests/cli.rs` removes the test-only names from
+  the environment of every `blygger` it spawns, reading them from the table.
+- **Key handlers: a modifier read outside the keymap is on a reviewed
+  list, and none reads the platform key alone.** `platform` is Cmd on a Mac
+  and the Windows key on Windows, so a chord tested on it is dead there
+  (About's close and the Reader's select-all were; the Publish sheet's
+  Alt+1 to Alt+9 lost to the keymap's own Alt+1 on Windows). A scan in
+  `crates/blyg-app/src/key_handlers_tests.rs` fails a condition that reads
+  `modifiers.platform` without `modifiers.control` or `secondary()`, and a
+  function that reads a modifier with no line in
+  `crates/blyg-app/fixtures/key-handlers-allow.txt` (guard, mouse, chord or
+  mac-only, with a reason). Each chord line is checked against the Mac and
+  Windows key tables. The platform-key check is red on the sites it found;
+  their owner fixes them.
+- **Check: every e2e subscription is dropped by a guard that names it.**
+  `blyg-core/tests/it/e2e/subscribe_guard.rs` now reads the e2e sources
+  recursively, skips comments and strings, and requires each `.subscribe(`
+  to be bound with `let NAME = …;` and followed, within three lines of the
+  statement's end, by an `Unsub(…)` or `ApiUnsub(…)` that names `NAME`. A
+  guard for a different subscription, or a subscribe whose result isn't
+  bound, fails with the fix spelled out. Self-tests run the scan on the
+  unguarded site from the studio 0.68 run and on guarded, multi-line and
+  mismatched forms.
+- **Tests: none holds the platform key by hand.** `platform` is the cmd key on a
+  Mac and the Windows key on Windows, so a test that built a cmd-click as
+  `platform: true` (or `Modifiers::command()`) failed on Windows CI only. A
+  scan in `crates/blyg-app/src/key_handlers_tests.rs`
+  (`tests_dont_hold_the_platform_key_bare`) fails on such a test unless it is in
+  the `Platform::Mac` arm of a `match` or says `the platform key itself` in a
+  comment; write `Modifiers::secondary_key()` for a cmd-click. It also fails a
+  hand-written `simulate_keystrokes("cmd-...")`; keys go through `keymap::keys`.
+- **test-first: `--run` skips test commits that add no test function.** A
+  commit that only touches a fixture or a vendored file under `crates/*/tests/`
+  counts as a test change for the order check, but `scripts/test-first.sh --run`
+  now names it (`test-first: <short> changes test files but adds no #[test];
+  skipped`) and runs the first test commit that does add a `#[test]`, instead of
+  dying on the fixture commit. It exits 1 when no test commit on the branch adds
+  a test function, and when the first one that does comes after product code
+  (so its tests can't be red before the feature).
+- **Checks: no feature gated on a version number, and read gates on read-scope
+  operations.** `blyg-core/tests/it/version_gates.rs` scans product code for
+  functions that read the studio's `contractVersion` or parse a version they
+  are handed, and fails on any that isn't in its reviewed list (the major
+  check, the `wholeBlyg` floor rule, the natural-grammar studio version).
+  `blyg-core/tests/it/capability_gates.rs` now lists every capability gate
+  with whether it guards a read or a write, fails on an operation constant
+  that isn't listed or a gate that asks for a bare string, and checks each
+  read gate's operations against the scopes in `openapi-current.json`: one
+  that needs more than `owner:read` isn't listed to a read-only token, so
+  the feature would vanish for it. The skills' sentences these checks replace
+  are gone (`skills/capability-gating`, `skills/spec-client-build`,
+  `skills/upstream-sync`).
+- **Checks: a test may not send a redo key as a literal.** The scan in
+  `crates/blyg-app/src/platform_text.rs` (`tests_dont_send_macos_only_caret_keys`)
+  now reads every keystroke literal a test sends, also through
+  `keymap::keys("...")`, and fails on `cmd-shift-z` or `ctrl-shift-z`: the
+  Windows text field binds only Ctrl+Y for redo, so such a test passed on the
+  Mac and failed on Windows CI. Tests call `platform_text::redo_keys()`, which
+  `composer/assist_tests.rs` now does.
+- **Studio 0.71 (contract 6.3.0) in blyg-core.** The vendored contract and
+  `[target]` move to studio v0.71.0. Generating on the blyg
+  (`Backend::generate_on_blyg`, `Api::generate`) answers
+  `blyg_core::generate::GenerateOutcome`: the text, or studio 0.70's
+  checkpoint (`read` of `total` links, and the ones that failed, with why),
+  which saves nothing; `proceed` generates past it. `readerMarkRead`
+  ("Count an entry as read": seen, opened, never) is read and written alone
+  (`Backend::load_reader_mark_read`, `save_reader_mark_read`,
+  `reader_mark_read`; `blyg_core::mark_read`), offered only by a blyg whose
+  settings have it. The UI for both comes next.
+- **Core: generating on the blyg keeps its provenance here.**
+  `Live::generate_on_blyg` adopts the blyg's recorded provenance for the
+  new text, so the writer lists what it read and later edits carry it
+  (`crates/blyg-core/src/live.rs`; e2e `studio071.rs`).
+- **Scenes:** `ai-checkpoint`, `ai-checkpoint-details`, `ai-tk-read`,
+  `ai-tk-read-preview`, `settings-count-read`, `rd-stream-date`,
+  `rd-gen-read`. The fake blyg's `without_reader_mark_read()` stands for a
+  blyg before studio 0.70; a reading perf step measures the seen batch.
+- **`scripts/test-first.sh --run`: the old commit builds in a target
+  directory of its own.** The first test commit's tests, and the e2e step
+  through `scripts/e2e-local.sh`, build under
+  `${CARGO_TARGET_DIR:-<repo>/target}/test-first`, kept between runs. They
+  built into the caller's target directory before, and the stale test binary
+  left there made the next e2e run from the working tree report 20 failures
+  that weren't real (`crates/blyg-core/tests/it/test_first_script.rs`).
+
+### Not verified
+- **Windows Esc:** the WebView2 accelerator-key hook and the Menu panel's Esc
+  have not been run on Windows; the tests drive them with stub web views on
+  macOS, and the Windows code is checked by Windows CI only.
+- **Automatic cross-posting** was tested with the bundled cross-post
+  extension running for real and a stub browser pane, up to its Preview
+  sheet; no run went past it, and none reached a live site.
+- Forking a pinned current version and the preview's new-line fix are
+  covered by headless tests; neither has been tried by hand in the running
+  app on Windows or macOS.
+
 ## [0.27.3] - 2026-11-22
 
 A fix for blygs on blygger-studio 0.67 or later, and a security update.

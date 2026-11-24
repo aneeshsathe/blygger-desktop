@@ -78,7 +78,7 @@ fn the_server_generation_provider_path_uses_the_same_sign_in() {
     let api = Api::new(&env.mock.url, password());
     // No /generate in the mock: a 404 after signing in, not a 401.
     assert!(matches!(
-        api.generate("NOPE", 0, Some(1)),
+        api.generate("NOPE", 0, Some(1), false),
         Err(CoreError::NotFound)
     ));
     assert_eq!(env.mock.state().logins, 1);

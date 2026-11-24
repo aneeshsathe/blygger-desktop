@@ -911,3 +911,21 @@ fn quiet_writing_hides_the_drawer_and_alt_cmd_u_opens_it_for_the_sitting(cx: &mu
     assert!(cx.debug_bounds("nearby-rail").is_some(), "back");
     assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
 }
+
+/// User testing of 0.71: Windows' Settings said "A model on this Mac"
+/// under NEARBY.
+#[test]
+fn the_nearby_note_says_this_pc_on_windows() {
+    use crate::platform_text::{Platform, spelled_as};
+    for emb in ["none", "local"] {
+        let win = spelled_as(Platform::Windows, || super::embedder_note(emb, ""));
+        assert!(!win.contains("Mac"), "{emb}: {win}");
+        assert!(win.contains("this PC"), "{emb}: {win}");
+        let mac = spelled_as(Platform::Mac, || super::embedder_note(emb, ""));
+        assert!(mac.contains("this Mac"), "{emb}: {mac}");
+    }
+    let label = spelled_as(Platform::Windows, || {
+        crate::keymap::hint("This Mac's model")
+    });
+    assert_eq!(label, "This PC's model");
+}

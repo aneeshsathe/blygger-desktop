@@ -735,7 +735,8 @@ mod macros {
     use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
 
     const XP: &str = blyg_ext_crosspost::NAME;
-    const ROW: &str = "Cross-post to Substack Notes… ↗ Substack Notes";
+    // The macro's title names its site: the row doesn't say it twice.
+    const ROW: &str = "Cross-post to Substack Notes…";
     const POST: &str = "Tide pools are small oceans that forget, twice a day, that they \
                         belong to a larger one.\n\nThe second paragraph stays home.\n";
     const TEMPLATE: &str = "{{excerpt}} (via {{permalink}})";
@@ -1107,6 +1108,136 @@ mod macros {
         assert_eq!(fake.item(&post).unwrap().status, Status::Public);
     }
 
+    /// Every site cross-post knows granted: its rows fill the palette.
+    fn config_all_sites() -> String {
+        format!(
+            "{}extension-allow = {XP} browser.automate:https://bsky.app\n\
+             extension-allow = {XP} browser.automate:https://farcaster.xyz\n",
+            config(true)
+        )
+    }
+
+    /// --- auto cross-post --- The Publish sheet's "Then cross-post to"
+    /// chips are clicked, not keyed: the keyboard's way to a site is the
+    /// palette (⇧⌘P, "automatically", ⏎), and the line under the chips says
+    /// so, as each platform spells the key. A chip names its site and tick
+    /// only (no ⌥ digit: those keys are the reading layout's on Windows).
+    #[gpui_kit::test]
+    fn the_publish_sheets_cross_post_chips_point_to_the_palette(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config_all_sites());
+        stub_pane(cx);
+        started(&view, cx);
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| {
+            v.sheet.is::<crate::app::sheet::publish::PublishSheet>()
+        }));
+        let first = view.read_with(cx, |v, _| {
+            let m = v.auto_crosspost_sites().into_iter().next().expect("a site");
+            super::super::auto_crosspost::macro_key(&m.ext, &m.spec.id)
+        });
+        // A click ticks the chip, and again unticks it.
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
+        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).contains(&first), "on")
+        });
+        let chip = crate::test_wait::still(cx, "auto-crosspost-0");
+        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        cx.run_until_parked();
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty(), "off")
+        });
+        assert!(
+            cx.debug_bounds("auto-crosspost-keys").is_some(),
+            "the line under the chips"
+        );
+        // The chip: its tick and its site, on both platforms.
+        use crate::platform_text::{Platform, spelled_as};
+        for p in [Platform::Mac, Platform::Windows] {
+            let on = spelled_as(p, || {
+                super::super::auto_crosspost::chip_label("Bluesky", true)
+            });
+            assert_eq!(on, "☑ Bluesky");
+            let off = spelled_as(p, || {
+                super::super::auto_crosspost::chip_label("Bluesky", false)
+            });
+            assert_eq!(off, "☐ Bluesky");
+        }
+        // The line: the palette's key, as each platform spells it.
+        let mac = spelled_as(Platform::Mac, super::super::auto_crosspost::keys_hint);
+        assert!(
+            mac.starts_with("Or ⇧⌘P and type “automatically” to pick one by keyboard."),
+            "{mac}"
+        );
+        let win = spelled_as(Platform::Windows, super::super::auto_crosspost::keys_hint);
+        assert!(
+            win.starts_with("Or Ctrl+Shift+P and type “automatically” to pick one by keyboard."),
+            "{win}"
+        );
+        // No chip keys in the keymap.
+        assert!(
+            !crate::keymap::mac_table()
+                .iter()
+                .any(|k| k.action.starts_with("CrossPostChip")),
+            "the chips have no keys"
+        );
+    }
+
+    /// The Extensions palette with cross-post's rows (ten here) keeps its
+    /// key row in view: the list scrolls, not the sheet. Row 10's key is 0.
+    #[gpui_kit::test]
+    fn a_long_extensions_palette_keeps_its_keys_in_view(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config_all_sites());
+        cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(560.)));
+        stub_pane(cx);
+        started(&view, cx);
+        published(&view, &fake, cx);
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        cx.run_until_parked();
+        let n = view.read_with(cx, |v, _| match &v.ext.overlay {
+            Some(Overlay::Palette { rows, .. }) => rows.len(),
+            _ => 0,
+        });
+        assert!(n >= 10, "{n} rows");
+        let sheet = cx.debug_bounds("ext-sheet").expect("the palette");
+        let keys = cx.debug_bounds("ext-pal-keys").expect("its key row");
+        assert!(
+            keys.bottom() <= sheet.bottom(),
+            "the key row is cut off: {keys:?} in {sheet:?}"
+        );
+        // ↑ from the first row: the last (Manage), scrolled into view, above
+        // the key row (both read from one frame: the sheet slides in).
+        cx.simulate_keystrokes("up");
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let keys = cx.debug_bounds("ext-pal-keys").expect("its key row");
+        let list = cx.debug_bounds("ext-pal-list").expect("the list");
+        let last = cx
+            .debug_bounds(Box::leak(format!("ext-pal-{}", n - 1).into_boxed_str()))
+            .expect("the last row");
+        assert!(
+            last.bottom() <= list.bottom() + gpui_kit::px(1.) && list.bottom() <= keys.top(),
+            "{last:?} in {list:?}, above {keys:?}"
+        );
+        // 0 runs row 10 (Manage extensions…, the last of ten).
+        cx.simulate_keystrokes("0");
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(
+                !matches!(v.ext.overlay, Some(Overlay::Palette { .. })),
+                "0 ran row 10"
+            )
+        });
+    }
+
     /// --- auto cross-post --- A run that posted without its copy recorded
     /// turns the choice off, so the next publish doesn't post it again.
     #[gpui_kit::test]
@@ -1127,9 +1258,64 @@ mod macros {
                 message: "Posted".into(),
                 via: crate::app::browser::automation::insert::Via::Paste,
             };
-            v.auto_crosspost_after_run(&posted, false, window, cx);
+            let ran = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: NOTE_MACRO,
+            };
+            v.auto_crosspost_after_run(ran, &posted, false, window, cx);
             assert!(v.auto_crosspost_chosen(&post, cx).is_empty());
         });
+    }
+
+    /// --- auto cross-post --- A queued run is taken as running from the
+    /// moment it's handed over, while its text is still being prepared and
+    /// no macro runs in the pane yet. A manual run that ends in that gap
+    /// (it posted, unrecorded) is not the queued one: the queued post keeps
+    /// its choice, and the queued run's own end still counts.
+    #[gpui_kit::test]
+    fn a_manual_run_ending_while_a_queued_one_prepares_leaves_its_choice(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        let first = super::super::auto_crosspost::macro_key(XP, NOTE_MACRO);
+        view.update_in(cx, |v, window, cx| {
+            v.toggle_auto_crosspost(&post, XP, NOTE_MACRO, cx);
+            v.auto_crosspost_after_publish(&post, window, cx);
+            // The queued run is handed over: its text is being prepared.
+            v.auto_crosspost_next(window, cx);
+            assert!(
+                !v.browser.automation.running(),
+                "the gap: nothing in the pane yet"
+            );
+            // A manual run (another site) ends in the gap, having posted
+            // with no copy recorded on the queued post.
+            let posted = crate::app::browser::automation::Outcome::Posted {
+                message: "Posted".into(),
+                via: crate::app::browser::automation::insert::Via::Paste,
+            };
+            let manual = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: "another-site",
+            };
+            v.auto_crosspost_after_run(manual, &posted, false, window, cx);
+            assert!(
+                v.auto_crosspost_chosen(&post, cx).contains(&first),
+                "the queued site stays on for the post"
+            );
+            // The queued run's own end (posted, unrecorded) turns it off.
+            let queued = super::super::auto_crosspost::Ran {
+                post: Some(&post),
+                ext: XP,
+                macro_id: NOTE_MACRO,
+            };
+            v.auto_crosspost_after_run(queued, &posted, false, window, cx);
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty());
+        });
+        cx.run_until_parked();
     }
 
     /// --- auto cross-post --- Deleting a draft forgets its choices.

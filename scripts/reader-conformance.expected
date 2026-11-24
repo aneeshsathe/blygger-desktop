@@ -4,6 +4,6 @@
 # Every case not listed must pass. A case listed here that now passes is
 # reported as fixed; take it out.
 #
-# None at blygger-spec fbc3f62 (Burrow 0.28.0): all 110 cases pass, 35 of
+# None at blygger-spec f5817bd (Burrow 0.28.0): all 112 cases pass, 35 of
 # them "unreported" (they pass what Burrow reports; Burrow sends no links[],
 # which the studio computes at publish).

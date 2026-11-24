@@ -3,14 +3,13 @@
 # scripts/schemas-conformance.sh and scripts/feeds-conformance.sh
 # (docs/CONFORMANCE.md).
 #
-# Commit fbc3f62 is branch toolkit-0.69.0 (the toolkit at spec revision 21
-# and blygger-studio v0.69.0, open upstream as blygger/blygger-spec#38), one
-# commit on top of upstream main 64b272e (2026-11-21). Upstream main's own
-# toolkit is still at studio 0.65.0 and revision 18; move the pin to
-# upstream once #38 merges.
-# Studio target: blygger-studio v0.69.0 (27b5924, contract 6.2.0, Burrow 0.28.0).
-SPEC_REPO=https://github.com/aneeshsathe/blygger-spec
-SPEC_COMMIT=fbc3f6243f3efe686629e2713f9859715a183973 # branch toolkit-0.69.0
+# Commit f5817bd is upstream main (2026-11-23): blygger/blygger-spec#38 (the
+# toolkit at revision 21 and studio 0.69.0) merged, then b53599c, the reader
+# suite at the twenty-third revision (decision #118, spec §2 text content:
+# fixtures 111 and 112). Its feeds and schemas suites are fbc3f62's.
+# Render target: blygger-studio v0.71.0 (Burrow 0.28.0, docs/RENDER.md).
+SPEC_REPO=https://github.com/blygger/blygger-spec
+SPEC_COMMIT=f5817bdcdf6b6d36c8f587de44fb09c7c9f75b37 # upstream main
 
 # spec_checkout <scratch dir>: prints the path of a blygger-spec checkout at
 # SPEC_COMMIT: $BLYG_SPEC_DIR when set, else a shallow fetch into the

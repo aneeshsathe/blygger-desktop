@@ -10,21 +10,23 @@ latest run found.
 
 | | |
 |---|---|
-| Spec commit | `fbc3f6243f3efe686629e2713f9859715a183973`, branch `toolkit-0.69.0` of `https://github.com/aneeshsathe/blygger-spec` (open upstream as blygger/blygger-spec#38) |
-| Its base | upstream `main` at `64b272e` (2026-11-21), protocol 0.4, twenty-first revision |
-| Studio | blygger-studio v0.69.0 (`27b5924`, contract 6.2.0), the toolkit's reference run |
+| Spec commit | `f5817bdcdf6b6d36c8f587de44fb09c7c9f75b37`, upstream `main` of `https://github.com/blygger/blygger-spec` (2026-11-23) |
+| What it holds | protocol 0.4, twenty-third revision (decision #118, §2 text content); the toolkit of blygger/blygger-spec#38 (studio 0.69.0, merged) plus the reader suite's #118 fixtures 111 and 112 (`b53599c`) |
+| Studio | blygger-studio v0.69.0 (`27b5924`, contract 6.2.0) is the toolkit's reference run; Burrow's renderer is synced to v0.71.0 (`docs/RENDER.md`) |
 | Burrow | 0.28.0 |
 
 The pin is `SPEC_COMMIT` in `scripts/conformance/spec.sh`, which every
-script below reads. Upstream `main` now carries the older pins (`510c76c`,
-`d248bc4`), but its toolkit is still at studio 0.65.0 and revision 18.
-Move the pin to upstream once #38 merges.
+script below reads. It moved from `fbc3f62` (branch `toolkit-0.69.0` of a
+fork, #38 before it merged) with the 0.71.0 render re-sync. Between the two
+only the reader suite changed (fixtures 111 and 112, `lib/html.mjs`); the
+`schemas/` and `feeds/` files are byte-identical, so their results carry
+over.
 
 ## Results (Burrow 0.28.0)
 
 | Suite | What it checks | Burrow | Before this run |
 |---|---|---|---|
-| `reader/` | `content_md` → `content_html`, `transclusions[]`, `generated[]` (110 fixtures) | **110 / 0 / 0** pass / warn / fail. 75 pass outright; 35 pass what Burrow reports and are marked "unreported" (Burrow sends no `links[]`) | 96 / 1 / 3 of 100 at `510c76c`. At the new pin, before the fixes: 108 / 1 / 1 |
+| `reader/` | `content_md` → `content_html`, `transclusions[]`, `generated[]` (112 fixtures) | **112 / 0 / 0** pass / warn / fail at `f5817bd`. 77 pass outright; 35 pass what Burrow reports and are marked "unreported" (Burrow sends no `links[]`). At `fbc3f62`, with the 0.71.0 re-sync: 110 / 0 / 0 | 110 / 0 / 0 at `fbc3f62` (Burrow 0.28.0 before the re-sync); 96 / 1 / 3 of 100 at `510c76c` |
 | `schemas/` grammar | the §10.1 bracket grammar (28 cases), through Burrow's publish preview | **28 / 0 / 0** (studio 0.69.0: 28 / 0 / 0) | not run before |
 | `feeds/` | the pace-layered order (RFC-3, 9 histories) | **9 / 0 / 0** (`pace_layered_order` and `reader_positions`) | checked by hand |
 
@@ -54,11 +56,11 @@ Known differences that the suite accepts:
 - **No `links[]`** (35 reader cases "unreported"): the studio computes
   `links[]` at publish. Burrow's anchors, hrefs and text are checked and
   pass.
-- **Partial quotes of lists are flattened** (reader cases 104–109, #114):
-  Burrow's preview bakes the selected items as paragraphs, as studio 0.64.1
-  did. Studio 0.69 keeps their list structure. The suite accepts both, and
-  the wire document is the studio's. Adopt this with the next render
-  re-sync to 0.69 (`docs/RENDER.md`).
+- **Partial quotes of lists keep their structure** since the 0.71.0 render
+  re-sync (reader cases 104–109, #114; 111, #118): Burrow's preview now
+  bakes the quoted items as list items, byte for byte the fixtures'
+  `content_html` apart from its final newline. Before, it flattened them to
+  paragraphs, which the suite also accepts.
 
 Not reached by any fixture (`docs/CONFORMANCE-READER.md`, findings): the
 AI crate's TK parser doesn't skip code, and it takes source ids from a

@@ -557,7 +557,26 @@ impl MainView {
             seq: self.cmd_palette.seq,
             _sub: sub,
         });
+        // --- onboarding --- the automatic cross-post step: its rows first
+        // (they sit at the end of a long list otherwise).
+        if self.tutorial_on_step("auto-crosspost") {
+            self.palette_set_query("automatically", window, cx);
+        }
         cx.notify();
+    }
+
+    /// Type `q` into the open palette, as the user would.
+    pub(crate) fn palette_set_query(
+        &mut self,
+        q: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(o) = self.cmd_palette.open.as_ref() {
+            let input = o.input.clone();
+            input.update(cx, |s, cx| s.set_value(q.to_string(), window, cx));
+        }
+        self.palette_query_changed(window, cx);
     }
 
     /// Close it and give the keyboard back.
@@ -738,7 +757,7 @@ impl MainView {
                     .when(on, |d| d.bg(p.pick()))
                     .when(!on, |d| d.hover(|s| s.bg(p.hover())))
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        let keep = ev.modifiers().secondary();
+                        let keep = crate::keymap::secondary_held(&ev.modifiers());
                         if let Some(e) = this
                             .cmd_palette
                             .open
@@ -1027,3 +1046,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "palette_click_keys_tests.rs"]
+mod click_keys_tests;

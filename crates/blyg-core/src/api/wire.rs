@@ -80,18 +80,11 @@ impl WireItem {
 
     /// `provenance` as the app's shape (`None` when the field is absent).
     /// An entry without a model reads as `"unknown"`; one that doesn't
-    /// parse as `null`.
+    /// parse as `null`. Web-page sources (studio 0.70) read into `pages`.
     pub fn server_provenance(&self) -> Option<Vec<Option<crate::model::ScopeProvenance>>> {
         self.provenance.as_ref().map(|all| {
             all.iter()
-                .map(|p| {
-                    let mut p = p.clone()?;
-                    let o = p.as_object_mut()?;
-                    if !o.get("model").is_some_and(Value::is_string) {
-                        o.insert("model".into(), Value::String("unknown".into()));
-                    }
-                    serde_json::from_value(p).ok()
-                })
+                .map(|p| crate::model::ScopeProvenance::from_served(p.as_ref()?))
                 .collect()
         })
     }
@@ -381,18 +374,9 @@ pub fn status_str(s: Status) -> &'static str {
     }
 }
 
-/// `POST /api/items/:id/generate` → `{text, model, contentMd, revision}`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Generated {
-    /// The scope's new output.
-    pub text: String,
-    pub model: String,
-    /// The working copy with `text` spliced into its scope, as the server
-    /// stored it.
-    pub content_md: Option<String>,
-    /// The item's revision after it.
-    pub revision: u64,
-}
+/// `POST /api/items/:id/generate` → `{text, model, contentMd, revision}`
+/// (or a checkpoint: `crate::generate`).
+pub use crate::generate::Generated;
 
 /// `GET /api/changes`: `{epoch, domains: {items, reading, subscriptions,
 /// hoppers, signals, settings, feed, …}}`. A domain's counter moves whenever

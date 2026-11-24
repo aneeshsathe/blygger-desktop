@@ -510,3 +510,140 @@ fn the_reader_takes_the_themes_writing_font() {
         assert!(reader.contains(rule), "{rule}");
     }
 }
+
+// --- studio 0.71 --- A post whose generated text the publisher disclosed
+// says what it read: Lin's sentence drew on Kit's post (Kit was told) and
+// read a web page (no one was).
+#[gpui_kit::test]
+fn a_posts_generated_text_lists_what_it_read(cx: &mut TestAppContext) {
+    let (view, _, log, cx) = setup(cx);
+    reading(&view, cx);
+    open_row(&view, LIN_FORK, cx);
+    let page = last(&log, Which::Reader);
+    assert!(page.contains("class=\"blyg-gen-read\""), "{page}");
+    assert!(page.contains(super::reader::GENERATION_READ), "{page}");
+    // Kit's post by its title when held here, else by its blyg: never by
+    // its id (user testing of 0.71).
+    assert!(!page.contains(&format!("[[{KIT_TIDES}]]")), "{page}");
+    assert!(
+        page.contains("(kit.blyg.example.net)") || page.contains("a post on kit.blyg.example.net"),
+        "{page}"
+    );
+    assert!(page.contains(super::reader::GENERATION_TOLD), "{page}");
+    assert!(page.contains("read Harbour tide tables"), "{page}");
+    // "tells no one" once, under the heading, not on each entry.
+    assert_eq!(
+        page.matches(&*blyg_render::escape_html(
+            super::reader::GENERATION_TOLD_NO_ONE
+        ))
+        .count(),
+        1,
+        "{page}"
+    );
+    assert!(!page.contains("· tells no one"), "{page}");
+    assert!(
+        page.contains(&format!("<a href=\"{TIDE_PAGE}\">{TIDE_PAGE}</a>")),
+        "{page}"
+    );
+    // The list comes after the post's own text.
+    assert!(page.find(LIN_FORK_GENERATED).unwrap() < page.find("blyg-gen-read\"").unwrap());
+    // A post that disclosed nothing lists nothing.
+    open_row(&view, LIN_GARDENS, cx);
+    assert!(!last(&log, Which::Reader).contains("class=\"blyg-gen-read\""));
+}
+
+/// The list is built from what another blyg sent: every value escaped,
+/// and only an http(s) address becomes a link.
+#[test]
+fn what_generated_text_read_is_escaped() {
+    let p = blyg_core::ScopeProvenance {
+        model: "m".into(),
+        sources: vec![],
+        pages: vec![
+            blyg_core::PageSource {
+                url: "javascript:alert(1)".into(),
+                cited: serde_json::json!({"source": "<b>x</b>"}),
+                ..Default::default()
+            },
+            blyg_core::PageSource {
+                url: "https://a.example.com/?q=\"><i>".into(),
+                cited: serde_json::json!({}),
+                ..Default::default()
+            },
+        ],
+        at: None,
+        ..Default::default()
+    };
+    let html = super::reader::generation_read(&[Some(p)], &|_| None, false);
+    assert!(!html.contains("<i>"), "{html}");
+    assert!(!html.contains("<b>"), "{html}");
+    assert!(!html.contains("href=\"javascript"), "{html}");
+    assert!(html.contains("&lt;b&gt;x&lt;/b&gt;"), "{html}");
+    assert_eq!(html.matches("<a href=").count(), 1, "{html}");
+    assert_eq!(super::reader::generation_read(&[], &|_| None, false), "");
+}
+
+/// Another blyg decides how long the list is: the first 50 entries show,
+/// then how many more there are.
+#[test]
+fn what_generated_text_read_shows_the_first_fifty() {
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://news.example.com/{i}");
+            serde_json::json!({ "url": url, "cited": { "source": "News", "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let a: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages[..30] }))
+            .unwrap();
+    let b: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages[30..] }))
+            .unwrap();
+    let html = super::reader::generation_read(&[Some(a), Some(b)], &|_| None, false);
+    assert_eq!(html.matches("<li>").count(), 51, "50 and the rest: {html}");
+    assert!(html.contains("news.example.com/49<"), "{html}");
+    assert!(!html.contains("news.example.com/50<"), "{html}");
+    assert!(html.contains("+10 more"), "{html}");
+}
+
+/// User testing of 0.71: the Reader numbered only the gaps that read
+/// something ("TK 1" for the writer's TK 2). Each gap by its own number.
+#[test]
+fn what_generated_text_read_numbers_each_gap_as_the_writer_does() {
+    let p: blyg_core::ScopeProvenance = serde_json::from_value(serde_json::json!({
+        "model": "m",
+        "sources": [{ "url": "https://news.example.com/a", "cited": { "source": "News" } }]
+    }))
+    .unwrap();
+    let html = super::reader::generation_read(&[None, Some(p)], &|_| None, false);
+    assert!(html.contains("TK 2 · read News"), "{html}");
+    assert!(!html.contains("TK 1"), "{html}");
+}
+
+/// A post held here is named by its title and linked to its page.
+#[test]
+fn what_generated_text_read_names_a_held_post() {
+    let p: blyg_core::ScopeProvenance = serde_json::from_value(serde_json::json!({
+        "model": "m",
+        "sources": [{ "id": "01kfar", "version": 2, "origin": "https://ada.example.com/" }]
+    }))
+    .unwrap();
+    let named = |_: &blyg_core::ProvenanceSource| {
+        Some(crate::ai::read::Named {
+            title: "Tides".into(),
+            open: Some(crate::ai::read::Open::Web(
+                "https://ada.example.com/f/01kfar/".into(),
+            )),
+        })
+    };
+    let html = super::reader::generation_read(&[Some(p.clone())], &named, false);
+    assert!(
+        html.contains(
+            "drew on <a href=\"https://ada.example.com/f/01kfar/\">“Tides”</a> (ada.example.com)"
+        ),
+        "{html}"
+    );
+    let html = super::reader::generation_read(&[Some(p)], &|_| None, false);
+    assert!(html.contains("drew on a post on ada.example.com"), "{html}");
+    assert!(!html.contains("01kfar"), "{html}");
+}

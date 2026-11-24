@@ -658,3 +658,531 @@ fn the_palette_reply_row_follows_the_open_reading_item(cx: &mut TestAppContext) 
         stubs[0].content_md
     );
 }
+
+// --- studio 0.71 --- ⌘G on the blyg: a link it can't read stops it at a
+// checkpoint (the fake blyg can't read a `.invalid` host), and what it read
+// is listed.
+
+/// The blyg's own generation, as ⌘G picks it.
+fn on_blyg() -> FakeProvider {
+    FakeProvider {
+        kind: blyg_ai::ProviderKind::BlygServer,
+        ..FakeProvider::replying(&["never asked"])
+    }
+}
+
+const UNREAD: &str = "Fog. [TK]sum up https://gone.invalid/a and https://news.example.com/b[/TK]";
+
+impl Env<'_> {
+    /// The draft holds `text` on the blyg too, the caret inside its gap.
+    fn on_the_blyg(&mut self, text: &str) {
+        self.open_with(text);
+        self.view.update_in(self.cx, |v, _, cx| {
+            v.editor
+                .update(cx, |s, cx| s.set_selected_range(10..10, cx));
+        });
+        let fake = self.fake.clone();
+        let want = text.to_string();
+        crate::test_wait::until(self.cx, "the draft to reach the blyg", move |cx| {
+            cx.executor().advance_clock(Duration::from_secs(2));
+            cx.run_until_parked();
+            fake.item(&LocalId(DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md == want)
+        });
+    }
+
+    fn checkpoint(&mut self) -> Option<(String, bool, Vec<String>)> {
+        self.view.read_with(self.cx, |v, _| {
+            v.sheet
+                .get::<super::checkpoint::TkCheckpointSheet>()
+                .map(|s| {
+                    (
+                        super::checkpoint::heading(&s.checkpoint),
+                        s.details,
+                        s.checkpoint.failed.iter().map(|f| f.link.clone()).collect(),
+                    )
+                })
+        })
+    }
+
+    fn click(&mut self, selector: &'static str) {
+        let at = crate::test_wait::still(self.cx, selector);
+        self.cx
+            .simulate_click(at.center(), gpui_kit::Modifiers::none());
+        self.cx.run_until_parked();
+    }
+}
+
+#[gpui_kit::test]
+fn a_link_the_blyg_cant_read_stops_at_the_checkpoint_and_esc_keeps_the_draft(
+    cx: &mut TestAppContext,
+) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    let (heading, details, failed) = e.checkpoint().unwrap();
+    assert_eq!(
+        heading,
+        "1 of 2 links in this TK could not be read. Generate anyway?"
+    );
+    assert_eq!(failed, vec!["https://gone.invalid/a".to_string()]);
+    // The keys are shown, and with one failure Details is open already.
+    assert!(e.cx.debug_bounds("tk-checkpoint-generate").is_some());
+    assert!(e.cx.debug_bounds("tk-checkpoint-cancel").is_some());
+    assert!(e.cx.debug_bounds("tk-checkpoint-details-key").is_some());
+    assert!(details, "Details opens by itself for a few failures");
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_some());
+    // d hides it and shows it again; so does a click.
+    e.cx.simulate_keystrokes("d");
+    e.cx.run_until_parked();
+    assert!(!e.checkpoint().unwrap().1, "d closed Details");
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_none());
+    e.click("tk-checkpoint-details");
+    assert!(e.checkpoint().unwrap().1, "Details opened");
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-0").is_some());
+    // esc: nothing generated, nothing changed, and it says what to do.
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    assert!(e.checkpoint().is_none(), "the sheet closed");
+    let toast = e.toast();
+    assert!(
+        toast.starts_with("Nothing was generated | Remove or replace the link"),
+        "{toast}"
+    );
+    assert_eq!(e.text(), UNREAD);
+    assert_eq!(
+        e.fake.item(&LocalId(DRAFT.into())).unwrap().content_md,
+        UNREAD,
+        "the blyg saved nothing"
+    );
+    assert!(e.tracked().is_none(), "no provenance");
+}
+
+#[gpui_kit::test]
+fn enter_generates_anyway_and_lists_what_it_read(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    e.cx.simulate_keystrokes("enter");
+    e.wait("the text the blyg generated", |v| {
+        v.ai.job.is_none() && !v.sheet.is_open()
+    });
+    assert_eq!(
+        e.toast(),
+        "Generated on your blyg | Your blyg noted what it read"
+    );
+    let view = e.view.clone();
+    crate::test_wait::until(e.cx, "the spliced text in the editor", move |cx| {
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            v.editor
+                .read(cx)
+                .value()
+                .contains("[=]A line the fake blyg wrote.[/TK]")
+        })
+    });
+    // The page it read is recorded with the scope, and listed.
+    let (_, scopes) = e.tracked().expect("the blyg's provenance");
+    let p = scopes[0].as_ref().expect("the scope's");
+    assert_eq!(p.pages.len(), 1);
+    assert_eq!(p.pages[0].url, "https://news.example.com/b");
+    let read = e.view.read_with(e.cx, |v, cx| v.tk_read(cx));
+    assert_eq!(read.len(), 1, "{read:?}");
+    let (scope, entries) = &read[0];
+    assert_eq!(*scope, 0);
+    // The page's site is its host: said once, as its address.
+    assert_eq!(entries[0].what, "read");
+    assert_eq!(
+        entries[0].url.as_deref(),
+        Some("https://news.example.com/b")
+    );
+    assert!(!entries[0].tells, "a web page tells no one");
+    // The publish sheet shows it before anything is sent.
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    assert!(
+        e.cx.debug_bounds("tk-read").is_some(),
+        "listed in the sheet"
+    );
+    assert!(e.cx.debug_bounds("tk-read-0-0").is_some());
+}
+
+#[gpui_kit::test]
+fn a_local_provider_never_stops_at_a_checkpoint(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(FakeProvider::replying(&["Grey all day."])));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait_idle();
+    assert!(e.checkpoint().is_none());
+    assert!(e.text().contains("[=]Grey all day.[/TK]"), "{}", e.text());
+    let (_, scopes) = e.tracked().expect("tracked");
+    let p = scopes[0].as_ref().unwrap();
+    assert_eq!(p.model, "fake-model-1");
+    assert!(p.pages.is_empty(), "Burrow's own provider reads no pages");
+}
+
+/// What generation read is listed up to 50 entries, then how many more:
+/// the blyg's own generate decides how many pages a scope read.
+#[gpui_kit::test]
+fn a_long_list_of_what_generation_read_shows_the_first_fifty(cx: &mut TestAppContext) {
+    let mut e = setup(cx, None);
+    let text = "[TK]sum up the news[=]A summary.[/TK]";
+    e.open_with(text);
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://news.example.com/{i}");
+            serde_json::json!({ "url": url, "cited": { "source": "News", "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let scope: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages })).unwrap();
+    e.fake
+        .save_with_provenance(&LocalId(DRAFT.into()), text, &[Some(scope)])
+        .unwrap();
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    assert!(e.cx.debug_bounds("tk-read-0-49").is_some(), "the 50th");
+    assert!(e.cx.debug_bounds("tk-read-0-50").is_none(), "no 51st");
+    assert!(e.cx.debug_bounds("tk-read-more").is_some(), "+10 more");
+}
+
+// --- studio 0.71 --- typing while the blyg generates: the editor stays
+// live for the seconds a model takes.
+
+const ASKED: &str = "Fog. [TK]write one line[/TK]\n\nThe end.";
+const ANSWERED: &str = "Fog. [TK]write one line[=]A line.[/TK]\n\nThe end.";
+
+/// What the editor takes after a generate on the blyg: the blyg's text when
+/// nothing was typed, the two merged when a keystroke landed elsewhere in
+/// the post, and nothing (a conflict, for the writer) when it landed in the
+/// generated scope.
+#[test]
+fn server_fill_merges_a_keystroke_outside_the_scope() {
+    use crate::ai::generate::server_fill;
+    let theirs = || Some(ANSWERED.to_string());
+    assert_eq!(
+        server_fill(ASKED, ASKED, theirs()).as_deref(),
+        Some(ANSWERED)
+    );
+    assert_eq!(server_fill(ASKED, ASKED, None), None, "pulled instead");
+    assert_eq!(
+        server_fill(ASKED, &format!("Grey. {ASKED}"), theirs()),
+        Some(format!("Grey. {ANSWERED}")),
+        "typed before the scope"
+    );
+    assert_eq!(
+        server_fill(
+            ASKED,
+            &ASKED.replace("The end.", "The end, at last."),
+            theirs()
+        ),
+        Some(ANSWERED.replace("The end.", "The end, at last.")),
+        "typed after it"
+    );
+    assert_eq!(
+        server_fill(ASKED, &ASKED.replace("one line", "two lines"), theirs()),
+        None,
+        "typed in the scope the blyg filled"
+    );
+}
+
+impl Env<'_> {
+    /// The blyg generates the draft's scope (its answer not back in the
+    /// window yet) while `typed` replaces the editor's text.
+    fn generate_while_typing(&mut self, typed: &str) -> blyg_core::generate::Generated {
+        use blyg_core::generate::GenerateOutcome;
+        self.on_the_blyg(ASKED);
+        let id = LocalId(DRAFT.into());
+        let Ok(GenerateOutcome::Generated(g)) = self.fake.generate_on_blyg(&id, 0, true) else {
+            panic!("the fake blyg generates");
+        };
+        assert!(g.content_md.as_deref().is_some_and(|c| c.contains("[=]")));
+        let typed = typed.to_string();
+        self.view.update_in(self.cx, |v, window, cx| {
+            v.splice_editor(ASKED, &typed, Some(5), window, cx)
+        });
+        self.cx.run_until_parked();
+        g
+    }
+
+    /// The answer reaches the window (`Done::Server`, as the AI job ends).
+    fn answer(&mut self, g: &blyg_core::generate::Generated) {
+        let done = super::Done::Server {
+            item: LocalId(DRAFT.into()),
+            sent: ASKED.into(),
+            content_md: g.content_md.clone(),
+            revision: g.revision,
+        };
+        self.view.update_in(self.cx, |v, window, cx| {
+            v.ai_done(done, blyg_ai::ProviderKind::BlygServer, window, cx)
+        });
+        self.cx.run_until_parked();
+    }
+
+    /// The draft as pushed: `want`, with nothing waiting and no conflict.
+    fn pushed(&mut self, want: &str) {
+        let fake = self.fake.clone();
+        let w = want.to_string();
+        crate::test_wait::until(self.cx, "the text pushed", move |cx| {
+            cx.executor().advance_clock(Duration::from_secs(2));
+            cx.run_until_parked();
+            fake.item(&LocalId(DRAFT.into()))
+                .is_some_and(|i| !i.pending_sync && i.content_md == w)
+        });
+        assert!(!self.fake.item(&LocalId(DRAFT.into())).unwrap().conflict);
+    }
+}
+
+/// A word typed at the top of the post while the blyg generates ends as the
+/// generated text with the word, in the editor and in the copy that is
+/// pushed, with no conflict. Before 0.28.0's fix the editor was reloaded
+/// with the typed text alone, and its push (at the revision before the
+/// generate) came back as a conflict sheet.
+#[gpui_kit::test]
+fn a_word_typed_while_the_blyg_generates_is_kept_with_its_text(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    let g = e.generate_while_typing(&format!("Grey. {ASKED}"));
+    e.answer(&g);
+    let want = format!("Grey. {}", g.content_md.clone().unwrap());
+    assert_eq!(e.text(), want, "the editor holds both");
+    assert!(
+        e.view.read_with(e.cx, |v, _| !v.sheet.is_open()),
+        "no conflict sheet"
+    );
+    let toast = e.toast();
+    assert!(toast.starts_with("Generated on your blyg |"), "{toast}");
+    e.pushed(&want);
+}
+
+/// A post left while the blyg generated gets the merge too: the generated
+/// text with the word typed before leaving, kept and pushed. Before the fix
+/// only an open post was merged, and a left one ended in a conflict.
+#[gpui_kit::test]
+fn a_post_left_while_the_blyg_generates_is_merged_too(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    let g = e.generate_while_typing(&format!("Grey. {ASKED}"));
+    // Leave it for the next post in the list.
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("down");
+    e.cx.run_until_parked();
+    let open = e.view.read_with(e.cx, |v, _| {
+        v.current.as_ref().map(|c| c.local_id.0.clone())
+    });
+    assert_ne!(open.as_deref(), Some(DRAFT), "the draft was left");
+    let elsewhere = e.text();
+    e.answer(&g);
+    assert_eq!(e.text(), elsewhere, "the open post is untouched");
+    e.pushed(&format!("Grey. {}", g.content_md.clone().unwrap()));
+}
+
+/// A keystroke in the scope the blyg filled can't be merged: the toast says
+/// so in plain words, the typed text stays, and the conflict comes (both
+/// texts kept).
+#[gpui_kit::test]
+fn an_edit_in_the_filled_scope_says_it_overlaps(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    let typed = ASKED.replace("one line", "two lines");
+    let g = e.generate_while_typing(&typed);
+    e.answer(&g);
+    let toast = e.toast();
+    assert!(
+        toast.contains("Generated on your blyg") && toast.contains("your edit overlaps it"),
+        "{toast}"
+    );
+    assert_eq!(e.text(), typed, "the typed text stays in the editor");
+}
+
+/// A post left during the generate with nothing typed: the store already
+/// holds the blyg's text, which isn't an edit. The plain toast shows, with
+/// no sync started and nothing waiting. Before the fix that text read as an
+/// edit over the generated one, and the toast said it overlapped.
+#[gpui_kit::test]
+fn a_post_left_untouched_while_the_blyg_generates_says_nothing_overlaps(cx: &mut TestAppContext) {
+    use blyg_core::generate::GenerateOutcome;
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(ASKED);
+    let Ok(GenerateOutcome::Generated(g)) =
+        e.fake.generate_on_blyg(&LocalId(DRAFT.into()), 0, true)
+    else {
+        panic!("the fake blyg generates");
+    };
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("down");
+    e.cx.run_until_parked();
+    let answer = g.content_md.clone().unwrap();
+    assert_eq!(
+        e.fake.item(&LocalId(DRAFT.into())).unwrap().content_md,
+        answer,
+        "the store holds the blyg's text"
+    );
+    e.answer(&g);
+    assert_eq!(
+        e.toast(),
+        "Generated on your blyg | Your blyg noted what it read"
+    );
+    let it = e.fake.item(&LocalId(DRAFT.into())).unwrap();
+    assert!(!it.pending_sync && !it.conflict, "nothing to push: {it:?}");
+}
+
+/// The merge reads a text that already is the blyg's answer as no edit.
+#[test]
+fn server_fill_takes_the_answer_already_held() {
+    use crate::ai::generate::server_fill;
+    assert_eq!(
+        server_fill(ASKED, ANSWERED, Some(ANSWERED.into())).as_deref(),
+        Some(ANSWERED)
+    );
+}
+
+// --- studio 0.71 user testing ---
+
+/// Finding 3: ⏎ while another AI job runs did nothing. The sheet stays,
+/// and a toast says why.
+#[gpui_kit::test]
+fn enter_while_another_ai_job_runs_keeps_the_checkpoint_and_says_why(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.on_the_blyg(UNREAD);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
+    e.wait("the checkpoint", |v| {
+        v.sheet.is::<super::checkpoint::TkCheckpointSheet>()
+    });
+    e.view.update(e.cx, |v, _| {
+        v.ai.job = Some(super::Job {
+            id: 999,
+            provider: blyg_ai::ProviderKind::BlygServer,
+            cancel: Default::default(),
+            verb: "generating",
+        })
+    });
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(e.checkpoint().is_some(), "the sheet stays");
+    assert_eq!(
+        e.toast(),
+        "Another AI job is still running | When it's done, press ⏎ again"
+    );
+    e.view.update(e.cx, |v, _| v.ai.job = None);
+}
+
+/// Sixty pages read, in a 720 px window.
+fn a_long_list(cx: &mut TestAppContext) -> Env<'_> {
+    let mut e = setup(cx, None);
+    e.cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(720.)));
+    let text = "[TK]sum up the news[=]A summary.[/TK]";
+    e.open_with(text);
+    let pages: Vec<serde_json::Value> = (0..60)
+        .map(|i| {
+            let url = format!("https://site{i}.example.org/harbour/tides/{i}");
+            serde_json::json!({ "url": url, "cited": { "url": url, "retrieved": "2030-01-01" } })
+        })
+        .collect();
+    let scope: blyg_core::ScopeProvenance =
+        serde_json::from_value(serde_json::json!({ "model": "m", "sources": pages })).unwrap();
+    e.fake
+        .save_with_provenance(&LocalId(DRAFT.into()), text, &[Some(scope)])
+        .unwrap();
+    e.cx.run_until_parked();
+    e
+}
+
+fn window_h(e: &mut Env) -> f32 {
+    e.cx.update(|window, _| f32::from(window.viewport_size().height))
+}
+
+/// The BLOCKER: fourteen or more entries pushed the note field and the
+/// keys off the window. The list scrolls inside a fixed height now.
+#[gpui_kit::test]
+fn a_long_list_scrolls_and_the_publish_keys_stay_on_screen(cx: &mut TestAppContext) {
+    let mut e = a_long_list(cx);
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    e.cx.run_until_parked();
+    let list = e.cx.debug_bounds("tk-read-list").expect("the list");
+    assert!(
+        f32::from(list.size.height) <= super::checkpoint::READ_LIST_MAX_H + 0.5,
+        "{list:?}"
+    );
+    let keys = e.cx.debug_bounds("publish-keys").expect("the keys");
+    let h = window_h(&mut e);
+    assert!(f32::from(keys.bottom()) <= h, "{keys:?} in {h}");
+    assert!(e.cx.debug_bounds("tk-read-tells-no-one").is_some());
+}
+
+/// Any tall sheet stops short of the window's bottom and scrolls.
+#[gpui_kit::test]
+fn a_tall_sheet_stops_short_of_the_window_bottom(cx: &mut TestAppContext) {
+    let mut e = setup(cx, Some(on_blyg()));
+    e.cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(600.)));
+    e.open_with(UNREAD);
+    let failed = (0..40)
+        .map(|i| blyg_core::generate::UnreadLink {
+            link: format!("https://gone{i}.invalid/a"),
+            reason: "HTTP 404".into(),
+        })
+        .collect();
+    let checkpoint = blyg_core::generate::Checkpoint {
+        read: 0,
+        total: 40,
+        failed,
+    };
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.tk_checkpoint_open(
+            LocalId(DRAFT.into()),
+            0,
+            blyg_ai::ProviderKind::BlygServer,
+            checkpoint,
+            window,
+            cx,
+        )
+    });
+    e.cx.run_until_parked();
+    assert!(
+        !e.checkpoint().unwrap().1,
+        "Details waits for a click with this many"
+    );
+    e.cx.simulate_keystrokes("d");
+    e.cx.run_until_parked();
+    assert!(e.cx.debug_bounds("tk-checkpoint-failed-39").is_some());
+    let sheet = e.cx.debug_bounds("sheet").expect("the sheet");
+    let h = window_h(&mut e);
+    assert!(f32::from(sheet.bottom()) <= h, "{sheet:?} in {h}");
+}
+
+/// Finding 2: a post of yours that generation drew on is named by its
+/// title and opens here, never by its id; one not held, by its blyg.
+#[gpui_kit::test]
+fn a_post_held_here_is_listed_by_its_title(cx: &mut TestAppContext) {
+    let e = setup(cx, None);
+    let own = e
+        .fake
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.is_some() && i.local_id.0 != DRAFT)
+        .expect("a published post");
+    let source = |id: &str, origin: Option<&str>| blyg_core::ProvenanceSource {
+        id: id.into(),
+        origin: origin.map(str::to_string),
+        ..Default::default()
+    };
+    let names = crate::ai::read::Names::new(&*e.fake, None);
+    let mine = source(&own.server_id.as_ref().unwrap().0, None);
+    let entry = crate::ai::read::post(&mine, names.get(&mine), true);
+    let title = crate::vm::item_title(&own);
+    assert_eq!(entry.what, format!("drew on your post “{title}”"));
+    assert_eq!(
+        entry.link.as_ref().map(|(_, o)| o.clone()),
+        Some(crate::ai::read::Open::Own(own.local_id.clone()))
+    );
+    let far = source("01kunheld", Some("https://kit.blyg.example.com"));
+    assert_eq!(names.get(&far), None);
+    let entry = crate::ai::read::post(&far, None, true);
+    assert_eq!(entry.what, "drew on a post on kit.blyg.example.com");
+}
