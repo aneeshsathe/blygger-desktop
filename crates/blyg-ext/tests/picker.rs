@@ -121,7 +121,10 @@ fn tabs_are_offered_for_their_forms_and_answer_cleaned() {
             (NAME.into(), "glossary".into())
         ]
     );
-    assert_eq!(tabs(PickerForm::Transclude), [(NAME.into(), "glossary".into())]);
+    assert_eq!(
+        tabs(PickerForm::Transclude),
+        [(NAME.into(), "glossary".into())]
+    );
 
     // The query and form cross; the answer is cleaned (see bxp-picker-ext).
     let r = env
@@ -148,7 +151,11 @@ fn tabs_are_offered_for_their_forms_and_answer_cleaned() {
         },
         "no excerpt or label: the id stands in"
     );
-    assert_eq!(r.len(), 2, "not an item id, and a repeat, are dropped: {r:?}");
+    assert_eq!(
+        r.len(),
+        2,
+        "not an item id, and a repeat, are dropped: {r:?}"
+    );
 
     let many = env
         .host

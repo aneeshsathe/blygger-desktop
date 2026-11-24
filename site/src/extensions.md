@@ -426,6 +426,12 @@ title = "Say hello"
 when = "always"
 ```
 
+An extension can also add **tabs to the link and quote picker** (`[[`,
+`![[` and ⌘K): a `[[picker-sources]]` table in its manifest names each tab,
+and Burrow asks the extension as you type in it. Picking a result writes
+`[[id | label]]` for one of your blyg's items. The tab you pick is
+remembered until you quit; **items** goes back to Burrow's own search.
+
 The full protocol (the manifest, every method, the errors, the timeouts and
 how Burrow restarts an extension) is in
 [Extensions (BXP)](dev/extensions.md), from `docs/EXTENSIONS.md` in the

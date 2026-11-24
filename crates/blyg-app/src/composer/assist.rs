@@ -70,6 +70,18 @@ struct PickerPopup {
     /// Blyg subscriptions for the "from" chip: (id, title).
     subs: Vec<(blyg_core::SubId, String)>,
     scroll: ScrollHandle,
+    /// --- picker sources --- the extension tabs.
+    ext: picker::TabState,
+}
+
+impl PickerPopup {
+    /// The rows the open tab lists.
+    fn len(&self) -> usize {
+        match self.ext.on_ext() {
+            Some(_) => self.ext.rows.rows().len(),
+            None => self.rows.len(),
+        }
+    }
 }
 
 enum MenuItem {
@@ -102,6 +114,9 @@ pub struct Assist {
     picker: Option<PickerPopup>,
     /// Bumped per picker search; a stale answer is dropped.
     pick_gen: usize,
+    /// --- picker sources --- the window's extension host, for the
+    /// picker's extension tabs (only the main editor has one).
+    ext_host: Option<blyg_ext::Host>,
     menu: Option<SpellMenu>,
     /// Misspelled byte ranges in `last`.
     misspelled: Vec<Range<usize>>,
@@ -159,6 +174,7 @@ impl Assist {
             pick_mark: None,
             picker: None,
             pick_gen: 0,
+            ext_host: None,
             menu: None,
             misspelled: Vec::new(),
             debounce: None,
@@ -168,6 +184,11 @@ impl Assist {
         };
         this.schedule_check(Duration::ZERO, cx);
         this
+    }
+
+    /// --- picker sources --- The host whose extensions may add picker tabs.
+    pub fn set_ext_host(&mut self, host: Option<blyg_ext::Host>) {
+        self.ext_host = host;
     }
 
     pub fn set_palette(&mut self, p: Palette) {
@@ -349,7 +370,7 @@ impl Assist {
             return true;
         }
         if let Some(pk) = self.picker.as_mut() {
-            let n = pk.rows.len();
+            let n = pk.len();
             match key {
                 // The typed brackets and query stay as plain text.
                 AssistKey::Escape => self.picker = None,
@@ -415,6 +436,7 @@ impl Assist {
         self.mention = None;
         self.menu = None;
         let subs = picker::blyg_subs(&self.backend.subscriptions());
+        let ext = picker::TabState::open(self.ext_host.as_ref(), kind, cx);
         self.picker = Some(PickerPopup {
             kind,
             at,
@@ -425,6 +447,7 @@ impl Assist {
             sel: 0,
             subs,
             scroll: ScrollHandle::new(),
+            ext,
         });
         self.search_picker(cx);
         cx.notify();
@@ -438,6 +461,37 @@ impl Assist {
         };
         self.pick_gen += 1;
         let gen_ = self.pick_gen;
+        // --- picker sources --- an extension's tab asks the extension.
+        if let (Some(t), Some(host)) = (pk.ext.on_ext().cloned(), self.ext_host.clone()) {
+            let (query, form) = (pk.query.clone(), picker::form_of(pk.kind));
+            if let Some(pk) = self.picker.as_mut() {
+                pk.ext.rows = picker::TabRows::Searching;
+            }
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(picker::TAB_PAUSE).await;
+                if this.update(cx, |a, _| a.pick_gen != gen_).unwrap_or(true) {
+                    return; // a newer query, or another tab
+                }
+                let ext = t.ext.clone();
+                let found = cx
+                    .background_spawn(async move {
+                        host.picker_search(&t.ext, &t.source.id, &query, form)
+                    })
+                    .await;
+                let _ = this.update(cx, |a, cx| {
+                    if a.pick_gen != gen_ {
+                        return;
+                    }
+                    if let Some(pk) = a.picker.as_mut() {
+                        pk.ext.rows = picker::TabRows::of(found, &ext);
+                        pk.sel = pk.sel.min(pk.len().saturating_sub(1));
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+            return;
+        }
         let q = Filters::get(cx).query(&pk.query, pk.exclude.clone());
         let backend = self.backend.clone();
         let found = cx.background_spawn(async move { backend.pick_search(&q) });
@@ -460,7 +514,18 @@ impl Assist {
 
     fn pick_row(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(pk) = self.picker.take() else { return };
-        let Some(row) = pk.rows.get(i) else { return };
+        // An extension tab's result is an id and the label it gives (or
+        // none); Burrow's own, the text the link would show anyway.
+        let (id, label) = match pk.ext.on_ext() {
+            Some(_) => match pk.ext.rows.rows().get(i) {
+                Some(r) => (r.id.clone(), r.label.clone()),
+                None => return,
+            },
+            None => match pk.rows.get(i) {
+                Some(row) => (row.id.clone(), Some(row.label.clone())),
+                None => return,
+            },
+        };
         let (text, cursor) = {
             let s = self.editor.read(cx);
             (s.value().to_string(), s.cursor())
@@ -469,9 +534,41 @@ impl Assist {
             return;
         }
         // Below studio 0.47 the bare form, so the post doesn't wait (`blyg_core::floor`).
-        let label = blyg_core::floor::picker_label(self.backend.server_outdated(), &row.label);
-        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id, label);
+        let label = label
+            .as_deref()
+            .and_then(|l| blyg_core::floor::picker_label(self.backend.server_outdated(), l));
+        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &id, label);
         self.splice(&text, &new, caret, window, cx);
+    }
+
+    /// --- picker sources --- Open tab `tab` (`None`: Burrow's own search),
+    /// remember it, and search it.
+    fn choose_tab(&mut self, tab: Option<usize>, cx: &mut Context<Self>) {
+        let Some(pk) = self.picker.as_mut() else {
+            return;
+        };
+        pk.ext.choose(tab, cx);
+        pk.sel = 0;
+        self.search_picker(cx);
+        cx.notify();
+    }
+
+    /// --- picker sources --- The tab row's names, the open one marked
+    /// (tests read it).
+    #[cfg(test)]
+    pub fn picker_tabs(&self) -> Option<(Vec<String>, Option<usize>)> {
+        self.picker.as_ref().map(|pk| {
+            (
+                pk.ext.tabs.iter().map(|t| t.source.label.clone()).collect(),
+                pk.ext.tab,
+            )
+        })
+    }
+
+    /// --- picker sources --- What the open extension tab shows (tests).
+    #[cfg(test)]
+    pub fn picker_tab_rows(&self) -> Option<picker::TabRows> {
+        self.picker.as_ref().map(|pk| pk.ext.rows.clone())
     }
 
     // ------------------------------------------------------------ mentions
@@ -983,8 +1080,13 @@ impl Assist {
                 cx.notify();
             });
         });
+        let weak = cx.entity().downgrade();
+        let on_tab: picker::OnTab = std::rc::Rc::new(move |tab, _, cx: &mut App| {
+            let _ = weak.update(cx, |a, cx| a.choose_tab(tab, cx));
+        });
         let filters = Filters::get(cx);
-        let empty = pk.searched && pk.rows.is_empty();
+        let empty = pk.ext.tab.is_none() && pk.searched && pk.rows.is_empty();
+        let tab_row = pk.ext.row(p, on_tab);
         let card = self
             .popup_card()
             .id("picker-popup")
@@ -1009,7 +1111,17 @@ impl Assist {
                             .text_color(p.muted)
                             .child(pk.kind.heading()),
                     )
-                    .child(picker::filter_row(p, &filters, &pk.subs, set)),
+                    .children(tab_row)
+                    .map(|d| match pk.ext.on_ext() {
+                        // An extension's tab: its count or its error.
+                        Some(_) => d.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(p.muted)
+                                .child(pk.ext.rows.status()),
+                        ),
+                        None => d.child(picker::filter_row(p, &filters, &pk.subs, set)),
+                    }),
             )
             .child(
                 div()
@@ -1017,7 +1129,15 @@ impl Assist {
                     .max_h(px(300.))
                     .overflow_y_scroll()
                     .track_scroll(&pk.scroll)
-                    .children(picker::rows(p, pk.kind, &pk.rows, pk.sel, pick)),
+                    .map(|d| match pk.ext.on_ext() {
+                        Some(_) => d.children(picker::tab_rows(
+                            p,
+                            pk.ext.rows.rows(),
+                            pk.sel,
+                            pick,
+                        )),
+                        None => d.children(picker::rows(p, pk.kind, &pk.rows, pk.sel, pick)),
+                    }),
             )
             .when(empty, |d| {
                 d.child(

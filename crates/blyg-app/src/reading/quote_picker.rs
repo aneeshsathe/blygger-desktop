@@ -82,6 +82,7 @@ impl MainView {
         });
         self._subs.push(sub);
         input.update(cx, |s, cx| s.focus(window, cx));
+        let ext_tabs = picker::TabState::open(self.ext.host.as_ref(), kind, cx);
         self.open_reading_sheet(
             RSheet::Quote {
                 target: item.local_id,
@@ -90,18 +91,109 @@ impl MainView {
                 typed,
                 kind,
                 rows: Vec::new(),
+                ext_tabs,
+                tab_gen: 0,
             },
             cx,
         );
         self.search_quote_sheet(cx);
     }
 
+    /// --- picker sources --- Ask the open extension tab, after a pause;
+    /// an answer to an older query or tab is dropped.
+    fn search_quote_tab(&mut self, query: String, cx: &mut Context<Self>) {
+        let host = self.ext.host.clone();
+        let Some(RSheet::Quote {
+            ext_tabs,
+            tab_gen,
+            kind,
+            ..
+        }) = self.reading.sheet.as_mut()
+        else {
+            return;
+        };
+        let (Some(t), Some(host)) = (ext_tabs.on_ext().cloned(), host) else {
+            return;
+        };
+        *tab_gen += 1;
+        let (gen_, form) = (*tab_gen, picker::form_of(*kind));
+        ext_tabs.rows = picker::TabRows::Searching;
+        let current = move |v: &MainView| match v.reading.sheet.as_ref() {
+            Some(RSheet::Quote { tab_gen, .. }) => *tab_gen == gen_,
+            _ => false,
+        };
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(picker::TAB_PAUSE).await;
+            if !this.update(cx, |v, _| current(v)).unwrap_or(false) {
+                return;
+            }
+            let ext = t.ext.clone();
+            let found = cx
+                .background_spawn(
+                    async move { host.picker_search(&t.ext, &t.source.id, &query, form) },
+                )
+                .await;
+            let _ = this.update(cx, |v, cx| {
+                if !current(v) {
+                    return;
+                }
+                if let Some(RSheet::Quote { ext_tabs, sel, .. }) = v.reading.sheet.as_mut() {
+                    ext_tabs.rows = picker::TabRows::of(found, &ext);
+                    *sel = (*sel).min(ext_tabs.rows.rows().len().saturating_sub(1));
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// --- picker sources --- Open tab `tab` (`None`: Burrow's own search).
+    fn choose_quote_tab(
+        &mut self,
+        tab: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(RSheet::Quote {
+            ext_tabs,
+            sel,
+            input,
+            ..
+        }) = self.reading.sheet.as_mut()
+        {
+            ext_tabs.choose(tab, cx);
+            *sel = 0;
+            // The search box keeps the keyboard.
+            input.update(cx, |s, cx| s.focus(window, cx));
+        }
+        self.search_quote_sheet(cx);
+        cx.notify();
+    }
+
+    /// --- picker sources --- The open extension tab's results, if one is.
+    fn quote_tab_rows(&self) -> Option<&[picker::PickerResult]> {
+        match self.reading.sheet.as_ref() {
+            Some(RSheet::Quote { ext_tabs, .. }) => ext_tabs.on_ext().map(|_| ext_tabs.rows.rows()),
+            _ => None,
+        }
+    }
+
     /// Search again for the box and the filters (local and quick: the
     /// store's full-text index).
     fn search_quote_sheet(&mut self, cx: &mut Context<Self>) {
-        let Some(RSheet::Quote { target, input, .. }) = self.reading.sheet.as_ref() else {
+        let Some(RSheet::Quote {
+            target,
+            input,
+            ext_tabs,
+            ..
+        }) = self.reading.sheet.as_ref()
+        else {
             return;
         };
+        if ext_tabs.on_ext().is_some() {
+            let q = input.read(cx).value().to_string();
+            return self.search_quote_tab(q, cx);
+        }
         let exclude = self
             .backend
             .item(target)
@@ -208,7 +300,9 @@ impl MainView {
     }
 
     fn move_quote(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let n = if self.ext_picker_on() {
+        let n = if let Some(rows) = self.quote_tab_rows() {
+            rows.len() // --- picker sources ---
+        } else if self.ext_picker_on() {
             self.ext.lib.picker_hits.len() // --- extensions ---
         } else {
             self.quote_candidates(cx).len()
@@ -222,6 +316,18 @@ impl MainView {
     }
 
     pub(crate) fn pick_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- picker sources --- an extension tab's result: its id, and the
+        // label it gives (or none).
+        if let Some(rows) = self.quote_tab_rows() {
+            let sel = match self.reading.sheet.as_ref() {
+                Some(RSheet::Quote { sel, .. }) => *sel,
+                _ => return,
+            };
+            let Some(r) = rows.get(sel).cloned() else {
+                return;
+            };
+            return self.place_pick(&r.id, r.label.as_deref(), &r.excerpt, None, window, cx);
+        }
         // --- extensions --- a note: quoted as text (never `![[…]]`).
         if self.ext_picker_on()
             && let Some(RSheet::Quote {
@@ -238,17 +344,44 @@ impl MainView {
             return;
         }
         let cands = self.quote_candidates(cx);
+        let Some(RSheet::Quote { sel, .. }) = self.reading.sheet.as_ref() else {
+            return;
+        };
+        let Some(pick) = cands.get(*sel).cloned() else {
+            return;
+        };
+        let from = pick
+            .source_title
+            .clone()
+            .unwrap_or_else(|| "yours".to_string());
+        self.place_pick(
+            &pick.id,
+            Some(&pick.label),
+            &pick.title,
+            Some(from),
+            window,
+            cx,
+        );
+    }
+
+    /// Put the pick `id` (labelled `label`) where the picker was opened,
+    /// and say so (`what`, from `from`).
+    fn place_pick(
+        &mut self,
+        id: &str,
+        label: Option<&str>,
+        what: &str,
+        from: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(RSheet::Quote {
             target,
-            sel,
             kind,
             typed,
             ..
         }) = self.reading.sheet.as_ref()
         else {
-            return;
-        };
-        let Some(pick) = cands.get(*sel).cloned() else {
             return;
         };
         let (target, kind) = (target.clone(), *kind);
@@ -264,32 +397,29 @@ impl MainView {
             (s.value().to_string(), s.cursor())
         };
         // Bare below studio 0.47, so the post doesn't wait (`blyg_core::floor`).
-        let label = blyg_core::floor::picker_label(self.backend.server_outdated(), &pick.label);
+        let label =
+            label.and_then(|l| blyg_core::floor::picker_label(self.backend.server_outdated(), l));
         let (new_text, caret) = match kind {
             // The long form, labelled with the text the link would show
             // anyway (studio 0.47's picker, #70).
             PickKind::Quote => vm::insert_directive(
                 &text,
                 cursor,
-                &blyg_core::grammar::directive_source(&pick.id, label),
+                &blyg_core::grammar::directive_source(id, label),
             ),
             // Where the typed `[[` was (it came out when the panel opened).
             PickKind::Link => {
                 let at = typed_at.unwrap_or(cursor).min(text.len());
-                picker::insert(&text, at, at, PickKind::Link, &pick.id, label)
+                picker::insert(&text, at, at, PickKind::Link, id, label)
             }
         };
         self.splice_editor(&text, &new_text, Some(caret), window, cx);
-        self.tray_placed(&pick.id); // --- tray ---
+        self.tray_placed(id); // --- tray ---
         let verb = match kind {
             PickKind::Quote => "Quoted",
             PickKind::Link => "Linked",
         };
-        let from = pick
-            .source_title
-            .clone()
-            .unwrap_or_else(|| "yours".to_string());
-        self.show_toast(format!("{verb} “{}”", pick.title), Some(from.into()), cx);
+        self.show_toast(format!("{verb} “{what}”"), from.map(Into::into), cx);
         cx.notify();
     }
 
@@ -322,6 +452,18 @@ impl MainView {
         });
         let subs = picker::blyg_subs(&self.backend.subscriptions());
         let filters = Filters::get(cx);
+        // --- picker sources --- the tab row, and an open extension tab.
+        let weak = cx.entity().downgrade();
+        let on_tab: picker::OnTab = std::rc::Rc::new(move |tab, window, cx: &mut App| {
+            let _ = weak.update(cx, |v, cx| v.choose_quote_tab(tab, window, cx));
+        });
+        let (tab_row, tab) = match sheet {
+            RSheet::Quote { ext_tabs, .. } => (
+                ext_tabs.row(p, on_tab),
+                ext_tabs.on_ext().map(|_| ext_tabs.rows.clone()),
+            ),
+            _ => (None, None),
+        };
         div()
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 cx.stop_propagation();
@@ -340,7 +482,17 @@ impl MainView {
                 gpui_kit::base::input::Input::new(input).into_any_element(),
                 false,
             ))
-            .child(
+            .children(tab_row.map(|r| div().mt(px(8.)).child(r)))
+            .when_some(tab.clone(), |d, rows| {
+                d.child(
+                    div()
+                        .mt(px(6.))
+                        .text_size(px(11.))
+                        .text_color(p.muted)
+                        .child(rows.status()),
+                )
+            })
+            .when(tab.is_none(), |d| d.child(
                 div()
                     .mt(px(8.))
                     .flex()
@@ -351,7 +503,7 @@ impl MainView {
                     .when(kind == PickKind::Quote, |d| {
                         d.children(self.ext_picker_chip(input.read(cx).value().to_string(), cx))
                     }),
-            )
+            ))
             .child(
                 div()
                     .id("quote-list")
@@ -359,6 +511,9 @@ impl MainView {
                     .max_h(px(260.))
                     .overflow_y_scroll()
                     .map(|d| {
+                        if let Some(rows) = &tab {
+                            return d.children(picker::tab_rows(p, rows.rows(), sel, pick.clone()));
+                        }
                         // --- extensions --- the notes chip shows notes instead.
                         if self.ext_picker_on() && kind == PickKind::Quote {
                             return d.children(self.ext_picker_rows(sel, cx));

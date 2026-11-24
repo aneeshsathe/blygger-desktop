@@ -380,6 +380,10 @@ pub enum RSheet {
         kind: crate::composer::picker::PickKind,
         /// What the search found for the box and the filters.
         rows: Vec<blyg_core::Pickable>,
+        /// --- picker sources --- the extension tabs, and a count that
+        /// drops a stale answer.
+        ext_tabs: crate::composer::picker::TabState,
+        tab_gen: usize,
     },
 }
 
