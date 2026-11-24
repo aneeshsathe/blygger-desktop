@@ -110,7 +110,9 @@ fn ci_and_release_shell_has_no_bash_pattern_substitution() {
          Pipe the text through sed, tr or grep instead: under macOS bash 3.2, which the release \
          runner uses, ${{var//…}} on a large string took over an hour (scripts/changelog-notes.sh, \
          0.28.0). Dev and CI run bash 5, where it took about a second, so nothing there shows it. \
-         For an emptiness test, use `printf '%s' \"$var\" | grep -q '[^[:space:]]'`. There is no allow list.",
+         For an emptiness test, use `grep -q '[^[:space:]]' <<<\"$var\"` (not `printf … | grep -q` under \
+         `set -o pipefail`: grep exits at the first match, printf dies of SIGPIPE once the text \
+         is larger than the pipe buffer, and the pipeline reports failure). There is no allow list.",
         bad.join("\n")
     );
 }
@@ -248,7 +250,14 @@ mod notes_script {
     fn notes_script_finishes_on_a_large_section() {
         let (log, first, last) = big_changelog();
         let run = run_script(&repo_script(), &log, "2.0.0", LIMIT);
-        assert!(run.ok, "the script failed on a large section");
+        assert!(
+            run.ok,
+            "scripts/changelog-notes.sh exited non-zero on a section of about 200 KB that is \
+             there, so a release with large notes would stop. A likely cause: under \
+             `set -o pipefail`, `printf … | grep -q` fails once the text is larger than the pipe \
+             buffer (grep exits at the first match and printf dies of SIGPIPE). Feed grep with a \
+             here-string (`grep -q … <<<\"$notes\"`) or drop `-q` and send its output to /dev/null."
+        );
         assert!(run.stdout.contains(&first), "first line missing");
         assert!(run.stdout.contains(&last), "last line missing");
         assert!(
