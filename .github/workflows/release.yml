@@ -230,21 +230,33 @@ jobs:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: scripts/sign-sums.sh dist/SHA256SUMS
 
+      # Put first, so it's the first thing a reader sees. The command must
+      # match the README and site/src/install.md (blyg-core's install_command test).
       - name: Note an unsigned build in the release notes
         env:
           SIGNED: ${{ secrets.APPLE_DEVELOPER_ID_APP != '' }}
         run: |
           if [ "$SIGNED" != "true" ]; then
-            cat >> "$RUNNER_TEMP/notes.md" <<'EOF'
+            {
+              cat <<'EOF'
+          **Install on macOS:** this build isn't notarized by Apple, so install it
+          with the one-line Terminal installer, which Gatekeeper doesn't block:
+
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/aneeshsathe/blygger-desktop/main/scripts/install.sh | bash
+          ```
+
+          If you download it in a browser instead, macOS 15 and later say "Burrow"
+          Not Opened. Try opening it once, then click **Open Anyway** in System
+          Settings › Privacy & Security, or run
+          `xattr -dr com.apple.quarantine /Applications/Burrow.app`.
 
           ---
-          This build isn't notarized by Apple. The easiest way to install it is the
-          one-line Terminal installer in the README, which Gatekeeper doesn't block.
-          If you download it in a browser, macOS 15 and later say "Burrow" Not
-          Opened. Try opening it once, then click **Open Anyway** in System Settings ›
-          Privacy & Security, or run
-          `xattr -dr com.apple.quarantine /Applications/Burrow.app`.
+
           EOF
+              cat "$RUNNER_TEMP/notes.md"
+            } > "$RUNNER_TEMP/notes.new"
+            mv "$RUNNER_TEMP/notes.new" "$RUNNER_TEMP/notes.md"
           fi
 
       - name: Note how to install the Windows build
