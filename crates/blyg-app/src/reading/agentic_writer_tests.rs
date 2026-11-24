@@ -164,7 +164,8 @@ fn the_tab_says_who_is_writing_and_how_one_gets_made() {
 /// its key.
 #[test]
 fn write_an_edition_now_is_a_command_with_a_key() {
-    let row = crate::keymap::table()
+    // In macOS terms on every platform; the Windows respelling is asserted below.
+    let row = crate::keymap::mac_table()
         .into_iter()
         .find(|k| k.action == "WriteAgenticEdition")
         .expect("in the keymap");
