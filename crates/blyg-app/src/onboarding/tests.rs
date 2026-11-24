@@ -2578,3 +2578,73 @@ fn the_date_step_highlights_the_newest_card(cx: &mut TestAppContext) {
         assert!(!caption.contains("fully on screen"), "{caption}");
     }
 }
+
+/// --- ux 0.29 I6 --- The tour card sits clear of what its step points at:
+/// bottom left as before, else bottom right, else at the top.
+#[test]
+fn the_tour_card_moves_away_from_its_ring() {
+    use super::tutorial::{Corner, card_corner};
+    let (w, h, card_h) = (1100., 720., 260.);
+    assert_eq!(card_corner(None, w, h, card_h), Corner::BottomLeft);
+    // A ring up top-left leaves the bottom left free.
+    let top_left = Some((20., 80., 300., 120.));
+    assert_eq!(card_corner(top_left, w, h, card_h), Corner::BottomLeft);
+    // The editor's lower left: the card goes right.
+    let lower_left = Some((20., 380., 420., 260.));
+    assert_eq!(card_corner(lower_left, w, h, card_h), Corner::BottomRight);
+    // A ring across the whole bottom: the card goes up.
+    let bottom = Some((0., 400., 1100., 260.));
+    assert_eq!(card_corner(bottom, w, h, card_h), Corner::TopRight);
+    // A ring over the whole window: nowhere is clear, the usual corner.
+    let whole = Some((0., 0., 1100., 720.));
+    assert_eq!(card_corner(whole, w, h, card_h), Corner::BottomLeft);
+}
+
+/// --- ux 0.29 --- A `tut-<id>+` scene exists only for a step whose key the
+/// scene can do (`tutorial_demo_act` has an arm for it): 22 of them did
+/// nothing after the key, and a pass took their shots for evidence.
+#[test]
+fn every_after_key_scene_does_its_steps_key() {
+    let src = include_str!("tutorial.rs");
+    let start = src
+        .find("fn tutorial_demo_act(")
+        .expect("tutorial_demo_act");
+    let body = &src[start..];
+    let body = &body[body.find("match id {").expect("its match")..];
+    // The arms' patterns: string literals before a `=>` at the match's own
+    // depth (one brace in).
+    let mut acts = std::collections::BTreeSet::new();
+    let mut depth = 0i32;
+    for line in body.lines() {
+        let t = line.trim_start();
+        if depth == 1
+            && t.starts_with('"')
+            && let Some(pat) = t.split("=>").next().filter(|_| t.contains("=>"))
+        {
+            for alt in pat.split('|') {
+                let a = alt.trim().trim_matches('"');
+                if !a.is_empty() {
+                    acts.insert(a.to_string());
+                }
+            }
+        }
+        depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+        if depth <= 0 && line.contains('}') {
+            break;
+        }
+    }
+    assert!(acts.len() > 30, "found the arms: {acts:?}");
+    let scenes: std::collections::BTreeSet<String> = crate::scenes::Scene::all()
+        .into_iter()
+        .filter_map(|s| {
+            s.strip_prefix("tut-")?
+                .strip_suffix('+')
+                .map(str::to_string)
+        })
+        .collect();
+    let idle: Vec<_> = scenes.difference(&acts).collect();
+    assert!(
+        idle.is_empty(),
+        "tut-<id>+ scenes whose key the scene doesn't do: {idle:?}"
+    );
+}

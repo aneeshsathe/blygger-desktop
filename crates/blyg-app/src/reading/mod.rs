@@ -125,6 +125,8 @@ mod studio069_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod ux029_content_tests;
+#[cfg(test)]
 mod ux029_keys_tests;
 #[cfg(test)]
 mod ux_reading_tests; // --- ux 0.28 --- // --- ux 0.29 ---
