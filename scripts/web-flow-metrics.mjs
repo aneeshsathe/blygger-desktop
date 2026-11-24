@@ -109,6 +109,9 @@ function pageProbe() {
         for (const [el, t0] of m) {
           if (!now.has(el)) {
             m.delete(el);
+            // One empty note replaced by another (the query typed so far
+            // in "No matches for …") is the same state, not a flash.
+            if (kind === 'empty' && now.size) continue;
             list.push({ t: Date.now(), d: Date.now() - t0, what: `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${String(el.className).split(' ')[0]} "${(el.textContent || '').trim().slice(0, 40)}"`, gone: !el.isConnected });
           }
         }

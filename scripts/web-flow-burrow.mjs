@@ -110,8 +110,11 @@ export async function burrowJourneys(ctx) {
         await J.page.waitForSelector('#wr-body [data-sub]', { state: 'detached', timeout: 15_000 });
       }, { scroller: false });
       await J.step('see-posts', async () => {
-        await waitFor(async () => !!(await J.page.$(`#d-wr-sources [data-src^="sub:"] >> text=${J.spareName}`)), 30_000, 'the new source');
-        await J.click(`#d-wr-sources [data-src^="sub:"] >> text=${J.spareName}`);
+        // The studio names a new RSS subscription by its host until it
+        // reads the feed's title: the source is found by its id.
+        const id = await J.spareId();
+        await waitFor(async () => !!(await J.page.$(`#d-wr-sources [data-src="sub:${id}"]`)), 30_000, 'the new source');
+        await J.click(`#d-wr-sources [data-src="sub:${id}"]`);
         await waitFor(async () => (await J.page.$$('#d-stream .card')).length >= 5, 30_000, 'its posts');
       }, { scroller: false });
     },
@@ -259,8 +262,9 @@ export async function burrowJourneys(ctx) {
       await J.step('confirm', async () => { await J.tap('#wr-body [data-sub]'); await J.page.waitForSelector('#wr-body [data-sub]', { state: 'detached', timeout: 15_000 }); }, { scroller: false });
       await J.step('see-posts', async () => {
         await J.tap('#p-wrBar [data-go="sources"]');
-        await waitFor(async () => !!(await J.page.$(`#wr-body [data-src^="sub:"] >> text=${J.spareName}`)), 30_000, 'the new source');
-        await J.tap(`#wr-body [data-src^="sub:"] >> text=${J.spareName}`);
+        const id = await J.spareId();
+        await waitFor(async () => !!(await J.page.$(`#wr-body [data-src="sub:${id}"]`)), 30_000, 'the new source');
+        await J.tap(`#wr-body [data-src="sub:${id}"]`);
         await waitFor(async () => (await J.page.$$('#p-stream .card')).length >= 5, 30_000, 'its posts');
       }, { scroller: false });
     },
@@ -270,6 +274,9 @@ export async function burrowJourneys(ctx) {
       for (const round of [1, 2]) {
         for (const src of ['agentic', 'shelf', 'background', 'raw', 'all']) {
           await J.step(`${src}-${round}`, async () => {
+            // One tap on the Read screen's row of sources; a build without
+            // it takes ☰ Sources and the sheet.
+            if (await J.page.$('#p-srcStrip')) return J.tap(`#p-srcStrip [data-src="smart:${src}"]`);
             await J.tap('#p-wrBar [data-go="sources"]');
             await J.tap(`#wr-body [data-src="smart:${src}"]`);
           }, { scroller: false });
@@ -334,7 +341,13 @@ export async function burrowJourneys(ctx) {
   };
 
   const spare = spareFeed(ctx);
-  const subSetup = async (J) => { await unsubscribe(a, spare); J.spare = spare; J.spareName = spareName(ctx); };
+  const subSetup = async (J) => {
+    await unsubscribe(a, spare);
+    J.spare = spare;
+    J.spareName = spareName(ctx);
+    const port = new URL(spare).port;
+    J.spareId = async () => (await a.all('/subscriptions')).find((s) => JSON.stringify([s.origin, s.feedUrl, s.url]).includes(`:${port}`))?.id;
+  };
   const setupOf = (name) => (name === 'subscribe' ? subSetup : name === 'catch-up' ? async () => { await markAllUnread(a); } : undefined);
   for (const name of journeyList(ctx)) {
     if (desk[name]) await run(name, 'desktop', 'chromium', desk[name], setupOf(name));
