@@ -441,7 +441,9 @@ pub(crate) fn redo_keys() -> &'static str {
 mod tests {
     use super::*;
 
-    const GLYPHS: [char; 4] = ['⌘', '⌥', '⇧', '⌃'];
+    // ⏎ ⇥ ⌫ too (ux 0.29): Windows names them, alone or after a modifier.
+    const GLYPHS: [char; 7] = ['⌘', '⌥', '⇧', '⌃', '⏎', '⇥', '⌫'];
+    const MODS: [char; 4] = ['⌘', '⌥', '⇧', '⌃'];
 
     /// Calls a glyph literal may sit in: the respelling itself, or a `Text`.
     /// `kb!`/`menu_only!` are keymap rows, whose labels reach the screen
@@ -479,6 +481,25 @@ mod tests {
             "⌘",
             "the glyph tables of `windows_hint`/`mac_glyphs`",
         ),
+        (
+            "keymap.rs",
+            "⏎",
+            "the key tables of `mac_glyphs`/`bare_key_word`",
+        ),
+        (
+            "keymap.rs",
+            "⇥",
+            "the key tables of `mac_glyphs`/`bare_key_word`",
+        ),
+        (
+            "keymap.rs",
+            "⌫",
+            "the key tables of `mac_glyphs`/`bare_key_word`",
+        ),
+        ("tutorial.rs", "⌃", "`keep_chords_together`'s modifier list"),
+        ("tutorial.rs", "⌥", "`keep_chords_together`'s modifier list"),
+        ("tutorial.rs", "⇧", "`keep_chords_together`'s modifier list"),
+        ("tutorial.rs", "⌘", "`keep_chords_together`'s modifier list"),
         ("prefs.rs", "⌃", "the macOS hotkey glyphs (`hotkey_label`)"),
         ("prefs.rs", "⌥", "the macOS hotkey glyphs (`hotkey_label`)"),
         ("prefs.rs", "⇧", "the macOS hotkey glyphs (`hotkey_label`)"),
@@ -491,6 +512,11 @@ mod tests {
         for (path, src) in scan::crate_sources() {
             for l in scan::literals(&src) {
                 if !l.text.contains(GLYPHS) {
+                    continue;
+                }
+                // A key cap on its own ("⏎" in a chip) is the key's picture
+                // on both platforms; only prose names it in words.
+                if !l.text.contains(MODS) && !l.text.chars().any(char::is_alphabetic) {
                     continue;
                 }
                 if l.callers.iter().any(|c| BUILDERS.contains(&c.as_str())) {
