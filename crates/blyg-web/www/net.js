@@ -31,6 +31,13 @@ function mountOf(p) {
   return MOUNT_RE.test(m) ? m : null;
 }
 export const MOUNT = mountOf(location.pathname);
+
+/** The WebAssembly, asked for as soon as this first module runs, for
+    app.js to hand to the wasm's init. (A `<link rel="preload" as="fetch">`
+    did this before, and WebKit fetched it a second time: 4.4 MB twice on
+    every open on an iPhone.) */
+export const WASM = fetch(new URL('pkg/blyg_web_bg.wasm', import.meta.url));
+WASM.catch(() => {}); // a failure is app.js's to report, through init
 /** The blyg's own address (origin and mount): the base its links are built
     on when its settings name no siteUrl. */
 export const SITE = location.origin + (MOUNT ?? '');

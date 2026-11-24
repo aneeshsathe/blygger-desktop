@@ -687,8 +687,12 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
     // Its early reads go through the same guard, and only GETs are taken.
     assert!(net.contains("if (apiPath(path) && !early.has(path))"));
     assert!(net.contains("const e = method === 'GET' && !etag ? early.get(path) : undefined;"));
+    // Besides the app's own WebAssembly, a fixed path beside the page
+    // (flow_tests.rs `the_wasm_is_fetched_once`).
+    let wasm = "export const WASM = fetch(new URL('pkg/blyg_web_bg.wasm', import.meta.url));";
+    assert!(net.contains(wasm));
     assert_eq!(
-        net.matches(" fetch(").count(),
+        net.replace(wasm, "").matches(" fetch(").count(),
         1,
         "net.js fetches in one place"
     );

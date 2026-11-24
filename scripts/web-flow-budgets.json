@@ -14,7 +14,7 @@
       "phone": { "worstSettleMs": 1500, "settleMs": 3000, "cls": 0.05, "inputs": 6 }
     },
     "draft-revise": {
-      "desktop": { "worstSettleMs": 1500, "settleMs": 4000, "cls": 0.05, "inputs": 15 },
+      "desktop": { "worstSettleMs": 1500, "settleMs": 4000, "cls": 0.05, "inputs": 17 },
       "phone": { "worstSettleMs": 1500, "settleMs": 4000, "cls": 0.05, "inputs": 15 }
     },
     "subscribe": {

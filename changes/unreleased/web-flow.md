@@ -13,4 +13,5 @@ section: Changed
   fails says why in the form. A thread's card no longer repeats its title
   in its excerpt, the blyg's messages start with a capital, and the Agentic
   feed's empty state says where its setting is (Burrow desktop's Settings ›
-  Agentic feed). `crates/blyg-web/www/`.
+  Agentic feed). WebKit (Safari) no longer downloads the app twice on
+  every open. `crates/blyg-web/www/`.

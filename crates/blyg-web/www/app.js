@@ -11,7 +11,7 @@
 import init, { Burrow } from './pkg/blyg_web.js';
 import { $, S, now, load, pref, applyTheme, placeOnStart } from './core.js';
 import * as live from './live.js';
-import { dropEarly } from './net.js';
+import { dropEarly, WASM } from './net.js';
 import { initDesk, render as renderDesk, showDesk, deskEditorFocused } from './desk.js';
 import { initPhone, render as renderPhone, showPhone } from './phone.js';
 // --- web-reading ---
@@ -70,7 +70,7 @@ async function openStore() {
   try {
     // What this browser holds is read while the WebAssembly compiles.
     if (/^https?:$/.test(location.protocol)) live.loadSaved();
-    await init();
+    await init({ module_or_path: WASM });
     S.themes = JSON.parse(Burrow.themes());
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(pref.get('theme') || (dark ? 'dark' : 'light'), [document.documentElement]);
