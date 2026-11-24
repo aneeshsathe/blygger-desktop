@@ -512,6 +512,12 @@ impl MainView {
         use crate::scenes::Scene;
         match n {
             0 => {
+                // `BLYGGER_SNAPSHOT_WIDTH`: the narrow window the lines must
+                // wrap in.
+                if let Some(w) = crate::dev_flags::get().snapshot.width {
+                    let h = window.viewport_size().height;
+                    window.resize(size(px(w), h));
+                }
                 if let Some(f) = &self.fake {
                     f.agentic_clear();
                 }
