@@ -26,10 +26,10 @@ impl MainView {
         if self.list.wants_create() {
             self.current = None;
             self.set_editor_text("", window, cx);
-            let ph = format!(
+            let ph = crate::keymap::hint_owned(format!(
                 "⏎ creates a new {}: “{q}”",
                 scratch::new_note_noun(self.prefs.new_note)
-            );
+            ));
             self.editor
                 .update(cx, |s, cx| s.set_placeholder(ph, window, cx));
         } else {

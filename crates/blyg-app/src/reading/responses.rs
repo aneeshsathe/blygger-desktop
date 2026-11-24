@@ -218,7 +218,7 @@ impl MainView {
                         .gap(px(6.))
                         .py(px(2.))
                         .cursor_pointer()
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .child(
                             div()
                                 .text_color(p.ink)

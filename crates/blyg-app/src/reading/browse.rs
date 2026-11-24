@@ -779,12 +779,12 @@ impl MainView {
         let link = |d: Stateful<Div>| {
             d.cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent))
+                .hover(|s| s.text_color(p.accent_text()))
         };
         let button = |d: Stateful<Div>| {
             d.cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent).bg(p.sel))
+                .hover(|s| s.text_color(p.accent_text()).bg(p.sel))
         };
         div()
             .id("trail-bar")
@@ -850,7 +850,9 @@ impl MainView {
                     .px(px(6.))
                     .rounded(px(self.theme.corner(5.)))
                     .map(button)
-                    .when(self.reading.browse.history_open, |d| d.text_color(p.accent))
+                    .when(self.reading.browse.history_open, |d| {
+                        d.text_color(p.accent_text())
+                    })
                     .child("history")
                     .tooltip(|_, cx| {
                         cx.new(|_| super::Tip(crate::keymap::hint("Browsing history · ⇧⌘H").into()))
@@ -910,7 +912,7 @@ impl MainView {
                             .id("peek-subscribe")
                             .debug_selector(|| "peek-subscribe".into())
                             .cursor_pointer()
-                            .text_color(p.accent)
+                            .text_color(p.accent_text())
                             .border_b_1()
                             .border_color(p.accent.opacity(0.5))
                             .child(NOT_SUBSCRIBED_ASK)
@@ -955,7 +957,7 @@ impl MainView {
                 .pl(px(depth.min(8) as f32 * 12.))
                 .cursor_pointer()
                 .text_color(p.ink)
-                .hover(|s| s.text_color(p.accent))
+                .hover(|s| s.text_color(p.accent_text()))
                 .child(div().flex_none().text_color(p.muted).child(lead))
                 .child(div().min_w_0().truncate().child(text))
         };

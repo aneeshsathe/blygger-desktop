@@ -12,9 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::grammar;
-use crate::model::{
-    Item, Kind, ReadingItem, Status, Subscription, SubscriptionKind, plain_text, strip_tk,
-};
+use crate::model::{Item, Kind, ReadingItem, Status, Subscription, SubscriptionKind, strip_tk};
 
 /// At most this many words of a query count (upstream's limit).
 pub const MAX_WORDS: usize = 8;
@@ -189,7 +187,8 @@ pub fn pick_label(title: Option<&str>, shows: String) -> String {
 
 /// The first [`EXCERPT_CHARS`] characters of the plain text, `…` when cut.
 pub fn excerpt(md: &str) -> String {
-    let t = plain_text(md);
+    // Shown, never written: formulas as the text they say.
+    let t = crate::model::plain_text_read(md);
     // Code points, never inside a grapheme cluster (§5.3).
     crate::text::clip(&t, EXCERPT_CHARS).into_owned()
 }
@@ -209,7 +208,7 @@ pub fn mine(it: &Item, q: &PickQuery, words: &[String]) -> Option<Pickable> {
     }
     Some(Pickable {
         id: sid.0.clone(),
-        title: it.title(),
+        title: crate::model::plain_title_read(&it.content_md).unwrap_or_else(|| "Untitled".into()),
         excerpt: excerpt(&it.content_md),
         label: pick_label(
             crate::model::plain_title(&it.content_md).as_deref(),
@@ -243,7 +242,7 @@ pub fn imported(r: &ReadingItem, blyg: bool, q: &PickQuery, words: &[String]) ->
     let title = r.subscription_title.trim();
     Some(Pickable {
         id: r.remote_id.to_string(),
-        title: crate::model::plain_title(&r.content_md).unwrap_or_else(|| "…".into()),
+        title: crate::model::plain_title_read(&r.content_md).unwrap_or_else(|| "…".into()),
         excerpt: excerpt(&r.content_md),
         label: pick_label(
             crate::model::plain_title(&r.content_md).as_deref(),

@@ -94,7 +94,7 @@ impl MainView {
         // Spelled as this platform's keys are (`keymap::hint`).
         format!(
             "who responded to your posts · {} · esc back",
-            crate::keymap::hint(MENTION_KEYS)
+            MENTION_KEYS.get()
         )
     }
 
@@ -354,7 +354,8 @@ impl MainView {
                                                     .when_some(id.clone(), |d, id| {
                                                         d.cursor_pointer()
                                                             .hover(|s| {
-                                                                s.text_color(p.accent).underline()
+                                                                s.text_color(p.accent_text())
+                                                                    .underline()
                                                             })
                                                             .on_click(cx.listener(
                                                                 move |this, _, window, cx| {
@@ -424,7 +425,7 @@ impl MainView {
                         self.chip(format!("responses-{gi}-{i}"), label)
                             .when(chosen, |d| {
                                 d.border_color(p.accent)
-                                    .text_color(p.accent)
+                                    .text_color(p.accent_text())
                                     .cursor_default()
                             })
                             .when(!chosen, |d| {
@@ -511,7 +512,7 @@ impl MainView {
                     .flex()
                     .gap(px(8.))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(p.accent))
+                    .hover(|s| s.text_color(p.accent_text()))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_mention(open_src.clone(), open_post.clone(), window, cx)
                     }))
@@ -536,7 +537,7 @@ impl MainView {
                             .border_b_1()
                             .border_dashed()
                             .border_color(p.muted.opacity(0.5))
-                            .hover(|s| s.text_color(p.accent))
+                            .hover(|s| s.text_color(p.accent_text()))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_profile(profile_of.clone(), window, cx)
                             }))
@@ -548,7 +549,7 @@ impl MainView {
                             .flex_none()
                             .text_color(p.muted)
                             .cursor_pointer()
-                            .hover(|s| s.text_color(p.accent))
+                            .hover(|s| s.text_color(p.accent_text()))
                             // Its page, where links go (the browser pane,
                             // or the default browser).
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -584,7 +585,8 @@ const NOTICES: &str = "only you see these";
 /// The row keys, as the header shows them (the reading list's letters:
 /// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides). ⏎ opens in Burrow,
 /// as a click on who responded does; o is the default browser.
-const MENTION_KEYS: &str = "j/k move · ⏎ open · o open in browser ↗ · h hide · r reply";
+const MENTION_KEYS: crate::platform_text::Text =
+    crate::platform_text::ui_text("j/k move · ⏎ open · o open in browser ↗ · h hide · r reply");
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).

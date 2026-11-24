@@ -36,24 +36,22 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 | `rd-responses-keys` | Responses with the row cursor on the link notice (j ×3); the header lists j/k, h, r, o |
 | `rd-feed`, `rd-raw` | the Reader on the pace-layered Feed (order in the header); Raw |
 | `rd-agentic` | the Agentic feed tab with the sample edition (masthead, sections, cards) |
-| `rd-agentic-empty` | the Agentic feed tab on a blyg with no edition yet: its explanation, wrapped across the reading pane |
-| `rd-agentic-empty-narrow` | the same in an 800 px window: the explanation still wraps |
-| `rd-agentic-unwritten` | the Agentic feed with no edition: how one gets made (⌥⌘E, Settings › Agentic feed, an assistant on your blyg) and the "Write an edition now" line |
+| `rd-agentic-unwritten` | the Agentic feed with no edition: how one gets made (⌥⌘E, Settings › Agentic feed, an assistant on your blyg) and the "Write an edition now" line, wrapped across the reading pane (`BLYGGER_SNAPSHOT_WIDTH=800` for a narrow window) |
 | `rd-agentic-writing` | ⌥⌘E with a slow stand-in provider: "Writing an edition with Codex (local)…" above the empty tab |
-| `rd-agentic-written` | the edition Burrow wrote (stand-in provider): "by Burrow · Codex (local) (demo-model)" |
+| `rd-agentic-written` | the edition Burrow wrote (stand-in provider): "by Burrow · Codex (local) · demo-model" |
 | `rd-saved` | Saved (the shelf, renamed), its sync line, the first post open |
 | `rd-stream-copies` | Kit's tides opened from the stream: "the author says it is also at …" under its source line |
 | `rd-stream-catchup-summary` | Catch up on Rue's thread, then `s`: the blyg's summary first |
 | `newer` | the toast sync shows for a blyg on a newer studio ("Your blyg runs a newer studio") |
 | `rd-stream-date` | the first card's date clicked: its post open in the side pane (studio 0.71) |
 | `rd-gen-read` | Lin's post in the Reader, scrolled to its end: what its generated sentence read (Kit's post, told; a web page) |
-| `settings-background-locked` | Settings › BACKGROUND for a sign-in that can't change the rules: greyed, with the reason; ⇥ ×5, →, space |
+| `settings-background-locked` | Settings › BACKGROUND for a sign-in that can't change the rules: greyed, with the reason, scrolled into view; no key reaches a locked rule (it is no tab stop), so READ MARKS above it stays as it was |
 
 Journeys (0.27.0):
 - Why is this in Background? Reader › Background: each row carries a badge
   ("published with ‘<thread title>’", "no words of its own", "republished unchanged").
 - Background rules: Settings (⌘,), the BACKGROUND row under CHANGELOG; turn a
-  chip off (a click, or ⇥ past THEME then space), a toast says where its
+  chip off (a click, or ⇥ until the ring is on BACKGROUND, past READ MARKS, then space), a toast says where its
   posts went, and they're back in the stream.
 - A thread's parts by keys: `p` folds or unfolds them (open thread, else the
   selected stream card), 1–9 open one.

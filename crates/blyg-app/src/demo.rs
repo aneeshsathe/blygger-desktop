@@ -75,7 +75,13 @@ impl MainView {
     }
 
     /// One step of a scene: its area's handler (`scenes.rs` says which).
-    fn demo_step(&mut self, scene: Scene, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn demo_step(
+        &mut self,
+        scene: Scene,
+        n: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match scene.area() {
             Area::Main => self.main_demo_step(scene, n, window, cx),
             Area::Upkeep => self.upkeep_demo_step(scene, n, window, cx),
@@ -184,50 +190,23 @@ impl MainView {
             (Scene::SettingsFull, n) => self.settings_demo(n, window, cx),
             // --- FX1 --- the keys Settings › BACKGROUND takes.
             (Scene::SettingsBackgroundKeys, 2) => {
-                for _ in 0..5 {
-                    self.settings_preview_key("tab", false, window, cx);
-                }
+                self.settings_tab_to(super::pref_preview::Row::Background, window, cx);
                 self.settings_preview_key("right", false, window, cx);
             }
             (Scene::SettingsBackgroundKeys, n) => self.settings_demo(n, window, cx),
             // --- ux 0.28 --- a sign-in that can read Background but not
             // place (what `background_placing` says for an owner:read
-            // token), then the keys onto the second rule and space.
+            // token). Its rules are no tab stops, so no key reaches them
+            // (--- ux 0.29 --- ⇥ ×5 and space flipped READ MARKS): the page
+            // scrolls to BACKGROUND, greyed with its reason.
             (Scene::SettingsBackgroundLocked, 2) => {
                 self.reading.background.placing = false;
-                for _ in 0..5 {
-                    self.settings_preview_key("tab", false, window, cx);
-                }
-                self.settings_preview_key("right", false, window, cx);
-                self.settings_preview_key("space", false, window, cx);
+                self.settings_show_background(window, cx);
             }
             (Scene::SettingsBackgroundLocked, n) => self.settings_demo(n, window, cx),
             // --- studio 0.71 --- Settings at its end, where READ MARKS'
             // "Count an entry as read" is (the fake blyg offers it).
-            (Scene::SettingsCountRead, 2) => {
-                // The end of the page, then back up past BACKGROUND (drawn
-                // first: a window that isn't in front may not redraw).
-                if let Some(super::settings_page::SettingsSheet { scroll, .. }) = self.sheet.get() {
-                    scroll.scroll_to_bottom();
-                }
-                cx.notify();
-                cx.spawn_in(window, async move |this, cx| {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(300))
-                        .await;
-                    let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
-                    let _ = this.update(cx, |v, cx| {
-                        if let Some(super::settings_page::SettingsSheet { scroll, .. }) =
-                            v.sheet.get()
-                        {
-                            let o = scroll.offset();
-                            scroll.set_offset(point(o.x, (o.y + px(640.)).min(px(0.))));
-                        }
-                        cx.notify();
-                    });
-                })
-                .detach();
-            }
+            (Scene::SettingsCountRead, 2) => self.settings_show_background(window, cx),
             (Scene::SettingsCountRead, n) => self.settings_demo(n, window, cx),
             // --- ux 0.28 --- sync met a blyg on a newer contract.
             (Scene::Newer, 0) => self.demo_open("01J9QK3", window, cx),

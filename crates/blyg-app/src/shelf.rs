@@ -103,8 +103,16 @@ impl MainView {
         cx.notify();
     }
 
-    /// ⌥⌘B: shelve the open post, or take it off.
+    /// ⌥⌘B: shelve the open post, or take it off. On the reading screen,
+    /// the post in front of you (as "+ Save" under it), never the Write
+    /// side's open post.
     pub(crate) fn toggle_on_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.reading.view == crate::app::reading::View::Reading {
+            return match self.reading_post_in_front() {
+                Some(key) => self.toggle_reading_shelf(key, cx),
+                None => self.show_toast("Open or select a post to save it", None, cx),
+            };
+        }
         let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
             return self.show_toast("Open a post to save it", None, cx);
         };

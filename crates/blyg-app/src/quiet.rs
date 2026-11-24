@@ -51,6 +51,9 @@ pub(crate) struct Quiet {
     was: bool,
     /// Where Settings' row was drawn (the tour's ring).
     pub(crate) row: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// --- ux 0.29 --- Scroll Settings so the row shows, the next time it's
+    /// drawn (the tour's Quiet writing step: the row sat below the fold).
+    pub(crate) reveal: Rc<Cell<bool>>,
 }
 
 impl Quiet {
@@ -58,6 +61,7 @@ impl Quiet {
         Self {
             was: on(cx),
             row: Default::default(),
+            reveal: Default::default(),
         }
     }
 }
@@ -154,10 +158,36 @@ impl MainView {
         use crate::app::settings_page::{chips, note, row};
         let quiet = on(cx);
         let at = self.quiet.row.clone();
-        // Records where the row is drawn (for the tour's ring).
-        let marker = canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {})
-            .absolute()
-            .inset_0();
+        let reveal = self.quiet.reveal.clone();
+        let scroll = self
+            .sheet
+            .get::<crate::app::SettingsSheet>()
+            .map(|s| s.scroll.clone());
+        // Records where the row is drawn (for the tour's ring), and brings
+        // it into view when asked.
+        let marker = canvas(
+            move |b, window, _| {
+                at.set(Some(b));
+                let Some(scroll) = scroll.as_ref().filter(|_| reveal.replace(false)) else {
+                    return;
+                };
+                let view = scroll.bounds();
+                let margin = px(48.);
+                let off = scroll.offset();
+                let dy = if b.bottom() + margin > view.bottom() {
+                    view.bottom() - (b.bottom() + margin)
+                } else if b.top() - margin < view.top() {
+                    view.top() - (b.top() - margin)
+                } else {
+                    return;
+                };
+                scroll.set_offset(point(off.x, off.y + dy));
+                window.refresh();
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .inset_0();
         row(
             &p,
             "QUIET WRITING",

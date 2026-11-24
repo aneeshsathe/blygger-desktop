@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// The empty list's connect half (`EMPTY_SAMPLE` in app.rs is the other).
+const EMPTY_CONNECT: crate::platform_text::Text =
+    crate::platform_text::ui_text("⏎ Connect your blyg…");
+
 impl MainView {
     pub(super) fn render_omnibar(
         &self,
@@ -106,7 +110,7 @@ impl MainView {
                                     .cursor_pointer()
                                     .text_color(p.ink)
                                     .hover(|s| s.underline())
-                                    .child(crate::keymap::hint(EMPTY_CONNECT))
+                                    .child(EMPTY_CONNECT.get())
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_connect(window, cx)
                                     })),
@@ -309,11 +313,11 @@ impl MainView {
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
                             .when_some(pub_tip.clone().filter(|_| !held), |d, tip| {
-                                d.text_color(p.accent).tooltip(move |_, cx| {
+                                d.text_color(p.accent_text()).tooltip(move |_, cx| {
                                     cx.new(|_| reading::Tip(tip.to_string())).into()
                                 })
                             })
-                            .when(pill_pub, |d| d.text_color(p.accent))
+                            .when(pill_pub, |d| d.text_color(p.accent_text()))
                             .child(pill_text)
                             // Below studio 0.47: this post waits for its labels.
                             .when(held, |d| {

@@ -622,16 +622,7 @@ impl MainView {
             }
             // --- ux 0.28 --- the Agentic feed (the fake's edition) and Saved.
             (Scene::RdAgentic | Scene::RdSaved, 0) => self.show_view(View::Reading, window, cx),
-            (Scene::RdAgenticEmpty | Scene::RdAgenticEmptyNarrow, 0) => {
-                if let Some(f) = &self.fake {
-                    f.set_agentic_edition(false);
-                }
-                if scenario == Scene::RdAgenticEmptyNarrow {
-                    window.resize(size(px(800.), px(600.)));
-                }
-                self.show_view(View::Reading, window, cx)
-            }
-            (Scene::RdAgentic | Scene::RdAgenticEmpty | Scene::RdAgenticEmptyNarrow, 1) => {
+            (Scene::RdAgentic, 1) => {
                 use super::sources_vm::{Smart, Source};
                 self.select_source(Source::Smart(Smart::Agentic), cx);
             }

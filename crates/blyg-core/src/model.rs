@@ -1535,10 +1535,21 @@ mod len_tests {
 /// shows as "↗"; emphasis and code marks go. `None` when no line has any
 /// text of the author's own.
 pub fn plain_title(md: &str) -> Option<String> {
+    title_as(md, false)
+}
+
+/// [`plain_title`] as a reader sees it: each formula as the text it says
+/// (`e^(iπ)`, `∫₀¹`; [`crate::maths_text::tex_text`]), for list rows and
+/// pickers. What is written into a post (a quote's label) keeps the TeX.
+pub fn plain_title_read(md: &str) -> Option<String> {
+    title_as(md, true)
+}
+
+fn title_as(md: &str, read: bool) -> Option<String> {
     strip_tk(md)
         .lines()
         .filter(|l| !l.trim_start().starts_with('>'))
-        .map(plain_line)
+        .map(|l| plain_line(l, read))
         .find(|l| !l.is_empty())
 }
 
@@ -1546,15 +1557,27 @@ pub fn plain_title(md: &str) -> Option<String> {
 /// output, Markdown syntax removed, transclusions dropped), for excerpts
 /// and search.
 pub fn plain_text(md: &str) -> String {
+    text_as(md, false)
+}
+
+/// [`plain_text`] with each formula as the text it says (excerpts shown in
+/// a list), as [`plain_title_read`].
+pub fn plain_text_read(md: &str) -> String {
+    text_as(md, true)
+}
+
+fn text_as(md: &str, read: bool) -> String {
     strip_tk(md)
         .lines()
-        .map(|l| plain_line(l.trim_start().trim_start_matches('>')))
+        .map(|l| plain_line(l.trim_start().trim_start_matches('>'), read))
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-fn plain_line(line: &str) -> String {
+/// One line as plain text; `read`: formulas as the text they say, else as
+/// their TeX.
+fn plain_line(line: &str, read: bool) -> String {
     let t = line.trim();
     let t = t.trim_start_matches('#').trim_start();
     let t = t
@@ -1577,7 +1600,11 @@ fn plain_line(line: &str) -> String {
     let mut i = 0;
     while i < c.len() {
         if let Some((_, end, tex)) = formulas.iter().find(|f| f.0 == i) {
-            out.push_str(tex);
+            if read {
+                out.push_str(&crate::maths_text::tex_text(tex));
+            } else {
+                out.push_str(tex);
+            }
             i = *end;
             continue;
         }

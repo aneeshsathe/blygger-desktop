@@ -528,7 +528,7 @@ impl Render for AboutView {
                                         .id("about-server-help")
                                         .mt(px(3.))
                                         .cursor_pointer()
-                                        .text_color(p.accent)
+                                        .text_color(p.accent_text())
                                         .hover(|s| s.underline())
                                         .child(crate::app::server_notice::OUTDATED_LINK)
                                         .on_click(|_, _, cx| {

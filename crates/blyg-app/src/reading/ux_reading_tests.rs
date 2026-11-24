@@ -292,7 +292,7 @@ mod app {
         keys(cx, "cmd-shift-m");
         settle(cx);
         let hint = view.read_with(cx, |v, _| v.mentions_screen_strings()[1].clone());
-        assert!(hint.contains("⏎ open"), "{hint}");
+        assert!(hint.contains(crate::keymap::hint("⏎ open")), "{hint}");
         assert!(hint.contains("o open in browser ↗"), "{hint}");
         keys(cx, "j");
         keys(cx, "enter");

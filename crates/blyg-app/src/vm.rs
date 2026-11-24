@@ -210,10 +210,12 @@ impl ListModel {
         let q = self.trimmed_query();
         match (q.is_empty(), self.results.len()) {
             (true, _) => String::new(),
-            (false, 0) if lone_web_url(q).is_some() => "⏎ start a fragment with this link".into(), // --- capture ---
+            (false, 0) if lone_web_url(q).is_some() => {
+                crate::keymap::hint("⏎ start a fragment with this link").into()
+            } // --- capture ---
             (false, 0) if blyg_core::loose::is_operator_only(q) => "nothing loose".into(), // --- loose ends ---
-            (false, 0) => "⏎ new draft".into(),
-            (false, n) => format!("{n} found · ⏎ open"),
+            (false, 0) => crate::keymap::hint("⏎ new draft").into(),
+            (false, n) => crate::keymap::hint_owned(format!("{n} found · ⏎ open")),
         }
     }
 
@@ -222,8 +224,12 @@ impl ListModel {
         let q = self.trimmed_query();
         Some(match self.enter() {
             _ if q.is_empty() => return None,
-            EnterAction::LinkFragment(_) => "Press ⏎ to start a fragment with this link.".into(),
-            EnterAction::Create(_) => format!("No matches. Press ⏎ to start “{q}”."),
+            EnterAction::LinkFragment(_) => {
+                crate::keymap::hint("Press ⏎ to start a fragment with this link.").into()
+            }
+            EnterAction::Create(_) => {
+                crate::keymap::hint_owned(format!("No matches. Press ⏎ to start “{q}”."))
+            }
             _ => "Nothing loose here.".into(),
         })
     }
@@ -1133,7 +1139,10 @@ mod tests {
             EnterAction::LinkFragment("https://lin.example.org/t/rock-pools".into())
         );
         assert!(!m.wants_create());
-        assert_eq!(m.hint(), "⏎ start a fragment with this link");
+        assert_eq!(
+            m.hint(),
+            crate::keymap::hint("⏎ start a fragment with this link")
+        );
         // Already written about: ⏎ opens it.
         m.set_query("https://lin.example.org/t/rock-pools", ids(&["rock"]));
         assert_eq!(m.enter(), EnterAction::Open(LocalId("rock".into())));
@@ -1152,10 +1161,10 @@ mod tests {
         let mut m = ListModel::default();
         m.set_query("be", ids(&["bees"]));
         assert_eq!(m.enter(), EnterAction::Open(LocalId("bees".into())));
-        assert_eq!(m.hint(), "1 found · ⏎ open");
+        assert_eq!(m.hint(), crate::keymap::hint("1 found · ⏎ open"));
         m.set_query("  tide pools ", vec![]);
         assert_eq!(m.enter(), EnterAction::Create("tide pools".into()));
-        assert_eq!(m.hint(), "⏎ new draft");
+        assert_eq!(m.hint(), crate::keymap::hint("⏎ new draft"));
         assert!(m.wants_create());
         m.set_query("", vec![]);
         assert_eq!(m.enter(), EnterAction::Nothing);

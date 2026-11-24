@@ -770,17 +770,12 @@ pub const STEPS: &[Step] = &[
         id: "palette",
         since: "0.18.0",
         title: ui_text("Every command, by name"),
-        caption: ui_text_per_platform(
+        caption: ui_text(
             "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
              your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
              each row shows its key, and a theme or font row shows itself on the window as you \
              move to it. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and the last ten \
              come first.",
-            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
-             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
-             Changes); each row shows its key, and a theme or font row shows itself on the window \
-             as you move to it. Enter runs it, Ctrl+Enter runs it and keeps the palette open, \
-             and the last ten come first.",
         ),
         keys: &[Key::Palette],
         key_label: ui_text("⇧⌘P"),

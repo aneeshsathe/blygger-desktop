@@ -71,6 +71,10 @@ pub struct Tutorial {
     seen: Vec<Key>,
     /// Frames asked for while the step's region waits for its layout.
     retries: u8,
+    /// --- ux 0.29 --- The step's setup ran on the reading screen before
+    /// its list had filled (a window just opened, a scene's first step):
+    /// it runs again once the list is there, so it finds its post.
+    setup_waits: bool,
     /// Stay on the step after its key (`BLYGGER_DEMO=tut-<id>+` snapshots).
     hold: bool,
     /// After an update: what changed, shown before the first step until
@@ -177,6 +181,7 @@ impl MainView {
             typed_from: None,
             seen: Vec::new(),
             retries: 0,
+            setup_waits: false,
             hold: false,
             news: Vec::new(),
             parked,
@@ -407,7 +412,12 @@ impl MainView {
     }
 
     /// The running tour's card `pos` (past the end: its end card).
-    fn tutorial_show(&mut self, pos: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn tutorial_show(
+        &mut self,
+        pos: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(t) = self.onboarding.tutorial.as_mut() else {
             return;
         };
@@ -433,8 +443,10 @@ impl MainView {
         let step = &STEPS[i];
         self.tutorial_setup(step.setup, window, cx);
         let seen = self.tutorial_observed(window, cx);
+        let waits = self.tutorial_setup_waits(step.setup, window, cx);
         if let Some(t) = self.onboarding.tutorial.as_mut() {
             t.seen = seen;
+            t.setup_waits = waits;
         }
         if step.accepts(Key::Typed) {
             let text = self.editor.read(cx).value().to_string();
@@ -1381,6 +1393,8 @@ impl MainView {
                 if !self.sheet.is::<crate::app::SettingsSheet>() {
                     self.open_settings(&crate::app::OpenSettings, window, cx);
                 }
+                // --- ux 0.29 --- the row is below the fold: bring it up.
+                self.quiet.reveal.set(true);
             }
             // --- 0.27.0 --- a fresh draft each time, so a step done
             // before (the sample published, its spans rewritten) starts over.
@@ -1422,6 +1436,22 @@ impl MainView {
                     });
                 }
             }
+        }
+    }
+
+    /// Whether the step's setup ran before what it needs was there: the
+    /// reading screen with nothing listed yet, or the extensions palette
+    /// before the tour's sample extensions said what they offer.
+    fn tutorial_setup_waits(&self, setup: Setup, window: &Window, cx: &App) -> bool {
+        match setup {
+            Setup::Palette => {
+                self.ext_tour_on()
+                    && self.ext.host.as_ref().is_some_and(|h| {
+                        h.palette(self.ext_screen(window, cx), self.current.is_some())
+                            .is_empty()
+                    })
+            }
+            _ => self.reading.view == View::Reading && self.reading.shown_rows().next().is_none(),
         }
     }
 
@@ -1467,8 +1497,8 @@ impl MainView {
                 self.tutorial_setup(Setup::Walked, window, cx);
             }
             "history" => self.toggle_browse_history(cx),
-            // --- hoppers ---
-            "hoppers" => self.open_hopper_picker(window, cx),
+            // --- hoppers --- (several: on the two posts the step picked)
+            "hoppers" | "hopper-several" => self.open_hopper_picker(window, cx),
             "stub-passage" => self.studio_demo_select_passage(),
             "notes" => self.open_notes(window, cx),
             "browser" | "browser-windows" => self.close_browser(window, cx),
@@ -1947,6 +1977,19 @@ impl MainView {
         let buttons = super::show_buttons(cx);
         let hotkey = crate::prefs::hotkey_glyphs(&self.prefs.hotkey);
         let caption = step.caption.get().replace("{hotkey}", &hotkey);
+        // --- ux 0.29 --- a chord in the caption never breaks across lines
+        // ("⌥" at a line's end, "⌘U" on the next).
+        let caption = keep_chords_together(&caption);
+        let corner = {
+            let lineage = self.lineage_open() || step.region == Region::QuietSetting;
+            let vp = window.viewport_size();
+            let (w, h) = (f32::from(vp.width), f32::from(vp.height));
+            let ring = self.tutorial_ring(step.region, window, cx);
+            match card_corner(ring, w, h, card_h_for(caption.chars().count())) {
+                Corner::BottomLeft if lineage => Corner::BottomRight,
+                c => c,
+            }
+        };
 
         let ring = |(x, y, w, h): (f32, f32, f32, f32), id: &'static str, strong: bool| {
             div()
@@ -1965,8 +2008,11 @@ impl MainView {
                     |d, t| d.opacity(1.0 - 0.45 * (1.0 - (2.0 * t - 1.0).abs())),
                 )
         };
+        // --- ux 0.29 --- a chord never splits across lines ("⇧" then "⌘D").
         let kbd = |k: String| {
             div()
+                .flex_none()
+                .whitespace_nowrap()
                 .px(px(7.))
                 .py(px(1.))
                 .min_w(px(22.))
@@ -2037,23 +2083,23 @@ impl MainView {
             .debug_selector(|| "tutorial-card".into())
             .occlude()
             .absolute()
-            // Clear of the lineage sheet's responses row.
-            .map(|d| {
-                // --- 0.26.0 --- and of Settings' chips, at the left.
-                if self.lineage_open() || step.region == Region::QuietSetting {
-                    d.right(px(CARD_LEFT))
-                } else {
-                    d.left(px(CARD_LEFT))
-                }
+            // --- ux 0.29 --- clear of the step's ring; at the right for
+            // the lineage sheet's responses row and Settings' chips.
+            .map(|d| match corner {
+                Corner::BottomLeft | Corner::TopLeft => d.left(px(CARD_LEFT)),
+                Corner::BottomRight | Corner::TopRight => d.right(px(CARD_LEFT)),
             })
-            // Above the compose box when the step is about it.
-            .bottom(px(STATUS_H
-                + 14.
-                + if step.region == Region::Compose {
-                    self.tutorial_compose_h()
-                } else {
-                    0.
-                }))
+            .map(|d| match corner {
+                Corner::TopLeft | Corner::TopRight => d.top(px(CARD_TOP)),
+                // Above the compose box when the step is about it.
+                Corner::BottomLeft | Corner::BottomRight => d.bottom(px(STATUS_H
+                    + 14.
+                    + if step.region == Region::Compose {
+                        self.tutorial_compose_h()
+                    } else {
+                        0.
+                    })),
+            })
             .w(px(CARD_W))
             .max_w(relative(0.9))
             // --- themes --- the theme's card.
@@ -2066,10 +2112,11 @@ impl MainView {
                 div()
                     .flex()
                     .items_center()
+                    .gap(px(10.))
                     .text_size(px(10.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.muted)
-                    .child(format!(
+                    .child(div().min_w_0().flex_1().truncate().child(format!(
                         "{tour_name} · {} OF {}{} · SAMPLE DATA",
                         pos + 1,
                         count,
@@ -2079,11 +2126,12 @@ impl MainView {
                         } else {
                             String::new()
                         }
-                    ))
-                    .child(div().flex_1())
+                    )))
                     .child(
                         div()
                             .id("tutorial-end")
+                            .flex_none()
+                            .whitespace_nowrap()
                             .cursor_pointer()
                             .hover(|s| s.text_color(p.ink))
                             .child("End tour ✕")
@@ -2179,6 +2227,24 @@ impl MainView {
                     ),
             );
 
+        // --- ux 0.29 --- a setup that ran before the reading list filled
+        // runs again now it's there (Catch up found no post to select).
+        if self
+            .onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| t.setup_waits)
+            && !self.tutorial_setup_waits(step.setup, window, cx)
+        {
+            if let Some(t) = self.onboarding.tutorial.as_mut() {
+                t.setup_waits = false;
+            }
+            self.tutorial_setup(step.setup, window, cx);
+            let seen = self.tutorial_observed(window, cx);
+            if let Some(t) = self.onboarding.tutorial.as_mut() {
+                t.seen = seen;
+            }
+        }
         let rect = self.tutorial_ring(step.region, window, cx);
         // A step entered before the Stream's list filled (the window just
         // opened) selected nothing: select the newest card once it's there,
@@ -2319,11 +2385,14 @@ impl MainView {
                     ))
                     .when(has_new_step, |d| {
                         d.child(
-                            button("whats-new-start", "Show me what's new  ⏎", true).on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.whats_new_go(true, window, cx)
-                                }),
-                            ),
+                            button(
+                                "whats-new-start",
+                                crate::keymap::hint("Show me what's new  ⏎"),
+                                true,
+                            )
+                            .on_click(cx.listener(
+                                |this, _, window, cx| this.whats_new_go(true, window, cx),
+                            )),
                         )
                     }),
             );
@@ -2606,6 +2675,120 @@ type Rect = (f32, f32, f32, f32);
 /// The tour card's margin from the window's left edge, and its width.
 const CARD_LEFT: f32 = 14.;
 const CARD_W: f32 = 380.;
+
+/// The steps whose `tut-<id>+` scene does the step's key: each has an arm
+/// in `tutorial_demo_act` (`every_after_key_scene_does_its_steps_key`
+/// checks), and `Scene::all` lists a `+` scene for these only.
+pub(crate) const DEMO_ACTS: &[&str] = &[
+    "stream",
+    "generated",
+    "echoed-quote",
+    "original",
+    "reader",
+    "switcher",
+    "compose",
+    "thicket",
+    "history",
+    "hoppers",
+    "hopper-several",
+    "stub-passage",
+    "notes",
+    "browser",
+    "browser-windows",
+    "mentions",
+    "quotes",
+    "discard",
+    "own-post",
+    "lineage",
+    "ring",
+    "catch-up",
+    "background",
+    "shelf-add",
+    "shelf-lens",
+    "mentions-feed",
+    "feed-order",
+    "raw-tab",
+    "count-read",
+    "agentic-edition",
+    "discover",
+    "quiet-writing",
+    "more-menu",
+    "tangle",
+    "maths",
+    "new",
+    "opml",
+    "clip",
+    "cross-post",
+    "auto-crosspost",
+    "extensions",
+    "palette",
+    "focus",
+    "serendipity",
+    "manage",
+    "slots",
+    "notes-library",
+];
+
+/// Where the tour card sits in the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Corner {
+    BottomLeft,
+    BottomRight,
+    TopRight,
+    TopLeft,
+}
+
+/// The card's gap below the title bar, at the top corners.
+const CARD_TOP: f32 = crate::app::TITLEBAR_H + 40.;
+
+/// The corner for a card `card_h` tall in a `w` × `h` window, clear of the
+/// step's ring: bottom left as ever, else bottom right, top right, top left
+/// (ux 0.29: the card covered what about ten steps point at). Nowhere
+/// clear: bottom left.
+pub(crate) fn card_corner(ring: Option<Rect>, w: f32, h: f32, card_h: f32) -> Corner {
+    let Some(ring) = ring else {
+        return Corner::BottomLeft;
+    };
+    let card_w = CARD_W.min(w * 0.9);
+    let bottom = h - STATUS_H - 14. - card_h;
+    let at = |c: Corner| match c {
+        Corner::BottomLeft => (CARD_LEFT, bottom, card_w, card_h),
+        Corner::BottomRight => (w - CARD_LEFT - card_w, bottom, card_w, card_h),
+        Corner::TopRight => (w - CARD_LEFT - card_w, CARD_TOP, card_w, card_h),
+        Corner::TopLeft => (CARD_LEFT, CARD_TOP, card_w, card_h),
+    };
+    [
+        Corner::BottomLeft,
+        Corner::BottomRight,
+        Corner::TopRight,
+        Corner::TopLeft,
+    ]
+    .into_iter()
+    .find(|c| !overlaps(ring, at(*c)))
+    .unwrap_or(Corner::BottomLeft)
+}
+
+/// `text` with a word joiner after each modifier glyph that has a key after
+/// it, so a line never breaks inside a chord (the line breaker may break
+/// between symbols such as ⌥ and ⌘).
+pub(crate) fn keep_chords_together(text: &str) -> String {
+    const MODS: [char; 4] = ['⌃', '⌥', '⇧', '⌘'];
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        if MODS.contains(&c) && chars.peek().is_some_and(|n| !n.is_whitespace()) {
+            out.push('\u{2060}');
+        }
+    }
+    out
+}
+
+/// About how tall the card draws for a caption of `chars` characters (its
+/// header, title, key row and footer, and the caption's lines).
+fn card_h_for(chars: usize) -> f32 {
+    170. + (chars as f32 / 54.).ceil() * 19.
+}
 
 /// The Stream | Reader toggle's width (two segments, 11.5 px Inter).
 const TOGGLE_W: f32 = 124.;

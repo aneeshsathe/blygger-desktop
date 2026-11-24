@@ -1319,10 +1319,25 @@ impl MainView {
             |masked: bool, ph: &'static str, window: &mut Window, cx: &mut Context<Self>| {
                 cx.new(|cx| InputState::new(window, cx).masked(masked).placeholder(ph))
             };
-        let anthropic_key = input(true, "Paste an Anthropic API key, then ⏎", window, cx);
-        let openai_key = input(true, "Paste an OpenAI API key, then ⏎", window, cx);
+        let anthropic_key = input(
+            true,
+            crate::keymap::hint("Paste an Anthropic API key, then ⏎"),
+            window,
+            cx,
+        );
+        let openai_key = input(
+            true,
+            crate::keymap::hint("Paste an OpenAI API key, then ⏎"),
+            window,
+            cx,
+        );
         let cf_account = input(false, "Cloudflare account ID", window, cx);
-        let cf_token = input(true, "Workers AI API token, then ⏎", window, cx);
+        let cf_token = input(
+            true,
+            crate::keymap::hint("Workers AI API token, then ⏎"),
+            window,
+            cx,
+        );
         let model = input(false, "the provider's default", window, cx);
         let subscribe = |e: &Entity<InputState>,
                          f: fn(&mut MainView, &mut Window, &mut Context<MainView>),
@@ -1712,7 +1727,13 @@ impl MainView {
                             .flex()
                             .gap(px(8.))
                             .child(
-                                chip(&self.theme, "ai-warn-cancel", "Cancel  ⏎", true).on_click(
+                                chip(
+                                    &self.theme,
+                                    "ai-warn-cancel",
+                                    crate::keymap::hint("Cancel  ⏎"),
+                                    true,
+                                )
+                                .on_click(
                                     cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
                                 ),
                             )

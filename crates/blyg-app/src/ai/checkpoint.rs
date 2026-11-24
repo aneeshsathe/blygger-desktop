@@ -102,9 +102,9 @@ pub(crate) fn cancelled(c: &Checkpoint) -> (&'static str, String) {
 pub(crate) const DONE_ON_BLYG: &str = "Your blyg noted what it read";
 
 /// ⏎ while another AI job runs: the sheet stays, and this says why.
-pub(crate) const BUSY: (&str, &str) = (
+pub(crate) const BUSY: (&str, crate::platform_text::Text) = (
     "Another AI job is still running",
-    "When it's done, press ⏎ again",
+    crate::platform_text::ui_text("When it's done, press ⏎ again"),
 );
 
 /// One failure under Details.
@@ -169,7 +169,7 @@ impl MainView {
             return;
         }
         if self.ai.job.is_some() {
-            self.show_toast(BUSY.0, Some(BUSY.1.into()), cx);
+            self.show_toast(BUSY.0, Some(BUSY.1.get().into()), cx);
             return;
         }
         let Some(s) = self.sheet.take::<TkCheckpointSheet>() else {
@@ -251,7 +251,7 @@ impl MainView {
         let link = |id: String, label: String, open: read::Open, cx: &mut Context<Self>| {
             div()
                 .id(SharedString::from(id))
-                .text_color(p.accent)
+                .text_color(p.accent_text())
                 .cursor_pointer()
                 .hover(|s| s.underline())
                 .child(label)
@@ -496,7 +496,7 @@ impl SheetView for TkCheckpointSheet {
                         .cursor_pointer()
                         .text_size(px(12.))
                         .text_color(p.ink)
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .child(if self.details {
                             "▾ Details"
                         } else {

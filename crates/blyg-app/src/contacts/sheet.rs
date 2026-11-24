@@ -142,7 +142,7 @@ impl MainView {
                                         .child(
                                             div()
                                                 .font_weight(FontWeight::SEMIBOLD)
-                                                .text_color(p.accent)
+                                                .text_color(p.accent_text())
                                                 .child(format!("@{}", c.handle)),
                                         )
                                         .child(
@@ -159,7 +159,7 @@ impl MainView {
                                         .text_size(px(11.5))
                                         .text_color(p.muted)
                                         .cursor_pointer()
-                                        .hover(|d| d.text_color(p.accent))
+                                        .hover(|d| d.text_color(p.accent_text()))
                                         .on_click(move |_, _, cx| cx.open_url(&open))
                                         .child(match checked {
                                             0 => c.origin.clone(),

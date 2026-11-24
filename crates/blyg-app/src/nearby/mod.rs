@@ -1351,7 +1351,7 @@ impl MainView {
                         .line_height(px(14.))
                         .max_h(px(28.))
                         .overflow_hidden()
-                        .when(!s.semantic, |d| d.text_color(p.accent))
+                        .when(!s.semantic, |d| d.text_color(p.accent_text()))
                         .child(s.why.clone()),
                 )
         });

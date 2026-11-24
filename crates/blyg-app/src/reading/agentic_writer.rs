@@ -387,7 +387,7 @@ impl MainView {
                             .rounded(px(4.))
                             .border_1()
                             .border_color(p.line)
-                            .text_color(p.accent)
+                            .text_color(p.accent_text())
                             .cursor_pointer()
                             .hover(|d| d.bg(p.sel))
                             .on_click(cx.listener(|this, _, _, cx| this.agentic_write_now(cx)))

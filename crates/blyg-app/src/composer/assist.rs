@@ -946,7 +946,9 @@ impl Assist {
                         .pb(px(2.))
                         .text_size(px(11.))
                         .text_color(p.muted)
-                        .child("⏎ links the blyg · esc keeps your text"),
+                        .child(crate::keymap::hint(
+                            "⏎ links the blyg · esc keeps your text",
+                        )),
                 )
             });
         Some(
@@ -1040,10 +1042,10 @@ impl Assist {
                     .pb(px(2.))
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child(format!(
+                    .child(crate::keymap::hint_owned(format!(
                         "type to search · ↑↓ choose · ⏎ {} · esc keeps your text",
                         pk.kind.enter_hint()
-                    )),
+                    ))),
             );
         Some(
             deferred(

@@ -82,28 +82,49 @@ fn the_quote_pickers_say_formulas_not_tex(cx: &mut TestAppContext) {
     assert!(!excerpt.contains("\\frac"), "{excerpt}");
 }
 
-/// I7: `settings-background-locked` lands on BACKGROUND whatever rows sit
-/// above it (0.28 put READ MARKS there, and ⇥ ×5 flipped "Count an entry as
-/// read" instead), and its space leaves READ MARKS alone.
+/// I7: `settings-background-locked` presses no key (a locked rule is no
+/// tab stop: 0.28 put READ MARKS above it, and ⇥ ×5 then space flipped
+/// "Count an entry as read"), so READ MARKS is left alone; and
+/// `settings-background-keys` lands on BACKGROUND whatever rows come first.
 #[gpui_kit::test]
 fn the_locked_background_scene_lands_on_background(cx: &mut TestAppContext) {
     use crate::app::pref_preview::Row;
     use crate::scenes::Scene;
     let (view, _, cx) = setup(cx);
-    let marks_before = view.read_with(cx, |v, _| v.reading.count_read.setting.clone());
-    for n in 0..3 {
+    for n in 0..2 {
         view.update_in(cx, |v, window, cx| {
             v.demo_step(Scene::SettingsBackgroundLocked, n, window, cx)
         });
         settle(cx);
     }
+    // Settings is open and READ MARKS has loaded; then the scene's keys.
+    let marks_before = view.read_with(cx, |v, _| v.reading.count_read.setting);
+    view.update_in(cx, |v, window, cx| {
+        v.demo_step(Scene::SettingsBackgroundLocked, 2, window, cx)
+    });
+    settle(cx);
     let row = view.read_with(cx, |v, _| v.preview.cursor.as_ref().map(|(r, _)| *r));
-    assert_eq!(row, Some(Row::Background));
+    assert_ne!(row, Some(Row::CountRead));
     assert_eq!(
-        view.read_with(cx, |v, _| v.reading.count_read.setting.clone()),
+        view.read_with(cx, |v, _| v.reading.count_read.setting),
         marks_before,
         "READ MARKS is untouched"
     );
+}
+
+#[gpui_kit::test]
+fn the_background_keys_scene_lands_on_background(cx: &mut TestAppContext) {
+    use crate::app::pref_preview::Row;
+    use crate::scenes::Scene;
+    let (view, _, cx) = setup(cx);
+    for n in 0..3 {
+        view.update_in(cx, |v, window, cx| {
+            v.demo_step(Scene::SettingsBackgroundKeys, n, window, cx)
+        });
+        settle(cx);
+    }
+    let row = view.read_with(cx, |v, _| v.preview.cursor.as_ref().map(|(r, _)| *r));
+    assert_eq!(row, Some(Row::Background));
 }
 
 /// A window on the sample data with the fake's realistic latency, as a

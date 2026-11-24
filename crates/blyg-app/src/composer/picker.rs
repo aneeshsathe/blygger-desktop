@@ -261,7 +261,7 @@ fn chip(p: Palette, id: SharedString, label: String, on: bool) -> Stateful<Div> 
         .rounded(px(5.))
         .border_1()
         .border_color(if on { p.accent } else { p.edge() })
-        .when(on, |d| d.text_color(p.accent))
+        .when(on, |d| d.text_color(p.accent_text()))
         .when(!on, |d| d.text_color(p.muted))
         .cursor_pointer()
         .hover(|s| s.bg(p.hover()))

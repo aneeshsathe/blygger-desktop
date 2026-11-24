@@ -1553,13 +1553,28 @@ fn glyph_parts(text: &str) -> Vec<GlyphPart> {
     out
 }
 
+/// A key glyph Windows writes as a word when it stands alone.
+fn bare_key_word(c: char) -> Option<&'static str> {
+    Some(match c {
+        '⏎' => "Enter",
+        '⇥' => "Tab",
+        '⌫' => "Backspace",
+        _ => return None,
+    })
+}
+
 /// The pure part of `hint`: rewrite each run of macOS modifier glyphs
 /// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
 pub fn windows_hint(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for part in glyph_parts(text) {
         match part {
-            GlyphPart::Char(c) => out.push(c),
+            // --- ux 0.29 --- a key on its own ("⏎ read more", "Press ⇥"):
+            // Windows names it, as it does after a modifier.
+            GlyphPart::Char(c) => match bare_key_word(c) {
+                Some(w) => out.push_str(w),
+                None => out.push(c),
+            },
             // Modifiers alone: name them the Windows way.
             GlyphPart::Mods(mods) => {
                 let names: Vec<&str> = mods
@@ -1780,6 +1795,13 @@ pub fn glyphs(key: &str) -> String {
 
 /// A key as Windows menus and tooltips write it: `Ctrl+Shift+Enter`.
 pub fn windows_label(key: &str) -> String {
+    // --- ux 0.29 --- the plus key: "Ctrl+" read as unfinished.
+    if let Some(b) = key.strip_suffix("-+").or_else(|| key.strip_suffix("++")) {
+        let mut l = windows_label(&format!("{b}-a"));
+        l.pop();
+        l.push_str("Plus");
+        return l;
+    }
     let (mods, last) = normalize(key);
     let mut parts: Vec<String> = [
         ("ctrl", "Ctrl"),
@@ -1797,6 +1819,8 @@ pub fn windows_label(key: &str) -> String {
         "escape" => "Esc".into(),
         "tab" => "Tab".into(),
         "backspace" => "Backspace".into(),
+        // --- ux 0.29 --- "Ctrl+−" beside "Ctrl+Plus".
+        "-" | "−" => "Minus".into(),
         "up" | "down" | "left" | "right" => {
             let mut c = last.chars();
             c.next()
@@ -1808,9 +1832,17 @@ pub fn windows_label(key: &str) -> String {
     parts.join("+")
 }
 
-/// `⌘⇧,` for `cmd-shift-,`.
+/// `⌘⇧,` for `cmd-shift-,`; in Windows' wording (a test, or
+/// `BLYGGER_TEST_SPELLING=windows` in a debug build) as Windows writes the
+/// respelled key, so a menu's key column matches the hints around it.
 #[cfg(not(target_os = "windows"))]
 pub fn glyphs(key: &str) -> String {
+    #[cfg(any(test, debug_assertions))]
+    if crate::platform_text::Platform::spelling() == crate::platform_text::Platform::Windows
+        && !key.is_empty()
+    {
+        return windows_label(&respell_for_windows(key));
+    }
     mac_glyphs(key)
 }
 
@@ -2407,7 +2439,8 @@ mod tests {
         assert_eq!(windows_label("ctrl-shift-1"), "Ctrl+Shift+1");
         assert_eq!(windows_label("ctrl-shift-,"), "Ctrl+Shift+,");
         assert_eq!(windows_label("ctrl-enter"), "Ctrl+Enter");
-        assert_eq!(windows_label("ctrl--"), "Ctrl+-");
+        assert_eq!(windows_label("ctrl--"), "Ctrl+Minus");
+        assert_eq!(windows_label("ctrl-+"), "Ctrl+Plus");
         assert_eq!(windows_label("ctrl+alt+b"), "Ctrl+Alt+B");
         assert_eq!(windows_label("alt-up"), "Alt+Up");
     }
@@ -2424,7 +2457,9 @@ mod tests {
         assert_eq!(windows_hint("⌘-click"), "Ctrl-click");
         assert_eq!(windows_hint("hold ⌘ and"), "hold Ctrl and");
         assert_eq!(windows_hint("⌘1 · ⌘2"), "Ctrl+1 · Ctrl+2");
-        assert_eq!(windows_hint("no keys here ⏎"), "no keys here ⏎");
+        // A key on its own is named too (ux 0.29).
+        assert_eq!(windows_hint("no keys here ⏎"), "no keys here Enter");
+        assert_eq!(windows_hint("no keys here"), "no keys here");
         assert_eq!(
             windows_hint("The token is kept in your macOS Keychain; the address"),
             "The token is kept in Windows Credential Manager; the address"
@@ -2488,6 +2523,16 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn glyphs_and_listing() {
+        // The macOS spelling (in Windows' wording `glyphs` gives the Windows
+        // label: `a_menus_key_column_follows_the_spelling`).
+        crate::platform_text::spelled_as(
+            crate::platform_text::Platform::Mac,
+            mac_glyphs_and_listing,
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn mac_glyphs_and_listing() {
         assert_eq!(glyphs("cmd-shift-,"), "⇧⌘,");
         assert_eq!(glyphs("cmd-enter"), "⌘⏎");
         assert_eq!(glyphs("ctrl-alt-cmd-o"), "⌃⌥⌘O");
@@ -2587,7 +2632,8 @@ mod tests {
         });
         assert_eq!(
             tooltip("Publish", &button_row("Publish").unwrap(), ""),
-            if cfg!(target_os = "windows") {
+            if crate::platform_text::Platform::spelling() == crate::platform_text::Platform::Windows
+            {
                 "Publish  Ctrl+Enter"
             } else {
                 "Publish  ⌘⏎"

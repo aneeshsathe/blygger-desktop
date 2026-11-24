@@ -147,7 +147,9 @@ impl MainView {
                     .mt(px(10.))
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child("⏎ adds it · esc leaves the image without one"),
+                    .child(crate::keymap::hint(
+                        "⏎ adds it · esc leaves the image without one",
+                    )),
             );
         (440., body.into_any_element())
     }

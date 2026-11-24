@@ -429,7 +429,9 @@ impl MainView {
                 div()
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child("1–3 or ←/→ switch · ↑/↓ choose · ⏎ opens in Reading · esc"),
+                    .child(crate::keymap::hint(
+                        "1–3 or ←/→ switch · ↑/↓ choose · ⏎ opens in Reading · esc",
+                    )),
             );
         (480., body.into_any_element())
     }

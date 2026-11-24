@@ -964,7 +964,7 @@ impl MainView {
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
             "(withdrawn)".to_string()
         } else {
-            vm::post_title(r)
+            vm::row_title(r)
         };
         // The search's matches in the title, as the posts list shows them.
         let highlights: Vec<_> = crate::vm::highlight_ranges(&title, &self.reading.query)
@@ -1102,7 +1102,7 @@ impl MainView {
                             .debug_selector(move || format!("reading-row-date-{ix}"))
                             .flex_none()
                             .whitespace_nowrap()
-                            .hover(|s| s.text_color(p.accent).underline())
+                            .hover(|s| s.text_color(p.accent_text()).underline())
                             .tooltip(|_, cx| {
                                 cx.new(|_| super::Tip(super::stream::OPEN_ENTRY.into()))
                                     .into()
@@ -1296,7 +1296,7 @@ impl MainView {
                         .text_size(px(11.5))
                         .text_color(p.muted)
                         .cursor_pointer()
-                        .hover(|s| s.text_color(p.accent))
+                        .hover(|s| s.text_color(p.accent_text()))
                         .on_click(move |_, _, cx| cx.open_url(&url))
                         .child("the pinned version, attributed ↗"),
                 )
@@ -1407,7 +1407,7 @@ impl MainView {
                 let el = if chip.enabled {
                     self.chip(id, chip.label)
                         .when(a == "Diff vs now" && o.diff_vs_now, |d| {
-                            d.border_color(p.accent).text_color(p.accent)
+                            d.border_color(p.accent).text_color(p.accent_text())
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.reading_action(a, window, cx)

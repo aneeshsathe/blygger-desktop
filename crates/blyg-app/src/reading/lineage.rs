@@ -1271,11 +1271,9 @@ impl MainView {
                             .text_size(px(14.))
                             .child("Actions"),
                     )
-                    .child(
-                        div().text_color(p.muted).child(
-                            "A letter previews what it makes; ⏎ does it; esc closes the ring.",
-                        ),
-                    )
+                    .child(div().text_color(p.muted).child(crate::keymap::hint(
+                        "A letter previews what it makes; ⏎ does it; esc closes the ring.",
+                    )))
                     .child(keys(
                         Act::ALL
                             .iter()
@@ -1371,10 +1369,10 @@ impl MainView {
                         .mt(px(8.))
                         .text_color(p.muted)
                         .text_size(px(12.))
-                        .child(format!(
+                        .child(crate::keymap::hint_owned(format!(
                             "⏎ or {} again does it · esc back",
                             a.key().to_uppercase()
-                        )),
+                        ))),
                 })
                 .into_any_element();
         }

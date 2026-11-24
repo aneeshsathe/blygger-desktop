@@ -514,6 +514,23 @@ impl MainView {
         cx.notify();
     }
 
+    /// ⇥ until the keyboard cursor is on `row` (scenes: the rows above it
+    /// change between releases). False when ⇥ never reaches it.
+    pub(crate) fn settings_tab_to(
+        &mut self,
+        row: Row,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        for _ in 0..=Row::ALL.len() {
+            if self.preview.cursor.as_ref().is_some_and(|(r, _)| *r == row) {
+                return true;
+            }
+            self.settings_preview_key("tab", false, window, cx);
+        }
+        false
+    }
+
     /// A key on Settings (the page itself focused, not a field in it).
     /// Returns whether it was taken.
     pub(crate) fn settings_preview_key(

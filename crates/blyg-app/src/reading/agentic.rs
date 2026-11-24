@@ -235,7 +235,13 @@ fn source_name(r: &ReadingItem) -> String {
 pub fn masthead_meta(l: &Layout, when: Option<String>) -> String {
     let mut s = format!("by {}", l.agent.name);
     if let Some(m) = &l.agent.model {
-        s.push_str(&format!(" ({m})"));
+        // A name with its own brackets ("Codex (local)") takes the model
+        // after a dot: "(local) (demo-model)" read as one muddle.
+        if l.agent.name.contains('(') {
+            s.push_str(&format!(" · {m}"));
+        } else {
+            s.push_str(&format!(" ({m})"));
+        }
     }
     if let Some(w) = when {
         s.push_str(&format!(" · {w}"));
@@ -337,7 +343,7 @@ impl MainView {
                 .italic()
                 .text_size(px(size))
                 .line_height(relative(1.4))
-                .text_color(p.accent)
+                .text_color(p.accent_text())
                 .child(super::maths_text::plain_maths(&t))
         };
         // The page's type is larger across the pane.
@@ -388,7 +394,7 @@ impl MainView {
                     })
                     .font_weight(FontWeight::SEMIBOLD)
                     .italic()
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .child(s.title.clone()),
             );
             if let Some(note) = &s.note {
@@ -492,7 +498,7 @@ impl MainView {
                 div()
                     .italic()
                     .text_size(px(12. * k))
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .child(s.clone()),
             );
         }

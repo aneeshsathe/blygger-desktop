@@ -353,7 +353,7 @@ impl MainView {
                         .rounded(px(self.theme.chip_radius))
                         .border_1()
                         .border_color(p.accent)
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .cursor_pointer()
                         .child("❝ quote only this")
                         .on_click(cx.listener(|this, _, window, cx| {

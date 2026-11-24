@@ -222,9 +222,8 @@ pub(crate) mod site;
 pub const CONTEXT: &str = "Blygger";
 
 /// The empty list while no blyg is connected (setup skipped): Enter or a
-/// click connects; the other half starts the sample data, as setup's "S"
-/// does.
-pub const EMPTY_CONNECT: &str = "⏎ Connect your blyg…";
+/// click connects (`posts_render::EMPTY_CONNECT`); the other half starts the
+/// sample data, as setup's "S" does.
 pub const EMPTY_SAMPLE: &str = "try sample data";
 
 /// The first publish sheet's muted line (v1 only): it goes public, and a
