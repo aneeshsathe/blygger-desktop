@@ -23,6 +23,7 @@ pub mod ext;
 pub mod grants;
 pub mod host;
 pub mod manifest;
+pub mod picker; // --- picker sources ---
 pub mod protocol;
 pub mod reading; // --- reading slots ---
 pub mod recipe;

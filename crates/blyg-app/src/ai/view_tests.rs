@@ -813,10 +813,12 @@ fn enter_generates_anyway_and_lists_what_it_read(cx: &mut TestAppContext) {
     assert!(e.cx.debug_bounds("tk-read-0-0").is_some());
 }
 
+/// Burrow's own provider reads a gap's links too (`hydrate_tests.rs`);
+/// a gap with none goes straight to the model, as it always did.
 #[gpui_kit::test]
-fn a_local_provider_never_stops_at_a_checkpoint(cx: &mut TestAppContext) {
+fn a_local_provider_with_no_links_reads_nothing(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&["Grey all day."])));
-    e.on_the_blyg(UNREAD);
+    e.on_the_blyg("Fog. [TK]sum up the weather[/TK]");
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
     assert!(e.checkpoint().is_none());
@@ -824,7 +826,7 @@ fn a_local_provider_never_stops_at_a_checkpoint(cx: &mut TestAppContext) {
     let (_, scopes) = e.tracked().expect("tracked");
     let p = scopes[0].as_ref().unwrap();
     assert_eq!(p.model, "fake-model-1");
-    assert!(p.pages.is_empty(), "Burrow's own provider reads no pages");
+    assert!(p.pages.is_empty(), "no links, no pages");
 }
 
 /// What generation read is listed up to 50 entries, then how many more:

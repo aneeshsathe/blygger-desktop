@@ -29,6 +29,10 @@ mod tour; // --- onboarding --- the tour's sample extensions
 #[path = "tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "picker_tabs_tests.rs"]
+mod picker_tabs_tests; // --- picker sources ---
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -413,6 +417,10 @@ impl MainView {
             },
         );
         self.ext.host = Some(host.clone());
+        // --- picker sources --- the editor's picker asks it for tabs.
+        let picker_host = host.clone();
+        self.assist
+            .update(cx, |a, _| a.set_ext_host(Some(picker_host)));
         self.ext.launch = Some(launch);
         self._tasks.push(cx.spawn_in(window, async move |this, cx| {
             while woken.recv().await.is_ok() {

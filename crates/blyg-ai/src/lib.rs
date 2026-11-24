@@ -25,6 +25,7 @@ pub mod codex;
 pub mod embeddings; // --- nearby ---
 pub mod error;
 mod http;
+pub mod hydrate; // --- studio 0.71 --- a [TK] gap's links, read first
 pub mod openai;
 pub mod prompts;
 pub mod provider;

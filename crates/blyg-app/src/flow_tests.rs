@@ -889,3 +889,7 @@ fn linked_from_says_only_you_see_these(cx: &mut TestAppContext) {
 // --- user testing --- the writer's studio 0.64 journeys.
 #[path = "writer_flow_tests.rs"]
 mod writer;
+
+// --- studio#168 --- the editor edge cases, typed.
+#[path = "editor_edges_tests.rs"]
+mod editor_edges;

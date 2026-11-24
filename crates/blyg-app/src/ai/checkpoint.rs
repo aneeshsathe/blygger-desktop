@@ -107,6 +107,23 @@ pub(crate) const BUSY: (&str, &str) = (
     "When it's done, press ⏎ again",
 );
 
+/// --- studio 0.71 --- The checkpoint for Burrow's own provider, from what
+/// reading the gap's links found (`blyg_ai::hydrate`), in the blyg's shape.
+pub(crate) fn of_hydration(h: &blyg_ai::hydrate::Hydration) -> Checkpoint {
+    Checkpoint {
+        read: h.read() as u32,
+        total: h.total as u32,
+        failed: h
+            .failed
+            .iter()
+            .map(|f| blyg_core::generate::UnreadLink {
+                link: f.link.clone(),
+                reason: f.reason.clone(),
+            })
+            .collect(),
+    }
+}
+
 /// One failure under Details.
 pub(crate) fn failure_line(link: &str, reason: &str) -> String {
     format!("{link}: {reason}")
@@ -177,7 +194,19 @@ impl MainView {
         };
         self.focus_after_sheet(window, cx);
         cx.notify();
-        self.ai_on_blyg(s.kind, s.item, s.index, true, window, cx);
+        if s.kind == ProviderKind::BlygServer {
+            return self.ai_on_blyg(s.kind, s.item, s.index, true, window, cx);
+        }
+        // Burrow's own provider: ⌘G again on the text as it is now, going
+        // on without the links it couldn't read.
+        let Some(item) = self.backend.item(&s.item) else {
+            return;
+        };
+        let text = match &self.current {
+            Some(c) if c.local_id == s.item => self.editor.read(cx).value().to_string(),
+            _ => item.content_md.clone(),
+        };
+        self.ai_fill(item, text, s.index, true, window, cx);
     }
 
     /// esc: nothing generated; say what to do about the links.

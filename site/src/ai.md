@@ -43,22 +43,40 @@ provider.
    `generating… (codex)`; **esc** cancels. The answer is written in place as
    `[TK]instruction[=]output[/TK]`. Press ⌘G inside it again to regenerate.
 
-### When your blyg can't read a link
+### Reading the links in a gap
 
-With **your blyg server** as the provider, ⌘G asks your blyg to fill the gap
-(blygger-studio 0.70 and later). Your blyg first reads every link in the
-gap, posts and web pages alike. If some can't be read, it stops and saves
-nothing, and Burrow asks: "1 of 2 links in this TK could not be read.
+Before a gap is filled, the links you placed, in the instruction or anywhere
+in the post, are read, so the model writes from what they say rather than
+from their addresses. With **your blyg server** as the provider, your blyg
+does this (blygger-studio 0.70 and later). With Burrow's other providers
+(codex, Claude Code, the API keys), Burrow does it the same way on your
+Mac:
+
+- a `[[id]]` link, or the address of a post on its own blyg, is the post
+  Burrow holds (yours, or one you read); it is never fetched;
+- any other `http(s)` address is fetched: at most 8 pages and 8 linked
+  posts per gap, each page for at most 15 seconds and 4 MB, web pages and
+  plain text only, with no cookies. Its readable text (cut at 30,000
+  characters) goes to the model marked as someone else's writing, never
+  as instructions, and nothing of it is shown as HTML.
+
+The pages read are recorded with the gap, and listed under
+[What each generation read](#what-each-generation-read).
+
+### When a link can't be read
+
+If some links can't be read, nothing is generated or saved, and Burrow
+asks: "1 of 2 links in this TK could not be read.
 Generate anyway?" **Details** lists each link and why it failed; it is open
 already when three or fewer failed, and **d** shows or hides it. **⏎**
 generates anyway: what could be read is drawn on, and the model sees only
 the address of the rest and is told not to describe it. **esc** cancels,
 leaves the draft as it was, and reminds you to remove or replace the link
-before you try again. Burrow's other providers never stop here.
+before you try again. Every provider stops here.
 
 ### What each generation read
 
-After your blyg fills a gap, Burrow lists what it read, gap by gap (each
+After a gap is filled, Burrow lists what was read, gap by gap (each
 gap by its number in the post): the posts it drew on, by title when Burrow
 holds them (click one to open it) and otherwise by their blyg, and the web
 pages it read, by address (and site, when that isn't the address's host). A

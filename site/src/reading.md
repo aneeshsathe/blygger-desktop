@@ -781,6 +781,12 @@ link in a post opens; ↗ opens its web page where links go (the browser pane,
 or your default browser). Click **On “…”** above a group to open your own
 post, the one those responses point at.
 
+**When a read fails.** If Responses, or a post's history, can't be read
+(offline, or your blyg didn't answer), it says so with **Retry reads** beside
+it (also **Blyg › Retry Reads**). That asks your blyg again, reads again
+what failed, and re-reads the lists on screen (your posts, the reading rows
+and their counts), so nothing stays stale until the next sync.
+
 **Linked from.** When someone's post links to yours with `[[id]]` (on
 blygger-studio 0.64 and later), your blyg gets a **link notice**. A link isn't
 a response, so it never shows on your post's page or among its responses.

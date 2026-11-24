@@ -87,8 +87,10 @@ pub fn emphasis(text: &str, from: usize, to: usize, kind: Emphasis) -> FormatEdi
         let filled: Vec<&&str> = lines.iter().filter(|l| !l.trim().is_empty()).collect();
         let all_on = !filled.is_empty()
             && filled.iter().all(|l| {
+                // A line of only asterisks is text, not markers (studio#168).
                 let core = l.trim();
-                kind.is_on(stars(core).min(end_stars(core)))
+                let run = stars(core).min(end_stars(core));
+                core.len() > run * 2 && kind.is_on(run)
             });
         let insert = lines
             .iter()
@@ -111,11 +113,11 @@ pub fn emphasis(text: &str, from: usize, to: usize, kind: Emphasis) -> FormatEdi
         };
     }
     // Spaces stay outside the markers, or markdown doesn't read emphasis.
+    // Only spaces picked: an empty pair after them (studio#168).
     let lead = picked.len() - picked.trim_start().len();
     let tail = picked.len() - picked.trim_end().len();
-    let blank = picked.trim().is_empty();
-    let a = if blank { from } else { from + lead };
-    let b = if blank { to } else { to - tail };
+    let a = from + lead;
+    let b = (to - tail).max(a);
     let inner = &text[a..b];
     // Markers selected along with the words.
     let inner_run = stars(inner).min(end_stars(inner));
@@ -159,9 +161,24 @@ pub fn emphasis(text: &str, from: usize, to: usize, kind: Emphasis) -> FormatEdi
 /// the selection's surrounding breaks and spaces kept outside it, so a
 /// line picked with ⇧↓ keeps the text after it (user testing, R4; the
 /// studio's `formulaEdit` writes `$$…$$` inline and takes the break in).
+///
+/// A formula picked whole, already in `$$…$$`, is left as it is with its
+/// body selected: no second pair (studio#168).
 pub fn formula_edit(text: &str, from: usize, to: usize) -> FormatEdit {
     let picked = &text[from..to];
     let inner = picked.trim();
+    if inner.len() >= 4 && inner.starts_with("$$") && inner.ends_with("$$") {
+        let a = from + (picked.len() - picked.trim_start().len());
+        let b = a + inner.len();
+        let body = &inner[2..inner.len() - 2];
+        return FormatEdit {
+            from: a,
+            to: b,
+            insert: inner.to_string(),
+            start: a + 2 + (body.len() - body.trim_start().len()),
+            end: b - 2 - (body.len() - body.trim_end().len()),
+        };
+    }
     if !picked.contains('\n') || inner.is_empty() {
         let mark = if picked.contains('\n') { "$$" } else { "$" };
         let start = from + mark.len();
@@ -250,11 +267,19 @@ impl MainView {
         }
         let e = edit(&text, from, to);
         let new = e.apply(&text);
-        self.splice_editor(&text, &new, Some(e.start), window, cx);
+        // An edit that writes what's there already is no edit: nothing is
+        // replaced, so nothing beside the caret can go (studio#168).
+        if new != text {
+            self.splice_editor(&text, &new, Some(e.start), window, cx);
+        }
         self.editor
             .update(cx, |s, cx| s.set_selected_range(e.start..e.end, cx));
     }
 }
+
+#[cfg(test)]
+#[path = "format_tests.rs"]
+mod edge_tests;
 
 #[cfg(test)]
 mod tests {

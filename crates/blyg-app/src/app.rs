@@ -310,7 +310,7 @@ pub struct MainView {
     omni: Entity<InputState>,
     editor: Entity<TextareaState>,
     /// --- composer --- @-mentions and spellcheck over the editor.
-    assist: Entity<crate::composer::Assist>,
+    pub(crate) assist: Entity<crate::composer::Assist>,
     list: ListModel,
     /// The omnibar's search running off the UI thread (`query_typed`).
     search: OmniSearch,
