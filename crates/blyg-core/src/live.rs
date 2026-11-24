@@ -2665,6 +2665,21 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.agentic_edition(feed))
     }
 
+    // --- agentic writer ---
+    fn agentic_writable(&self) -> Result<bool> {
+        self.e().track(self.e().api.serves_agentic_write())
+    }
+
+    fn put_agentic_edition(
+        &self,
+        feed: &str,
+        expected_revision: u64,
+        edition: &crate::agentic_write::EditionInput,
+    ) -> Result<crate::agentic_write::Put> {
+        self.e()
+            .track(self.e().api.put_agentic(feed, expected_revision, edition))
+    }
+
     /// The read also sends edits made offline (`dictionary::Pending`).
     fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
         let queued = crate::dictionary::Pending::parse(

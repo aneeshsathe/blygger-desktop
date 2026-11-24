@@ -122,6 +122,24 @@ What leaves your computer depends on the settings:
 | `nearby-embedder = endpoint` | The paragraph you're writing, and the text of your published posts and the posts you hold, to `nearby-endpoint` (no key is sent). Use a server you run, such as Ollama on this computer. |
 | `nearby-rerank = on` | The paragraph, and the titles and a short excerpt of up to ten candidate posts, to your AI provider (`ai-provider`). Off by default. |
 
+## Agentic feed: what is sent where
+
+Burrow's own AI can write your blyg's Agentic feed edition (see
+[Reading](reading.md)). It runs when you press ⌥⌘E in the Agentic feed tab,
+and, with `agentic-writer = after-sync` (Settings › Agentic feed), after a
+sync that brings new posts, at most every `agentic-writer-gap` hours (3 by
+default). Off by default.
+
+| What | Where it goes |
+| --- | --- |
+| The source name, title and opening words (about 280 characters) of up to 60 posts you hold that are unread or arrived since the last edition (never your own posts, never withdrawn or Background ones), and your blyg's Agentic feed prompt (Blyg › AI on Your Blyg…) | The provider in `agentic-writer-provider` (default: the one the writing helpers use), with `agentic-writer-model` |
+| The edition it writes: headlines, summaries and reasons, the posts by subscription and id, "Burrow · *provider*" and the model | Your blyg (`PUT /api/agentic/default`), only where your sign-in may write editions |
+
+The model names posts by number, never by id; Burrow drops any it wasn't
+given, holds every field to your blyg's limits, and sends nothing when the
+reply isn't usable. The tab shows every word it wrote as the assistant's
+(✦), as it does an outside assistant's.
+
 ## Disclosure
 
 Generated text is always disclosed as generated when you publish. Burrow

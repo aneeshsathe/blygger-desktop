@@ -688,6 +688,61 @@ pub fn apply_suggestions(text: &str, suggestions: &[Suggestion]) -> String {
     out
 }
 
+// ------------------------------------------------------------------ agentic writer
+
+/// --- agentic writer --- How Burrow's own AI writes the blyg's Agentic
+/// feed edition. The posts are numbered; the model names them by number
+/// (`"ref"`), never by id, and `blyg_core::agentic_write::from_reply` maps
+/// the numbers back and drops any it wasn't given.
+pub const AGENTIC_EDITION_SYSTEM_PROMPT: &str = concat!(
+    "You are the editor of a reader's personal newspaper, made from posts on blyg blogs they ",
+    "follow. You are given a brief and a numbered list of posts (source, title, opening words). ",
+    "Lay out an edition: a title for it, a lede (one short opening paragraph for the whole ",
+    "edition), then sections. Start with a section of kind \"lead\" holding the one or two ",
+    "posts that matter most, then ordinary sections of kind \"section\" grouping posts by ",
+    "topic, and end with a section of kind \"briefs\" for short items. Leave out posts that ",
+    "don't earn a place. For each post you place, give a headline in your own words, a one or ",
+    "two sentence summary, and a reason: why this reader is seeing it. Never invent posts, ",
+    "facts or quotes; say only what the opening words support.\n\n",
+    "Reply with ONLY one JSON object, no prose and no code fences:\n",
+    "{\"title\": \"...\", \"lede\": \"...\", \"sections\": [{\"title\": \"...\", ",
+    "\"kind\": \"lead\" | \"section\" | \"briefs\", \"note\": \"optional introduction\", ",
+    "\"entries\": [{\"ref\": <the post's number>, \"headline\": \"...\", \"summary\": ",
+    "\"...\", \"reason\": \"...\", \"present\": \"excerpt\" | \"full\" | \"title\"}]}]}\n",
+    "Keep headlines under 120 characters, summaries under 300, reasons under 200, and use each ",
+    "post at most once."
+);
+
+/// The brief when the blyg has no Agentic feed prompt of its own.
+pub const AGENTIC_DEFAULT_BRIEF: &str = "Make a calm morning newspaper of what's new: the most \
+     substantial or most discussed posts first, related posts together, and short items as \
+     briefs.";
+
+/// The prompt for one edition. `brief`: the blyg's Agentic feed prompt
+/// (`feedPrompt`), when it has one.
+pub fn agentic_edition_prompt(
+    brief: Option<&str>,
+    posts: &[blyg_core::agentic_write::Candidate],
+) -> Prompt {
+    let brief = brief
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .unwrap_or(AGENTIC_DEFAULT_BRIEF);
+    let mut user = format!("Brief: {brief}\n\nPosts, newest first:\n");
+    for (i, p) in posts.iter().enumerate() {
+        let title = p.title.as_deref().unwrap_or("untitled");
+        user.push_str(&format!("\n[{}] {} · {}\n", i + 1, p.source, title));
+        if !p.excerpt.is_empty() {
+            user.push_str(&format!("{}\n", p.excerpt));
+        }
+    }
+    user.push_str("\nWrite the edition as JSON.");
+    Prompt {
+        system: AGENTIC_EDITION_SYSTEM_PROMPT.to_string(),
+        user,
+    }
+}
+
 // ------------------------------------------------------------------ catch up
 
 /// The catch-up summary's instructions. Reading-only output: it's shown in

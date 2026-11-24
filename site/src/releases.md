@@ -5,6 +5,19 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.29.0
+
+### Burrow writes the Agentic feed's edition
+
+Your blyg's own assistant isn't built yet, so the Agentic feed stayed "No
+edition yet". Now Burrow's own AI writes it: press ⌥⌘E in the Agentic feed
+tab (or Blyg › Write an Agentic Feed Edition Now) and the provider you set up
+in Settings › AI lays out what's new, each post with a headline, a summary
+and why it's there, signed "Burrow · *provider*". Turn on Settings ›
+Agentic feed › "Write the edition after a sync" to have one written after a
+sync that brings new posts, at most every 3 hours. Off by default; what is
+sent where is in [AI helpers](ai.md#agentic-feed-what-is-sent-where).
+
 ## Burrow 0.28.0
 
 Burrow catches up with blygger-studio 0.71: 0.68's reading, 0.69's Agentic

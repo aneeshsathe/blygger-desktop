@@ -397,3 +397,86 @@ fn a_word_learned_offline_reaches_the_blyg_on_the_next_read() {
     let d = me.edit_dictionary(&Edit::Remove(word.clone())).unwrap();
     assert!(!d.owner_words().iter().any(|w| w == &word));
 }
+
+/// --- agentic writer --- Burrow's own AI writes the edition: the posts it's
+/// given are a followed blyg's new ones, the model's reply (a stub here, no
+/// model is called) names one of them and one it wasn't given, and Burrow
+/// sends what's left from the revision it reads. The studio lays it out
+/// with the post resolved, Burrow named as the agent. A write from a stale
+/// revision is a conflict, and `send` reads again and writes.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn burrows_writer_sends_an_edition_from_a_models_reply() {
+    use blyg_core::agentic_write::{self, AgentInput, Put, Sent};
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    me.sync_now().unwrap();
+    if !me.agentic_writable().expect("ask the capabilities") {
+        eprintln!("skipped: this studio doesn't advertise putAgentic to this sign-in");
+        return;
+    }
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("writer");
+    let (_, rid) = published(
+        &source,
+        Kind::Fragment,
+        &format!("{t} the tide tables were a day out"),
+        None,
+    );
+    let sub = me.subscribe(&src_url, Some("A neighbour")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+
+    let given = agentic_write::candidates(&me.reading(), None);
+    let n = given
+        .iter()
+        .position(|c| c.remote_id == rid)
+        .expect("the new post is given")
+        + 1;
+    let reply = format!(
+        r#"{{"title": "{t} paper", "lede": "One thing.", "sections": [{{"title": "Lead", "kind": "lead",
+            "entries": [{{"ref": {n}, "headline": "Tides", "reason": "You follow tides."}}, {{"ref": 9999}}]}}]}}"#
+    );
+    let input = agentic_write::from_reply(
+        &reply,
+        &given,
+        AgentInput {
+            name: "Burrow · Codex (local)".into(),
+            model: Some("stub-model".into()),
+        },
+        "2026-11-23T08:00:00.000Z",
+    )
+    .expect("an edition");
+    let before = me.agentic_edition(DEFAULT_FEED).unwrap().expect("served");
+    let Sent::Written(ed) = agentic_write::send(&me, DEFAULT_FEED, &input).unwrap() else {
+        panic!("written");
+    };
+    assert_eq!(ed.revision, before.revision + 1);
+    let ed = me.agentic_edition(DEFAULT_FEED).unwrap().unwrap();
+    let layout = ed.layout.as_ref().expect("laid out");
+    assert_eq!(layout.title.as_deref(), Some(format!("{t} paper").as_str()));
+    assert_eq!(layout.agent.name, "Burrow · Codex (local)");
+    assert_eq!(layout.agent.model.as_deref(), Some("stub-model"));
+    assert_eq!(
+        ed.keys(),
+        vec![(sub.id.clone(), RemoteId::from(rid.as_str()))],
+        "the post it was given, and only that"
+    );
+    assert_eq!(
+        layout.sections[0].entries[0].reason.as_deref(),
+        Some("You follow tides.")
+    );
+
+    // From a stale revision: a conflict, nothing written.
+    let stale = me
+        .put_agentic_edition(DEFAULT_FEED, before.revision, &input)
+        .unwrap();
+    assert!(matches!(stale, Put::Conflict), "{stale:?}");
+    // `send` reads the revision again and writes.
+    assert!(matches!(
+        agentic_write::send(&me, DEFAULT_FEED, &input).unwrap(),
+        Sent::Written(e) if e.revision == ed.revision + 1
+    ));
+}

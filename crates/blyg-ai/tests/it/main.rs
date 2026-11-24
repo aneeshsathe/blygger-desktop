@@ -5,6 +5,7 @@
 mod common;
 
 mod accounts;
+mod agentic_prompt; // --- agentic writer ---
 mod chatgpt;
 mod cli_bridges;
 mod http_providers;

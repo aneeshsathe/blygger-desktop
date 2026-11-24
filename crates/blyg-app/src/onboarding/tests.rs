@@ -910,6 +910,8 @@ fn do_step(e: &mut Env, id: &str) {
                 cx,
             )
         }),
+        // --- agentic writer --- ⌥⌘E (the tutorial's provider answers).
+        "agentic-write" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-e")),
         "shelf-lens" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(

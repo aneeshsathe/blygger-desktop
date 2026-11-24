@@ -873,6 +873,12 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
+        // --- agentic writer ---
+        let d = on!(
+            d,
+            crate::app::reading::agentic_writer::WriteAgenticEdition,
+            Key::AgenticWrite
+        );
         // --- tangles ---
         let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
         let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
@@ -2634,6 +2640,19 @@ impl Provider for CannedAi {
     ) -> blyg_ai::Result<GenResult> {
         crate::fake::simulate_latency(Duration::from_millis(500));
         req.cancel.check()?;
+        // --- agentic writer --- the tour's edition: the first two posts.
+        if req.system.contains("personal newspaper") {
+            let text = r#"{"title": "Your tour edition", "lede": "Two posts to start with.",
+                "sections": [{"title": "The lead", "kind": "lead", "entries": [
+                    {"ref": 1, "headline": "Start here", "reason": "The newest post you hold"},
+                    {"ref": 2, "reason": "From a blyg you follow"}]}]}"#;
+            on_delta(text);
+            return Ok(GenResult {
+                content_md: None,
+                text: text.to_string(),
+                model: "tutorial-demo".into(),
+            });
+        }
         let text = if req.user.contains("shorten to fit") || req.system.contains("shorten to fit") {
             "A lighthouse keeper's log is mostly weather, and that is the point: wind, swell and \
              visibility, hour after hour, in the same hand."

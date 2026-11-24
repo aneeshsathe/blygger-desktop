@@ -94,8 +94,18 @@ right.
   its headline, a short summary and why it's there. The tab shows it under
   the name your blyg gives it (set in Blyg › AI on Your Blyg…); j/k step
   through its posts, ⏎ opens one, and a post not on this Mac yet says so and
-  arrives with the next sync. Burrow reads editions and never writes one.
-  Before the first, the tab says "No edition yet."
+  arrives with the next sync. Your blyg's own assistant isn't built yet, so
+  **Burrow's own AI can write the edition** with the provider you set up in
+  Settings › AI: press ⌥⌘E in the tab (or Blyg › Write an Agentic Feed
+  Edition Now, or click "Write an edition now" above it), or turn on
+  Settings › Agentic feed › "Write the edition after a sync" to have one
+  written in the background after a sync that brings new posts, at most
+  every 3 hours (`agentic-writer`, `agentic-writer-gap`). While it writes the
+  tab says "Writing an edition with …"; if it can't, it says why, with Try
+  again, and sends nothing. The masthead then says "by Burrow · *provider*".
+  It writes only where your sign-in may (studio's `putAgentic`). What it
+  sends where: [AI helpers](ai.md#agentic-feed-what-is-sent-where). Before
+  the first edition, the tab says "No edition yet." and how one gets made.
 - **Raw** is what came in from the blygs you read, newest first, as it
   arrived: nothing moved to Background, nothing folded under a thread,
   withdrawn posts included. Your own posts aren't in it.

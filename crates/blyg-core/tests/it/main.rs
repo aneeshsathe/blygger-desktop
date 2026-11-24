@@ -10,6 +10,7 @@
 mod common;
 
 mod agentic;
+mod agentic_write; // --- agentic writer ---
 mod auth;
 mod capability_gates;
 mod changelog_stitch;

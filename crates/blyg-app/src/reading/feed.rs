@@ -35,8 +35,9 @@ use super::vm::{self, Key};
 use crate::app::MainView;
 
 /// What the Agentic feed says before its first edition.
-pub const AGENTIC_NOTE: &str = "No edition yet. The Agentic feed is an assistant who organizes \
-     your reading for you, as a digest in sections, written on your blyg (studio 0.69).";
+pub const AGENTIC_NOTE: &str = "No edition yet. The Agentic feed is a digest of your reading in \
+     sections, written by an assistant: Burrow's own AI (Settings › Agentic feed, or Write an \
+     Agentic Feed Edition Now in the Blyg menu), or an assistant on your blyg (studio 0.69).";
 
 /// What Raw says when it holds nothing.
 pub const RAW_EMPTY: &str = "Nothing has come in yet. Raw lists what came in from the blygs \

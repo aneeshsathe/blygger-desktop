@@ -358,6 +358,7 @@ impl MainView {
             .child(self.render_buttons_setting(cx)) // --- buttons ---
             .child(self.render_flow_settings(cx)) // --- flow ---
             .child(self.render_nearby_setting(cx)) // --- nearby ---
+            .child(self.render_agentic_writer_setting(cx)) // --- agentic writer ---
             .child(self.render_reader_view_settings(cx)) // --- reader view / changelog ---
             .child(row(
                 &p,

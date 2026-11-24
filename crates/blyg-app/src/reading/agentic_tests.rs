@@ -112,7 +112,7 @@ fn the_masthead_names_the_assistant_and_marks_its_words() {
     let note = empty_note("Daily digest");
     assert!(note.starts_with("No edition yet."), "{note}");
     assert!(
-        note.contains("an assistant writes it on your blyg"),
+        note.contains("An assistant on your blyg can write it too"),
         "{note}"
     );
     assert!(!note.contains("/api/"), "plain words, no API paths: {note}");

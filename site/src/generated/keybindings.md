@@ -46,6 +46,7 @@
 | ⇧⌘S | Subscriptions | Blyg › Subscriptions |
 | ⌘Y | Versions of this post | Post › Versions… |
 | ⌘J | Lineage: what this post draws on and what draws on it | Post › Lineage… |
+| ⌥⌘E | Write an edition now: Burrow's AI lays out your Agentic feed from what's new | Blyg › Write an Agentic Feed Edition Now |
 | ⌘K | Quote a post in this thread | Post › Quote… |
 | ⌥⌘R | Reply: a new thread of yours that replies to this post (yours too) | Post › Reply |
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |

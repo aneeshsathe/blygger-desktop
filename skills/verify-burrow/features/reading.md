@@ -38,6 +38,9 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 | `rd-agentic` | the Agentic feed tab with the sample edition (masthead, sections, cards) |
 | `rd-agentic-empty` | the Agentic feed tab on a blyg with no edition yet: its explanation, wrapped across the reading pane |
 | `rd-agentic-empty-narrow` | the same in an 800 px window: the explanation still wraps |
+| `rd-agentic-unwritten` | the Agentic feed with no edition: how one gets made (⌥⌘E, Settings › Agentic feed, an assistant on your blyg) and the "Write an edition now" line |
+| `rd-agentic-writing` | ⌥⌘E with a slow stand-in provider: "Writing an edition with Codex (local)…" above the empty tab |
+| `rd-agentic-written` | the edition Burrow wrote (stand-in provider): "by Burrow · Codex (local) (demo-model)" |
 | `rd-saved` | Saved (the shelf, renamed), its sync line, the first post open |
 | `rd-stream-copies` | Kit's tides opened from the stream: "the author says it is also at …" under its source line |
 | `rd-stream-catchup-summary` | Catch up on Rue's thread, then `s`: the blyg's summary first |
@@ -66,6 +69,11 @@ Journeys (0.28.0):
 - Agentic feed: pick the tab; with an edition on the blyg it shows a
   masthead, then sections of cards with the assistant's headline, summary
   and reason. Its name is Blyg › AI on Your Blyg… › Agentic feed tab name.
+- Burrow writes the edition: in the empty Agentic feed tab, ⌥⌘E (or the
+  line's “Write an edition now”) says “Writing an edition with <provider>…”,
+  then shows the edition signed “Burrow · <provider>”. Settings (⌘,) ›
+  AGENTIC FEED › “Write the edition after a sync” does it after a sync,
+  with the provider and the gap chosen there.
 - Saved: “+ Save” under a post, ⌥⌘B (Ctrl+Shift+A on Windows), Post ›
   Saved… (⌘B). Its line says whether it's synced.
 - Copies elsewhere: a stream card whose author lists a copy says so under its
