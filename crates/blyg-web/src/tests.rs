@@ -424,7 +424,7 @@ fn the_shelf_comes_first_keeps_its_order_and_holds_fifty() {
     // The open post's 📚 toggles it.
     b.open_from_shelf(a);
     assert_eq!(view(&b)["current"]["shelved"], true);
-    assert_eq!(outcome(b.toggle_shelf())["message"], "Taken off your shelf");
+    assert_eq!(outcome(b.toggle_shelf())["message"], "Removed from Saved");
     assert_eq!(view(&b)["shelf_len"], 1);
     // Fifty at most.
     for i in 0..60 {

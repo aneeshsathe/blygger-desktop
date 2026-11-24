@@ -1064,3 +1064,6 @@ mod studio69_tests;
 
 #[cfg(test)]
 mod hardening_tests; // the mount, API paths, CSP and escaping
+
+#[cfg(test)]
+mod ux_tests;

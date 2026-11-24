@@ -103,12 +103,12 @@ fn a_reading_post_goes_on_and_off_the_shelf() {
     let mut b = served();
     assert!(!b.reading_shelved("a|a1"));
     let o = v(b.toggle_reading_shelf("a|a1"));
-    assert_eq!(o["message"], "Added to shelf");
+    assert_eq!(o["message"], "Saved");
     assert!(b.reading_shelved("a|a1"));
     // The Shelf lens lists it.
     assert_eq!(b.shelf_order(b.rd.rows.iter().collect()).len(), 1);
     let o = v(b.toggle_reading_shelf("a|a1"));
-    assert_eq!(o["message"], "Removed from shelf");
+    assert_eq!(o["message"], "Removed from Saved");
     assert!(!b.reading_shelved("a|a1"));
 }
 

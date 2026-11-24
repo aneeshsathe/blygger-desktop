@@ -347,7 +347,7 @@ fn raw_lists_what_came_in_and_the_agentic_feed_nothing_yet() {
     assert!(keys(&b).is_empty());
     assert_eq!(
         b.wr_empty().as_deref(),
-        Some(crate::reading::feed::AGENTIC_NOTE)
+        Some(crate::web_reading::AGENTIC_EMPTY)
     );
 }
 

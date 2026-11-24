@@ -337,6 +337,10 @@ enum Guards {
     Read,
     /// Something Burrow sends: the operation is the write itself.
     Write,
+    /// A request Burrow makes only where an older contract lists it (the
+    /// current one has no such operation): the gate keeps Burrow from
+    /// asking a blyg that would answer 404.
+    Retired,
 }
 
 /// One operation constant a gate asks the capabilities for.
@@ -365,6 +369,11 @@ const GATES: &[Gate] = &[
         constant: "blyg-web/src/parity/mod.rs::REFRESH_OPERATION",
         guards: Guards::Write,
         what: "the web's Refresh of a thread's quotes",
+    },
+    Gate {
+        constant: "blyg-web/src/parity/mod.rs::CHANGES_OPERATION",
+        guards: Guards::Retired,
+        what: "the web's `GET /api/changes`, asked only where the capabilities list it",
     },
     Gate {
         constant: "blyg-web/src/parity/mod.rs::FRESHNESS_OPERATION",
@@ -713,6 +722,25 @@ fn read_gates_ask_for_operations_a_read_token_is_listed() {
          only before the write. Change a GATES row to Guards::Write only when nothing read\n\
          or shown depends on that gate:\n{}",
         beyond.join("\n")
+    );
+}
+
+/// A retired gate names an operation the current contract doesn't have, so
+/// it can't hide a read a current blyg serves.
+#[test]
+fn retired_gates_name_operations_the_current_contract_lacks() {
+    let constants = operation_constants(&product_sources());
+    let contract = crate::common::contract::current();
+    let live: Vec<String> = GATES
+        .iter()
+        .filter(|g| g.guards == Guards::Retired)
+        .flat_map(|g| constants.get(g.constant).cloned().unwrap_or_default())
+        .filter(|op| contract.oauth_scopes(op).is_some())
+        .collect();
+    assert!(
+        live.is_empty(),
+        "GATES (capability_gates.rs) calls these operations retired, but the current contract has \
+         them: classify each as Guards::Read or Guards::Write: {live:?}"
     );
 }
 
