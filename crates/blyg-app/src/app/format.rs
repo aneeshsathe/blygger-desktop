@@ -277,6 +277,10 @@ mod tests {
             run("a **word** b", 4, 8, Emphasis::Bold),
             ("a word b".into(), "word".into()),
             "markers just outside: off"
+#[cfg(test)]
+#[path = "format_tests.rs"]
+mod edge_tests;
+
         );
         assert_eq!(
             run("a **word** b", 2, 10, Emphasis::Bold),
