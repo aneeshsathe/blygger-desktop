@@ -20,7 +20,9 @@ notes="$(awk -v want="$VERSION" '
 
 # Trim leading/trailing blank lines.
 notes="$(printf '%s\n' "$notes" | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}')"
-if [ -z "${notes//[[:space:]]/}" ]; then
+# grep, not ${notes//[[:space:]]/}: under macOS's bash 3.2 (the release
+# runner's) that substitution took over an hour on 0.28.0's 60 KB of notes.
+if ! printf '%s' "$notes" | grep -q '[^[:space:]]'; then
   echo "CHANGELOG.md has no section for [$VERSION]" >&2
   exit 1
 fi

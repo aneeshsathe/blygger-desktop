@@ -141,6 +141,8 @@ jobs:
 
       - name: Check the tag, Cargo version, repo name and changelog agree
         id: meta
+        # Seconds when healthy; a hang here once ate the job's 90 minutes.
+        timeout-minutes: 5
         env:
           TAG: v${{ needs.decide.outputs.version }}
           REPO: ${{ github.repository }}
