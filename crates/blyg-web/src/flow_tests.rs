@@ -252,3 +252,21 @@ fn a_failed_subscribe_says_why_in_the_form() {
     );
     assert!(js.contains("class=\"wr-error\""), "and draws it");
 }
+
+/// On a first open the desk's list said "No matches. Press ⏎ to start “”."
+/// for a few frames before your posts arrived. Until they first arrive the
+/// list says it's loading; with no query there's no "No matches".
+#[test]
+fn your_posts_are_loading_not_missing_until_they_first_arrive() {
+    let mut b = Burrow::new_live(NOW, None, None, BASE);
+    assert_eq!(v(b.view(NOW))["loading"], true);
+    b.live_items("[]");
+    assert_eq!(v(b.view(NOW))["loading"], false);
+    let held = b.to_json();
+    let again = Burrow::new_live(NOW, Some(held), None, BASE);
+    assert_eq!(v(again.view(NOW))["loading"], false, "held from a last visit");
+    assert_eq!(v(Burrow::new(NOW, None).view(NOW))["loading"], false);
+    let desk = www("desk.js");
+    assert!(desk.contains("V.loading"), "the desk draws it");
+    assert!(desk.contains("Nothing written yet"), "an empty query isn't a search");
+}
