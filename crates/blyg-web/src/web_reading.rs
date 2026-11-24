@@ -185,9 +185,8 @@ struct Args {
 /// what writes one, and where that's coming from.
 pub const AGENTIC_EMPTY: &str = "No edition yet. The Agentic feed is a digest of your \
      reading, in sections, that an assistant writes on your blyg; each edition shows here. \
-     Nothing has written one yet: Burrow on the desktop can write editions for you (its \
-     setting comes in Burrow 0.29), and an outside assistant you've given a token can \
-     write one now.";
+     Nothing has written one yet. Burrow desktop can write editions: Settings › Agentic \
+     feed. An outside assistant you've given a token can write one now.";
 
 fn args(s: &str) -> Args {
     let mut a: Args = serde_json::from_str(s).unwrap_or_default();

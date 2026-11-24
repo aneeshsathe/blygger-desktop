@@ -264,9 +264,16 @@ fn your_posts_are_loading_not_missing_until_they_first_arrive() {
     assert_eq!(v(b.view(NOW))["loading"], false);
     let held = b.to_json();
     let again = Burrow::new_live(NOW, Some(held), None, BASE);
-    assert_eq!(v(again.view(NOW))["loading"], false, "held from a last visit");
+    assert_eq!(
+        v(again.view(NOW))["loading"],
+        false,
+        "held from a last visit"
+    );
     assert_eq!(v(Burrow::new(NOW, None).view(NOW))["loading"], false);
     let desk = www("desk.js");
     assert!(desk.contains("V.loading"), "the desk draws it");
-    assert!(desk.contains("Nothing written yet"), "an empty query isn't a search");
+    assert!(
+        desk.contains("Nothing written yet"),
+        "an empty query isn't a search"
+    );
 }

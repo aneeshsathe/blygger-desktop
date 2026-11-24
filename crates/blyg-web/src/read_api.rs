@@ -58,6 +58,9 @@ struct ReadView {
     total: usize,
     rows: Vec<ReadRow>,
     empty: Option<String>,
+    /// Live, before the reading list was first read: draw a placeholder,
+    /// not the empty note (it flashed before the first page arrived).
+    loading: bool,
 }
 
 #[derive(Serialize)]
@@ -106,7 +109,13 @@ fn excerpt(r: &ReadingItem, title: &str) -> String {
     let body = md
         .lines()
         .skip_while(|l| l.trim().is_empty())
-        .skip(usize::from(md.lines().next().map(str::trim) == Some(title)))
+        // A thread's title is its heading line, `# Title`.
+        .skip(usize::from(
+            md.lines()
+                .next()
+                .map(|l| l.trim().trim_start_matches('#').trim())
+                == Some(title),
+        ))
         // A quote on its own line is another post, not this one's words.
         .filter(|l| !l.trim_start().starts_with("![["))
         .collect::<Vec<_>>()
@@ -390,7 +399,8 @@ impl Burrow {
                 }
             })
             .collect();
-        let empty = (total == 0).then(|| {
+        let loading = self.is_live() && !self.reading_in;
+        let empty = (total == 0 && !loading).then(|| {
             if !query.trim().is_empty() {
                 rvm::no_match(query)
             } else if let Some(e) = self.wr_empty() {
@@ -407,6 +417,7 @@ impl Burrow {
             total,
             rows: shown,
             empty,
+            loading,
         })
     }
 

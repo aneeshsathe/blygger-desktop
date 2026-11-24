@@ -9,7 +9,7 @@
 // runs the DEMO on invented sample posts, labelled as such.
 
 import init, { Burrow } from './pkg/blyg_web.js';
-import { $, S, now, load, pref, applyTheme } from './core.js';
+import { $, S, now, load, pref, applyTheme, placeOnStart } from './core.js';
 import * as live from './live.js';
 import { dropEarly } from './net.js';
 import { initDesk, render as renderDesk, showDesk, deskEditorFocused } from './desk.js';
@@ -79,7 +79,8 @@ async function openStore() {
     initDesk();
     initPhone();
     initWebReading(); // --- web-reading --- --- end web-reading ---
-    (S.layout === 'phone' ? showPhone : showDesk)();
+    (S.layout === 'phone' ? showPhone : showDesk)(placeOnStart());
+    document.documentElement.dataset.ready = ''; // style.css: the desk shows from here
     narrow.addEventListener('change', () => {
       chooseLayout();
       (S.layout === 'phone' ? showPhone : showDesk)();

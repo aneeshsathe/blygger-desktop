@@ -236,6 +236,8 @@ struct View {
     mode: &'static str,
     /// The line that says which, for the page's header.
     mode_label: String,
+    /// Live, before your posts first arrived: no "No matches" yet.
+    loading: bool,
 }
 
 #[derive(Serialize)]
@@ -316,6 +318,11 @@ pub struct Burrow {
     reading_seen: store::Seen,
     /// The reading list changed since `reading_json` last wrote it.
     reading_dirty: bool,
+    /// Live: the reading list was read (or held from a last visit), so an
+    /// empty stream is empty, not still loading.
+    reading_in: bool,
+    /// Live: your posts were read (or held from a last visit).
+    items_in: bool,
     /// Live: what the hoppers and the thumbs were last read whole under,
     /// when they're read on their own (`live::LISTS`). Not persisted: the
     /// first refresh after a load reads them once.
@@ -395,6 +402,8 @@ impl Burrow {
             offline: false,
             reading_seen: store::Seen::default(),
             reading_dirty: false,
+            reading_in: true,
+            items_in: true,
             side_seen: Default::default(),
             pace: Default::default(),
             nets: Default::default(),
@@ -566,6 +575,7 @@ impl Burrow {
             sync_dot: dot_class(dot),
             shelf_len,
             shelf: self.shelf_rows(now),
+            loading: self.is_live() && !self.items_in,
         })
     }
 

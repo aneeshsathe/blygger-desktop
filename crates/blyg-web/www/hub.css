@@ -68,6 +68,8 @@
 .pstrip button:active { background: var(--c-sel); }
 #v-post .pstrip { border-bottom: 1px solid var(--c-line); }
 .pstrip[hidden] { display: none; }
+/* The smart sources on Read: one tap each, the one shown filled. */
+.srcstrip button[aria-pressed="true"] { background: var(--c-sel); border-color: var(--c-ink); font-weight: 600; }
 #p-moreBtn[aria-expanded="true"] { background: var(--c-sel); }
 /* Four tabs: a little tighter. */
 #phone .tab { font-size: .7rem; }

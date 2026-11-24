@@ -95,7 +95,7 @@ export const pref = {
 let syncT;
 function scheduleSend() {
   clearTimeout(syncT);
-  if (!S.B.is_offline()) syncT = setTimeout(() => S.live.flush(), 800);
+  if (!S.B.is_offline()) syncT = setTimeout(() => S.live.flush({ all: false }), 800);
 }
 export function touched() {
   S.render();
@@ -666,4 +666,20 @@ export function arrive(el, d) {
   el.classList.remove('from-r', 'from-l');
   void el.offsetWidth; // restart the animation
   el.classList.add(d > 0 ? 'from-r' : 'from-l');
+}
+
+// ---------------------------------------------------------------- kept place
+/** The view a reload comes back to, kept in the address's fragment
+    (`#reading`, `#read`): a reload put the phone back on Write and the desk
+    on Posts, where the studio keeps its place in the address. Replaces the
+    entry, so it adds nothing to back. */
+export function keepPlace(view) {
+  try {
+    const h = view ? '#' + view : '';
+    if (location.hash !== h) history.replaceState(history.state, '', location.pathname + location.search + h);
+  } catch {}
+}
+/** The view the address names, if any (app.js passes it to the layout). */
+export function placeOnStart() {
+  try { return decodeURIComponent(location.hash.slice(1)) || null; } catch { return null; }
 }

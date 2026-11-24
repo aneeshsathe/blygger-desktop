@@ -63,7 +63,7 @@ async function readAll(path, query = '', limit = 100, first) {
     let pages = 0;
     let same = true;
     for (let next = p.next_path(); next !== undefined; next = p.next_path()) {
-      const r = await getCond(next);
+      const r = takeHead(next) ?? await getCond(next);
       same &&= r.same;
       const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
       if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
@@ -83,8 +83,18 @@ async function headMoved(path) {
     const r = await getCond(first);
     const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
     if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
+    if (!r.same) headPage = { path: first, r };
     return { moved: !r.same };
   } finally { p.free(); }
+}
+/** The first page `headMoved` just read, for the whole read that follows
+    it: reading it twice was a duplicate request on every sync. Taken once. */
+let headPage = null;
+function takeHead(path) {
+  if (headPage?.path !== path) return null;
+  const r = headPage.r;
+  headPage = null;
+  return r;
 }
 
 // ---------------------------------------------------------------- start
@@ -163,7 +173,7 @@ async function refreshOnce() {
   // The outbox is sent after typing stops anyway; here only if it holds
   // something (an empty flush redraws the page). What was read early
   // (net.js) predates what it sends, so it goes.
-  if (JSON.parse(S.B.outbox_next('[]'))) { dropEarly(); await flush(); }
+  if (JSON.parse(S.B.outbox_next_settled('[]', now()))) { dropEarly(); await flush({ all: false }); }
   if (S.B.is_offline()) return;
   // Contract 6 has no /api/changes: once it answered 404 it isn't asked
   // again for a while (src/live.rs `changes_due`), and the plan is made as
@@ -195,6 +205,7 @@ async function refreshOnce() {
   // Contract 6, a held reading list: only its head, unless it moved.
   let readWhole = plan.reading === true;
   let headMovedNow = false; // the head just read moved: install whatever the pages say
+  headPage = null;
   if (plan.reading === 'head') {
     const head = await headMoved('/api/reading/imported');
     if (head.error && head.error.code !== 'not-found') fail(head);
@@ -339,13 +350,20 @@ function schedule() {
 // ---------------------------------------------------------------- outbox
 let flushing = null;
 let again = false;
-/** Send the outbox, one entry at a time. Returns when it's empty or stuck. */
-export function flush() {
+let againAll = false;
+/** Send the outbox, one entry at a time. Returns when it's empty or stuck.
+    `all: false` (a send nobody asked for: the pause after typing, a
+    refresh) leaves a post still being typed for the save after typing
+    stops (src/live.rs `outbox_next_settled`): sending it mid-sentence sent
+    one save per keystroke burst. What you ask for (publish, a command)
+    sends everything. */
+export function flush({ all = true } = {}) {
   if (!S.B?.is_live_mode() || S.B.is_offline()) return Promise.resolve();
-  if (flushing) { again = true; return flushing; }
+  if (flushing) { again = true; againAll ||= all; return flushing; }
   flushing = (async () => {
     try {
-      do { again = false; await sendAll(); } while (again && !S.B.is_offline());
+      let everything = all;
+      do { again = false; await sendAll(everything); everything = againAll; againAll = false; } while (again && !S.B.is_offline());
       // --- shelf sync --- a shelf change goes in a refresh (`syncShelf`).
       if (S.B.shelf_state() === 'waiting') setTimeout(refresh, 0);
     } finally { flushing = null; }
@@ -353,11 +371,11 @@ export function flush() {
   return flushing;
 }
 
-async function sendAll() {
+async function sendAll(all) {
   const skip = [];
   let failed = false, refreshAfter = false, sent = 0;
   for (let i = 0; i < 400; i++) {
-    const next = JSON.parse(S.B.outbox_next(JSON.stringify(skip)));
+    const next = JSON.parse(all ? S.B.outbox_next(JSON.stringify(skip)) : S.B.outbox_next_settled(JSON.stringify(skip), now()));
     if (!next) break;
     if (!sent++) { S.B.sync_phase('syncing'); S.render(); }
     const { req, ...op } = next;

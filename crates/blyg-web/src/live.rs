@@ -28,6 +28,10 @@ use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
 use crate::api::{self, ApiError, Request};
+
+/// How long after a keystroke a post counts as still being typed: the
+/// page saves it this long after typing stops (www/core.js `scheduleSend`).
+pub const TYPING_PAUSE_MS: f64 = 800.0;
 use crate::read_api::key_of;
 use crate::store::{Conflict, HopOp, PendingDelete, ReadOp, Seen, WebStore};
 use crate::{Burrow, Outcome, json, seed};
@@ -219,8 +223,14 @@ impl WebStore {
     }
 
     /// The next thing the outbox would send, skipping `skip` (`op:id`
-    /// entries that failed this round).
-    fn outbox_next(&self, skip: &HashSet<String>) -> Option<(Op, Request)> {
+    /// entries that failed this round). `typed_before`, a time in ms: a
+    /// post edited after it is still being typed and waits (a background
+    /// send; the page's own save comes once typing stops).
+    fn outbox_next(
+        &self,
+        skip: &HashSet<String>,
+        typed_before: Option<f64>,
+    ) -> Option<(Op, Request)> {
         let op = |op: &str, id: &str| Op {
             op: op.into(),
             id: id.into(),
@@ -241,6 +251,13 @@ impl WebStore {
             .raw()
             .iter()
             .filter(|i| i.pending_sync && !i.conflict && i.status != Status::Scratch)
+            .filter(|i| {
+                // `updated` is when it was last edited here (RFC 3339).
+                typed_before.is_none_or(|t| {
+                    !matches!(chrono::DateTime::parse_from_rfc3339(&i.updated),
+                        Ok(u) if u.timestamp_millis() as f64 > t)
+                })
+            })
             .collect();
         items.sort_by(|a, b| a.updated.cmp(&b.updated));
         for it in items {
@@ -599,11 +616,12 @@ impl Burrow {
         reading: Option<String>,
         base: &str,
     ) -> Burrow {
-        let mut store = saved
+        let held = saved
             .as_deref()
             .and_then(WebStore::from_json)
-            .filter(|s| s.live.on)
-            .unwrap_or_else(|| WebStore::live(base));
+            .filter(|s| s.live.on);
+        let items_in = held.is_some();
+        let mut store = held.unwrap_or_else(|| WebStore::live(base));
         if !base.is_empty() {
             store.live.base = base.to_string();
         }
@@ -615,6 +633,7 @@ impl Burrow {
         let legacy = std::mem::take(&mut store.live.reading);
         let legacy_hoppers = std::mem::take(&mut store.live.hoppers);
         let dirty = cache.is_none() && !legacy.is_empty();
+        let held = cache.is_some() || !legacy.is_empty();
         let cache = cache.unwrap_or(ReadingCache {
             rows: legacy,
             hoppers: legacy_hoppers,
@@ -629,6 +648,8 @@ impl Burrow {
             },
         );
         b.reading_dirty = dirty;
+        b.reading_in = held;
+        b.items_in = items_in;
         b.reading_seen = cache.seen;
         b.place_reading_rows();
         // Marks made since the list was written, sent or not.
@@ -665,6 +686,7 @@ impl Burrow {
             }
         }
         self.store.merge_server(list);
+        self.items_in = true;
         self.after_change(None);
         // Your published posts are rows of the reading list too.
         self.place_reading_rows();
@@ -689,6 +711,7 @@ impl Burrow {
         // In the one list order (the blyg sends them in fetch order), with
         // your posts among them.
         self.rd.rows = out;
+        self.reading_in = true;
         self.place_reading_rows();
         // The blyg's list has every mark it was sent; the ones it hasn't
         // been sent yet stay on top (`overlay_reading`).
@@ -1001,7 +1024,24 @@ impl Burrow {
             .unwrap_or_default()
             .into_iter()
             .collect();
-        match self.store.outbox_next(&skip) {
+        match self.store.outbox_next(&skip, None) {
+            Some((op, req)) => json(&Next { op, req }),
+            None => "null".into(),
+        }
+    }
+
+    /// [`Burrow::outbox_next`] for a send nobody asked for (a refresh, a
+    /// poll): a post edited in the last [`TYPING_PAUSE_MS`] is still being
+    /// typed and waits for the page's own save after typing stops.
+    pub fn outbox_next_settled(&self, skip_json: &str, now_ms: f64) -> String {
+        let skip: HashSet<String> = serde_json::from_str::<Vec<String>>(skip_json)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        match self
+            .store
+            .outbox_next(&skip, Some(now_ms - TYPING_PAUSE_MS))
+        {
             Some((op, req)) => json(&Next { op, req }),
             None => "null".into(),
         }

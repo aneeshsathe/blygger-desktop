@@ -242,7 +242,15 @@ export function phoneChip() {
   bgEnsure(); // --- background ---
   const src = S.B.wr_source();
   const label = S.B.wr_source_label();
-  const filtered = src !== 'smart:all' || label !== 'All';
+  // The row of smart sources says which one is on; the chip is for the
+  // rest (a subscription, a hopper, a lens), which the row doesn't show.
+  let inStrip = false;
+  for (const b of document.querySelectorAll('#p-srcStrip [data-src]')) {
+    const on = b.dataset.src === src;
+    inStrip ||= on;
+    if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
+  }
+  const filtered = !inStrip && (src !== 'smart:all' || label !== 'All');
   chip.hidden = !filtered;
   const html = filtered ? `<span>Showing <b>${esc(label)}</b></span><button type="button" data-clear aria-label="Show everything">✕</button>` : '';
   if (chip._html !== html) { chip.innerHTML = html; chip._html = html; }
@@ -376,6 +384,7 @@ const SCREENS = {
           ? '<button type="submit" class="wr-btn pri" data-sub>Subscribe</button><button type="button" class="wr-btn" data-repreview>Look again</button>'
           : '<button type="submit" class="wr-btn pri">Look it up</button>'}</div>
         ${screen.busy ? '<p class="wr-muted">Asking the blyg…</p>' : ''}
+        ${!screen.busy && screen.error ? `<p class="wr-error" role="alert">${esc(screen.error)}</p>` : ''}
       </form>`;
   },
 
@@ -541,16 +550,18 @@ async function onSubmit(e) {
       if (screen?.name !== 'subscribe') return;
       screen.busy = false;
       screen.preview = o.preview ?? null;
+      // A failed look-up says why in the form, not only in a passing toast.
+      screen.error = o.error || null;
       if (!o.preview && o.toast) { closePanel(); return; } // subscribed without asking
       draw();
-      $('[name="title"]', body())?.focus();
+      $(o.preview ? '[name="title"]' : '[name="url"]', body())?.focus();
       return;
     }
-    screen.busy = true; draw();
+    screen.busy = true; screen.error = null; draw();
     const o = await act('subscribe', { url, title: f.title?.value ?? '' });
     if (screen?.name !== 'subscribe') return;
     screen.busy = false;
-    if (o.error) { draw(); return; }
+    if (o.error) { screen.error = o.error; draw(); return; }
     screen.preview = null; screen.url = '';
     goBack();
     return;
@@ -885,6 +896,9 @@ export function initWebReading() {
   });
   // Phone: the row under the Read tab's search, and the "Showing …" line's ✕.
   $('#p-wrBar')?.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
+  // One tap from Feed to the Agentic feed, Saved, Background or Raw (the
+  // studio's row of sources), instead of ☰ Sources and a sheet.
+  $('#p-srcStrip')?.addEventListener('click', (e) => { const b = e.target.closest('[data-src]'); if (b) chooseSource(b.dataset.src); });
   $('#p-wrChip')?.addEventListener('click', (e) => {
     if (e.target.closest('[data-clear]')) { S.B.wr_clear_source(); $('#p-stream').scrollTop = 0; S.render(); }
     else go('sources');

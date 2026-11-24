@@ -59,6 +59,7 @@ a[data-wr-id] { text-decoration-style: dashed; }
 .wr-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 20px; overscroll-behavior: contain; }
 .wr-body .wr-h { padding-left: 0; }
 .wr-muted { color: var(--c-muted); }
+.wr-error { color: var(--c-over); margin: .5em 0 0; }
 .wr-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--c-line); width: 100%;
   background: none; border-left: 0; border-right: 0; border-top: 0; color: inherit; font: inherit; text-align: left; }
 .wr-row .wr-l { flex: 1; min-width: 0; }
