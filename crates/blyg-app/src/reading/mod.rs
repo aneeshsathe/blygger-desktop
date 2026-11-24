@@ -22,6 +22,8 @@
 pub(crate) mod agentic;
 #[cfg(test)]
 mod agentic_tests;
+#[cfg(test)]
+mod agentic_writer_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
 #[cfg(test)]
 mod background_tests;

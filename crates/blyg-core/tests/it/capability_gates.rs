@@ -306,6 +306,32 @@ fn studio_069_reads_and_writes_follow_their_own_operations() {
     assert!(!api.serves_agentic().unwrap());
 }
 
+/// --- agentic writer --- Burrow's writer sends an edition only where the
+/// capabilities list `putAgentic` (owner:manage today), never by version:
+/// a sign-in that may read editions but not write them isn't offered it.
+#[test]
+fn writing_an_edition_follows_put_agentic() {
+    let env = env_at("next", &["getAgentic", "putAgentic"]);
+    assert!(
+        Api::new(&env.mock.url, TOKEN)
+            .serves_agentic_write()
+            .unwrap()
+    );
+    let env = env_at("6.3.0", &["listAgenticFeeds", "getAgentic"]);
+    assert!(
+        !Api::new(&env.mock.url, TOKEN)
+            .serves_agentic_write()
+            .unwrap(),
+        "read scope only"
+    );
+    assert!(blyg_core::agentic::serves_writes(
+        &serde_json::json!({ "operations": ["putAgentic"] })
+    ));
+    assert!(!blyg_core::agentic::serves_writes(
+        &serde_json::json!({ "contractVersion": "6.3.0", "operations": ["getAgentic"] })
+    ));
+}
+
 /// Every operation a gate looks for is one the newest contract names: a
 /// typo would hide the feature on every studio.
 #[test]
@@ -360,6 +386,12 @@ const GATES: &[Gate] = &[
         constant: "blyg-core/src/agentic.rs::LIST_OPERATION",
         guards: Guards::Read,
         what: "the Agentic feed list and the tab's name",
+    },
+    // --- agentic writer ---
+    Gate {
+        constant: "blyg-core/src/agentic.rs::PUT_OPERATION",
+        guards: Guards::Write,
+        what: "Burrow's own AI writing the Agentic feed's edition (`putAgentic`)",
     },
     Gate {
         constant: "blyg-core/src/dictionary.rs::GET_OPERATION",

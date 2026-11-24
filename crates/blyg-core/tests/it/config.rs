@@ -945,3 +945,34 @@ fn extension_keys_are_documented() {
     assert!(out.contains("not a sandbox"), "{out}");
     assert!(out.contains("never publish"), "{out}");
 }
+
+/// --- agentic writer --- Burrow's own AI writes the Agentic feed's edition:
+/// off by default; `after-sync` with a provider (or the writing default), a
+/// model (or that provider's) and a gap in hours (3 by default).
+#[test]
+fn the_agentic_writer_is_off_until_chosen() {
+    let l = load_text("");
+    let c = &l.config;
+    assert!(!c.agentic_writer());
+    assert_eq!(c.agentic_writer_provider(), None, "the writing default");
+    assert_eq!(c.agentic_writer_model(), None);
+    assert_eq!(c.agentic_writer_gap_hours(), 3.0);
+    let l = load_text(
+        "agentic-writer = after-sync\n\
+         agentic-writer-provider = codex\n\
+         agentic-writer-model = invented-model-2\n\
+         agentic-writer-gap = 6\n",
+    );
+    assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
+    let c = &l.config;
+    assert!(c.agentic_writer());
+    assert_eq!(c.agentic_writer_provider(), Some("codex"));
+    assert_eq!(c.agentic_writer_model(), Some("invented-model-2"));
+    assert_eq!(c.agentic_writer_gap_hours(), 6.0);
+    let l = load_text("agentic-writer-provider = default\nagentic-writer-gap = 0.1\n");
+    assert_eq!(l.config.agentic_writer_provider(), None);
+    assert_eq!(l.config.agentic_writer_gap_hours(), 0.5, "clamped");
+    let l = load_text("agentic-writer = sometimes\n");
+    assert!(!l.diagnostics.is_empty(), "an unknown value is said");
+    assert!(!l.config.agentic_writer());
+}
