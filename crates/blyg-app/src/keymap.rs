@@ -51,6 +51,8 @@ use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
 // --- catch up ---
 use crate::app::reading::catchup::CatchUp;
+// --- agentic writer ---
+use crate::app::reading::agentic_writer::WriteAgenticEdition;
 // --- browse ---
 use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
 // --- reading compose ---
@@ -669,6 +671,15 @@ pub fn mac_table() -> Vec<Keybind> {
             CatchUp,
             "Catch up: the conversation leading to this post, oldest first (⇧C in Reading)",
             "Post › Catch Up…"
+        ),
+        // --- agentic writer --- (Ctrl+Shift+J on Windows: Ctrl+Alt+E is
+        // AltGr+E, Polish ę and the € sign)
+        kb!(
+            "alt-cmd-e",
+            Main,
+            WriteAgenticEdition,
+            "Write an edition now: Burrow's AI lays out your Agentic feed from what's new",
+            Some("Blyg › Write an Agentic Feed Edition Now")
         ),
         kb!(
             "cmd-k",
@@ -1385,6 +1396,8 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     // --- access-ai --- Ctrl+Alt+N is AltGr+N, which types a letter on some
     // layouts (Polish ń): drafting a change note is Ctrl+Shift+E there.
     ("alt-cmd-n", "ctrl-shift-e"),
+    // --- agentic writer --- Ctrl+Alt+E is AltGr+E (Polish ę, €).
+    ("alt-cmd-e", "ctrl-shift-j"),
     // Ctrl+Alt+<key> is AltGr+<key> on Windows, and these type a character
     // on a common layout (`ALTGR_TYPES`): German @ (Q), Polish ł and ś (L,
     // S), Hungarian ł and € (K, U), Hungarian ~ and German ² (1, 2).

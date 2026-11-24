@@ -121,6 +121,132 @@ pub fn edition(rows: &[ReadingItem], title: &str) -> Edition {
     }
 }
 
+// --- agentic writer --- the fake blyg's `PUT /api/agentic/default`.
+
+/// The Agentic feed as the fake blyg holds it: the sample edition until
+/// one is written (or it's cleared, for the empty tab).
+#[derive(Debug, Clone)]
+pub struct AgenticState {
+    /// The edition written last: its revision, what was sent, and when.
+    pub written: Option<(u64, blyg_core::agentic_write::EditionInput, String)>,
+    /// No edition at all (revision 0), until one is written.
+    pub cleared: bool,
+    /// This sign-in may write one (`putAgentic`).
+    pub writable: bool,
+    /// Editions written.
+    pub puts: usize,
+}
+
+impl Default for AgenticState {
+    fn default() -> Self {
+        AgenticState {
+            written: None,
+            cleared: false,
+            writable: true,
+            puts: 0,
+        }
+    }
+}
+
+/// The sample edition's revision.
+const SAMPLE_REVISION: u64 = 7;
+
+impl AgenticState {
+    pub fn revision(&self) -> u64 {
+        match (&self.written, self.cleared) {
+            (Some((r, _, _)), _) => *r,
+            (None, true) => 0,
+            (None, false) => SAMPLE_REVISION,
+        }
+    }
+
+    /// The edition as the blyg serves it: references resolved against the
+    /// held rows, the ones that don't resolve left out (as the studio does).
+    pub fn edition(&self, rows: &[ReadingItem], title: &str) -> Edition {
+        let Some((revision, input, at)) = &self.written else {
+            if self.cleared {
+                return Edition {
+                    revision: 0,
+                    updated_at: None,
+                    mode: None,
+                    layout: None,
+                    draft: None,
+                };
+            }
+            return edition(rows, title);
+        };
+        let held = |sub: &str, id: &str| {
+            rows.iter()
+                .find(|r| r.subscription_id.as_str() == sub && r.remote_id.as_str() == id)
+        };
+        let sections = input
+            .sections
+            .iter()
+            .map(|s| Section {
+                title: s.title.clone(),
+                kind: s.kind.unwrap_or_default(),
+                note: s.note.clone(),
+                entries: s
+                    .entries
+                    .iter()
+                    .filter_map(|p| {
+                        let r = held(&p.sub, &p.remote_id)?;
+                        Some(Placed {
+                            sub: p.sub.clone(),
+                            remote_id: p.remote_id.clone(),
+                            version: p.version,
+                            held_version: Some(r.version),
+                            headline: p.headline.clone(),
+                            summary: p.summary.clone(),
+                            reason: p.reason.clone(),
+                            present: p.present.unwrap_or_default(),
+                            group: p.group.clone(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })
+            .filter(|s| !s.entries.is_empty())
+            .collect();
+        Edition {
+            revision: *revision,
+            updated_at: Some(at.clone()),
+            mode: Some(Mode::Sections),
+            layout: Some(Layout {
+                title: input.title.clone(),
+                lede: input.lede.clone(),
+                agent: Agent {
+                    name: input.agent.name.clone(),
+                    model: input.agent.model.clone(),
+                },
+                generated_at: input.generated_at.clone(),
+                sections,
+            }),
+            draft: None,
+        }
+    }
+
+    /// `PUT`: from the revision it's at, else a conflict.
+    pub fn put(
+        &mut self,
+        rows: &[ReadingItem],
+        title: &str,
+        expected: u64,
+        input: &blyg_core::agentic_write::EditionInput,
+    ) -> blyg_core::agentic_write::Put {
+        use blyg_core::agentic_write::Put;
+        if !self.writable {
+            return Put::NotOffered;
+        }
+        let now = self.revision();
+        if expected != now {
+            return Put::Conflict;
+        }
+        self.written = Some((now + 1, input.clone(), chrono::Utc::now().to_rfc3339()));
+        self.puts += 1;
+        Put::Written(self.edition(rows, title))
+    }
+}
+
 /// The blyg's Catch up summary.
 pub fn catch_up_summary() -> CatchUpSummary {
     CatchUpSummary {

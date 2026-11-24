@@ -5,6 +5,7 @@
 
 pub mod access_ai; // --- access-ai ---
 pub mod agentic; // --- agentic feed --- (studio 0.69, contract 6.2.0)
+pub mod agentic_write; // --- agentic writer --- Burrow's own AI writes the edition
 pub mod api;
 pub mod backend;
 pub mod background; // --- background --- (studio 0.61, contract 5.10.0)

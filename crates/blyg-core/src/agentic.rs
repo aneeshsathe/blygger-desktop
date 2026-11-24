@@ -12,8 +12,9 @@
 //!   to their reading entries, the assistant's words beside each. A
 //!   reference that no longer resolves is left out by the studio, and a
 //!   section left empty is dropped. `null` before the first edition.
-//! - `PUT /api/agentic/{feed}` is the assistant's, not Burrow's: Burrow
-//!   reads editions and never writes one.
+//! - `PUT /api/agentic/{feed}` writes one: an outside assistant's, or
+//!   Burrow's own AI when the owner turns its writer on
+//!   (`crate::agentic_write`), gated on [`PUT_OPERATION`] ([`serves_writes`]).
 //! - The feed list follows [`LIST_OPERATION`] ([`serves_feeds`]), an
 //!   edition [`GET_OPERATION`] ([`serves`]), in `GET /api/capabilities`;
 //!   never judged by the contract version.
@@ -24,7 +25,8 @@
 //! Every word the assistant wrote (headlines, summaries, notes, reasons,
 //! the lede) is shown as the assistant's own and disclosed as generated.
 //! The entries themselves are the reader's own posts, opened as any other.
-//! Shapes and rules only, no I/O: `api::agentic` reads, the app draws.
+//! Shapes and rules only, no I/O: `api::agentic` reads (and writes), the
+//! app draws.
 
 use serde_json::Value;
 
@@ -33,6 +35,8 @@ use crate::model::{RemoteId, SubId};
 /// The capabilities' operation names: listing the feeds, reading one.
 pub const LIST_OPERATION: &str = "listAgenticFeeds";
 pub const GET_OPERATION: &str = "getAgentic";
+/// --- agentic writer --- writing an edition (owner:manage today).
+pub const PUT_OPERATION: &str = "putAgentic";
 
 /// The default feed's id (studio's `DEFAULT_FEED`).
 pub const DEFAULT_FEED: &str = "default";
@@ -44,6 +48,11 @@ pub const TITLE_MAX: usize = 40;
 /// Whether a `GET /api/capabilities` answer offers editions to read.
 pub fn serves(capabilities: &Value) -> bool {
     crate::api::offers(capabilities, GET_OPERATION)
+}
+
+/// Whether it lets this sign-in write an edition (`PUT /api/agentic/{feed}`).
+pub fn serves_writes(capabilities: &Value) -> bool {
+    crate::api::offers(capabilities, PUT_OPERATION)
 }
 
 /// Whether it offers the feed list (`GET /api/agentic`).
@@ -122,10 +131,24 @@ pub enum SectionKind {
 
 impl SectionKind {
     fn parse(s: Option<&str>) -> SectionKind {
+        s.and_then(SectionKind::from_wire).unwrap_or_default()
+    }
+
+    /// The contract's name for it; `None` for a name it doesn't have.
+    pub fn from_wire(s: &str) -> Option<SectionKind> {
         match s {
-            Some("lead") => SectionKind::Lead,
-            Some("briefs") => SectionKind::Briefs,
-            _ => SectionKind::Section,
+            "lead" => Some(SectionKind::Lead),
+            "section" => Some(SectionKind::Section),
+            "briefs" => Some(SectionKind::Briefs),
+            _ => None,
+        }
+    }
+
+    pub fn wire(self) -> &'static str {
+        match self {
+            SectionKind::Lead => "lead",
+            SectionKind::Section => "section",
+            SectionKind::Briefs => "briefs",
         }
     }
 }
@@ -146,11 +169,26 @@ pub enum Present {
 
 impl Present {
     fn parse(s: Option<&str>) -> Present {
+        s.and_then(Present::from_wire).unwrap_or_default()
+    }
+
+    /// The contract's name for it; `None` for a name it doesn't have.
+    pub fn from_wire(s: &str) -> Option<Present> {
         match s {
-            Some("full") => Present::Full,
-            Some("title") => Present::Title,
-            Some("folded") => Present::Folded,
-            _ => Present::Excerpt,
+            "full" => Some(Present::Full),
+            "excerpt" => Some(Present::Excerpt),
+            "title" => Some(Present::Title),
+            "folded" => Some(Present::Folded),
+            _ => None,
+        }
+    }
+
+    pub fn wire(self) -> &'static str {
+        match self {
+            Present::Full => "full",
+            Present::Excerpt => "excerpt",
+            Present::Title => "title",
+            Present::Folded => "folded",
         }
     }
 }

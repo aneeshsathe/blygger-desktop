@@ -635,6 +635,35 @@ impl Config {
         self.get("ai-style-prompt")
     }
 
+    // --- agentic writer ---
+    /// `agentic-writer = after-sync`: write the edition after a sync.
+    pub fn agentic_writer(&self) -> bool {
+        self.get("agentic-writer") == Some("after-sync")
+    }
+
+    /// `agentic-writer-provider`; `None` for `default` (the writing one).
+    pub fn agentic_writer_provider(&self) -> Option<&str> {
+        self.get("agentic-writer-provider")
+            .map(str::trim)
+            .filter(|p| !p.is_empty() && *p != "default")
+    }
+
+    /// `agentic-writer-model`, if set.
+    pub fn agentic_writer_model(&self) -> Option<&str> {
+        self.get("agentic-writer-model")
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+    }
+
+    /// `agentic-writer-gap`, in hours.
+    pub fn agentic_writer_gap_hours(&self) -> f32 {
+        self.get("agentic-writer-gap")
+            .and_then(|s| s.parse::<f32>().ok())
+            .map(|h| h.clamp(0.5, 168.0))
+            .unwrap_or(3.0)
+    }
+    // --- end agentic writer ---
+
     pub fn tutorial_on_launch(&self) -> bool {
         self.get("tutorial-on-launch") == Some("true")
     }

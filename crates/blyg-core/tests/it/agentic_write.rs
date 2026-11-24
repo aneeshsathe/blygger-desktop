@@ -261,10 +261,6 @@ fn the_body_is_the_contracts_shape() {
     );
 }
 
-fn written(revision: u64) -> Edition {
-    parse_edition(&json!({ "revision": revision, "layout": null })).unwrap()
-}
-
 /// Read the revision, write from it; on a 409 read again and write once
 /// more; a second 409 gives up. Not offered is said, and nothing written.
 #[test]
@@ -320,4 +316,10 @@ fn a_conflict_is_read_again_and_written_once_more() {
     assert!(matches!(r, Sent::NotOffered));
     // A failed read is the error.
     assert!(send_with(|| Err(CoreError::Offline), |_| panic!()).is_err());
+}
+
+/// The edition a PUT answers with (the PUT body's `edition` is the
+/// input, tested above; this is the stored one).
+fn written(revision: u64) -> Edition {
+    parse_edition(&json!({ "revision": revision, "layout": null })).unwrap()
 }

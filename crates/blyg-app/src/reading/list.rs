@@ -852,7 +852,7 @@ impl MainView {
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(agentic && self.reading.opened.is_some(), |d| {
-                d.child(self.render_agentic_edition(false, cx))
+                d.child(self.render_agentic_page(false, cx))
             })
             .when(held == 0 && !agentic, |d| {
                 d.child(self.empty_note(crate::keymap::hint(
@@ -920,7 +920,7 @@ impl MainView {
             .child(if agentic && self.reading.opened.is_none() {
                 self.render_three_panes(
                     div().into_any_element(),
-                    self.render_agentic_edition(true, cx),
+                    self.render_agentic_page(true, cx),
                     cx,
                 )
             } else {

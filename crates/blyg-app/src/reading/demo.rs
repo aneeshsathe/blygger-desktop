@@ -39,6 +39,10 @@ impl MainView {
             };
         }
         match (scenario, n) {
+            // --- agentic writer ---
+            (Scene::RdAgenticUnwritten | Scene::RdAgenticWriting | Scene::RdAgenticWritten, n) => {
+                self.agentic_writer_demo(scenario, n, window, cx)
+            }
             // --- stream --- the default reading view, a thread selected.
             (Scene::RdStream, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdStream, 1) => {

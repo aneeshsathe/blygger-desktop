@@ -26,6 +26,11 @@ pub struct Release {
 }
 
 pub const RELEASES: &[Release] = &[
+    // --- agentic writer ---
+    Release {
+        version: "0.29.0",
+        first_step: Some("agentic-write"),
+    },
     Release {
         version: "0.28.0",
         first_step: Some("tk-checkpoint"),

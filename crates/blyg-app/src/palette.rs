@@ -134,6 +134,7 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "InsertFormula" => &["maths", "math", "latex", "tex", "equation", "sigma"],
         "FormatBold" => &["bold", "strong", "heavy"],
         "FormatItalic" => &["italic", "emphasis", "emphasise", "emphasize", "slanted"],
+        "WriteAgenticEdition" => &["agentic", "digest", "newspaper", "edition"], // --- agentic writer ---
         "Quit" => &["exit", "close"],
         _ => &[],
     }

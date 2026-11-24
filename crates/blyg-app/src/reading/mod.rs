@@ -22,6 +22,7 @@
 pub(crate) mod agentic;
 #[cfg(test)]
 mod agentic_tests;
+pub(crate) mod agentic_writer; // --- agentic writer --- Burrow's AI writes the edition
 #[cfg(test)]
 mod agentic_writer_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
@@ -482,6 +483,8 @@ pub struct State {
     pub shelved: Vec<Key>,
     /// --- agentic feed --- the edition and the tab's name (studio 0.69).
     pub agentic: agentic::Agentic,
+    /// --- agentic writer --- Burrow's own AI writing the edition.
+    pub agentic_writer: agentic_writer::Writer,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -570,6 +573,7 @@ impl State {
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
             shelved: shelf_lens::keys(backend),                // --- shelf sync ---
             agentic: Default::default(),                       // --- agentic feed ---
+            agentic_writer: Default::default(),                // --- agentic writer ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
@@ -803,6 +807,7 @@ impl MainView {
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
         .map(|d| self.hopper_actions(d, cx)) // --- hoppers ---
         .map(|d| self.catch_up_actions(d, cx)) // --- catch up ---
+        .map(|d| self.agentic_writer_actions(d, cx)) // --- agentic writer ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -863,6 +868,7 @@ impl MainView {
             }
             o.responses = self.backend.responses(&o.item.origin, &o.item.remote_id);
         }
+        self.agentic_writer_after_reading_changed(cx); // --- agentic writer ---
         cx.notify();
     }
 

@@ -258,22 +258,16 @@ mod app {
         });
     }
 
-    /// ⌥⌘E in the Agentic feed tab: "Writing an edition with …" while the
-    /// provider works, then the tab shows the edition Burrow wrote.
+    /// While the provider works the tab says "Writing an edition with …"
+    /// (read before the test executor runs the job to its end).
     #[gpui_kit::test]
-    fn the_key_writes_an_edition_and_the_tab_shows_it(cx: &mut TestAppContext) {
-        let p = FakeProvider {
-            delay: Duration::from_millis(200),
-            ..FakeProvider::replying(&[REPLY])
-        };
-        let (view, f, cx) = setup(cx, CONFIG, p);
+    fn the_tab_says_it_is_writing(cx: &mut TestAppContext) {
+        let (view, _f, cx) = setup(cx, CONFIG, FakeProvider::replying(&[REPLY]));
         view.update_in(cx, |v, window, cx| {
             v.show_view(View::Reading, window, cx);
+            v.reading.mode = super::super::stream_vm::ReadMode::Reader;
             v.select_source(Source::Smart(Smart::Agentic), cx);
-        });
-        cx.run_until_parked();
-        cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-e"));
-        view.read_with(cx, |v, _| {
+            v.agentic_write_now(cx);
             assert_eq!(
                 v.reading.agentic_writer.state(),
                 &WriterState::Writing {
@@ -281,6 +275,20 @@ mod app {
                 }
             );
         });
+    }
+
+    /// ⌥⌘E in the Agentic feed tab: the tab then shows the edition Burrow
+    /// wrote.
+    #[gpui_kit::test]
+    fn the_key_writes_an_edition_and_the_tab_shows_it(cx: &mut TestAppContext) {
+        let (view, f, cx) = setup(cx, CONFIG, FakeProvider::replying(&[REPLY]));
+        view.update_in(cx, |v, window, cx| {
+            v.show_view(View::Reading, window, cx);
+            v.reading.mode = super::super::stream_vm::ReadMode::Reader;
+            v.select_source(Source::Smart(Smart::Agentic), cx);
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-e"));
         wait(cx, &view, "the edition is written", |v| {
             *v.reading.agentic_writer.state() == WriterState::Idle
                 && v.reading.agentic.edition().is_some_and(|e| {
@@ -324,6 +332,7 @@ mod app {
         let (view, f, cx) = setup(cx, CONFIG, FakeProvider::replying(&["no json here"]));
         view.update_in(cx, |v, window, cx| {
             v.show_view(View::Reading, window, cx);
+            v.reading.mode = super::super::stream_vm::ReadMode::Reader;
             v.select_source(Source::Smart(Smart::Agentic), cx);
             v.agentic_write_now(cx);
         });
@@ -331,6 +340,7 @@ mod app {
             matches!(v.reading.agentic_writer.state(), WriterState::Failed(_))
         });
         assert_eq!(f.agentic_puts(), 0);
+        crate::test_wait::settle_drawn(cx);
         assert!(cx.debug_bounds("agentic-writer-retry").is_some(), "a retry");
     }
 }

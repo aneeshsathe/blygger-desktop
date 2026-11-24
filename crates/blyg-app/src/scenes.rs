@@ -338,6 +338,14 @@ scenes! {
         // --- studio 0.71 --- READ MARKS' "Count an entry as read".
         SettingsCountRead = "settings-count-read",
     }
+    /// reading/agentic_writer.rs (--- agentic writer ---): the Agentic feed
+    /// with no edition (how one gets made); Burrow's AI writing one (a
+    /// stand-in provider that takes its time); the edition it wrote
+    Reading {
+        RdAgenticUnwritten = "rd-agentic-unwritten",
+        RdAgenticWriting = "rd-agentic-writing",
+        RdAgenticWritten = "rd-agentic-written",
+    }
     /// extensions/mod.rs (--- ux 0.28 ---): cross-post on and allowed, a
     /// published post edited, ⌘⏎: the Publish sheet's "Then cross-post to";
     /// `-palette`: ⇧⌘P on that post instead (its on/off rows)

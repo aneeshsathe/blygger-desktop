@@ -1,10 +1,12 @@
 //! --- agentic feed --- The owner-API reads of the Agentic feed (studio
 //! 0.69, contract 6.2.0; shapes in `crate::agentic`). Asked only of a
-//! studio whose capabilities list `getAgentic`. Burrow never writes an
-//! edition (`putAgentic` is the assistant's).
+//! studio whose capabilities list `getAgentic`. --- agentic writer ---
+//! Burrow's own AI writes one only where they list `putAgentic`
+//! (`crate::agentic_write`).
 
 use super::{Api, enc};
 use crate::agentic::{Edition, Feed, parse_edition, parse_feeds};
+use crate::agentic_write::{EditionInput, Put, put_body};
 use crate::backend::{CoreError, Result};
 
 impl Api {
@@ -36,6 +38,35 @@ impl Api {
         match Self::optional(self.call("GET", &path, None))? {
             Some(v) => parse_edition(&v).map(Some).ok_or_else(|| unexpected(&path)),
             None => Ok(None),
+        }
+    }
+}
+
+impl Api {
+    /// --- agentic writer --- Whether this sign-in may write an edition
+    /// (the capabilities list `putAgentic`).
+    pub fn serves_agentic_write(&self) -> Result<bool> {
+        self.offers_all(&[crate::agentic::PUT_OPERATION])
+    }
+
+    /// `PUT /api/agentic/{feed} {edition, expectedRevision}`.
+    pub fn put_agentic(
+        &self,
+        feed: &str,
+        expected_revision: u64,
+        edition: &EditionInput,
+    ) -> Result<Put> {
+        if !self.serves_agentic_write()? {
+            return Ok(Put::NotOffered);
+        }
+        let path = format!("/api/agentic/{}", enc(feed));
+        match self.call("PUT", &path, Some(put_body(edition, expected_revision))) {
+            Ok(v) => parse_edition(&v)
+                .map(Put::Written)
+                .ok_or_else(|| unexpected(&path)),
+            Err(CoreError::RevisionConflict) => Ok(Put::Conflict),
+            Err(CoreError::NotFound) => Ok(Put::NotOffered),
+            Err(e) => Err(e),
         }
     }
 }
