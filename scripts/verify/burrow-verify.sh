@@ -89,11 +89,22 @@ check_config() {
 }
 
 # A helper compiled once from scripts/verify/<name>.swift (cached in $OUT).
+# Compiles a helper once and caches it. It builds to a private temp name and
+# renames it into place, so two runs starting together never see a half-written
+# binary. A failure prints swiftc's message. Callers check the status, because
+# `die` inside $(...) only leaves the subshell.
 swift_bin() {
-  local cache="$OUT/.$1"
+  local cache="$OUT/.$1" tmp
   if [[ ! -x "$cache" || "$HERE/$1.swift" -nt "$cache" ]]; then
     mkdir -p "$OUT"
-    swiftc -O -o "$cache" "$HERE/$1.swift" 2>/dev/null || die "swiftc failed on $1.swift"
+    tmp="$cache.$$.$RANDOM"
+    if ! swiftc -O -o "$tmp" "$HERE/$1.swift" 2>"$tmp.err"; then
+      cat "$tmp.err" >&2
+      rm -f "$tmp" "$tmp.err"
+      die "swiftc failed on $1.swift"
+    fi
+    rm -f "$tmp.err"
+    mv -f "$tmp" "$cache"
   fi
   echo "$cache"
 }
@@ -117,7 +128,9 @@ check_unlocked() {
 
 # A flat, one-colour shot (a window that drew nothing) is no evidence.
 check_not_blank() {
-  "$(swift_bin shotcheck)" "$1" >/dev/null
+  local sc
+  sc="$(swift_bin shotcheck)" || return 2
+  "$sc" "$1" >/dev/null
 }
 
 # Sets PID, BIN_STARTED, SCENE, STARTED, EXTRA (written by launch).
@@ -183,7 +196,7 @@ launch() {
     sleep 0.25
   done
   local w
-  w="$(winid_bin)"
+  w="$(winid_bin)" || die "can't build the window lister"
   until [[ -n "$("$w" "$pid")" ]]; do
     ((SECONDS < deadline)) || { stop "$run" >/dev/null; die "no window after ${WAIT}s"; }
     sleep 0.25
@@ -203,8 +216,9 @@ doctor() {
   esac
   if grep -q "blygger: demo $SCENE ready" "$run/app.log"; then report ok "scene $SCENE played"; else report FAIL "scene $SCENE not ready"; fi
   if grep -q "panicked" "$run/app.log"; then report FAIL "a panic in app.log"; else report ok "no panic in app.log"; fi
-  local ids
-  ids="$("$(winid_bin)" "$PID" | tr '\n' ' ')"
+  local ids w
+  w="$(winid_bin)" || die "can't build the window lister"
+  ids="$("$w" "$PID" | tr '\n' ' ')"
   if [[ -n "$ids" ]]; then report ok "windows: $ids"; else report FAIL "no on-screen window"; fi
   if [[ -d "$run/data" ]] && [[ "$(cd "$run/data" && pwd)" == "$run/data" ]]; then
     report ok "data dir $run/data (throwaway)"
@@ -216,10 +230,11 @@ doctor() {
 
 shot() {
   load_run "${1:-}"
-  local run="$1" name="${2:-$SCENE}" id n=0 blank=0 png
+  local run="$1" name="${2:-$SCENE}" id n=0 blank=0 png w
   ours || die "pid $PID isn't the app this run started"
   check_unlocked
-  for id in $("$(winid_bin)" "$PID"); do
+  w="$(winid_bin)" || die "can't build the window lister"
+  for id in $("$w" "$PID"); do
     png="$run/shots/$name-$id.png"
     screencapture -x -o -l "$id" "$png"
     # Locked while capturing: this shot can't be trusted either.
@@ -313,7 +328,7 @@ selftest() {
   else echo "ok: allowed an unlocked console"; fi
   # The blank-shot check: a flat image fails, a drawn one passes.
   local sc dir
-  sc="$(swift_bin shotcheck)"
+  sc="$(swift_bin shotcheck)" || die "can't build the blank-shot check"
   dir="$(mktemp -d)"
   "$sc" --make flat "$dir/flat.png"
   "$sc" --make drawn "$dir/drawn.png"
