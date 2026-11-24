@@ -195,6 +195,8 @@ struct State {
     syndication: HashMap<LocalId, Vec<blyg_core::syndication::SyndicationEntry>>,
     /// Simulate a Worker without the provenance extension (404).
     prov_unavailable: bool,
+    /// The Agentic feed has no edition yet (the feed is offered).
+    no_edition: bool,
     /// Reading, subscriptions, mentions, site settings (see `fake_reading.rs`).
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
@@ -433,6 +435,7 @@ impl FakeBackend {
                 prov: HashMap::new(),
                 prov_saves: Vec::new(),
                 prov_unavailable: false,
+                no_edition: false,
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: !crate::dev_flags::get().fake.no_read,
@@ -648,6 +651,12 @@ impl FakeBackend {
     /// provenance endpoint (or not).
     pub fn set_provenance_available(&self, available: bool) {
         self.lock().prov_unavailable = !available;
+    }
+
+    /// Whether the Agentic feed has an edition (`false`: a blyg whose
+    /// assistant hasn't written one yet; the feed is still offered).
+    pub fn set_agentic_edition(&self, written: bool) {
+        self.lock().no_edition = !written;
     }
 
     /// --- blyg switcher --- Replace the sample posts with these drafts (a
@@ -3395,7 +3404,7 @@ impl Backend for FakeBackend {
 
     fn agentic_edition(&self, feed: &str) -> Result<Option<blyg_core::agentic::Edition>> {
         self.remote_guard()?;
-        if feed != blyg_core::agentic::DEFAULT_FEED {
+        if feed != blyg_core::agentic::DEFAULT_FEED || self.lock().no_edition {
             return Ok(None);
         }
         let title = self.lock().access_ai.ai.agentic_title.clone();

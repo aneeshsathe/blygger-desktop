@@ -355,7 +355,11 @@ mod app {
 
             view.update(cx, |v, cx| v.select_source(Source::Smart(Smart::Shelf), cx));
             settle(cx);
-            note_fits(cx, Some("reader-list-pane"), &format!("Saved, empty, {width:?}"));
+            note_fits(
+                cx,
+                Some("reader-list-pane"),
+                &format!("Saved, empty, {width:?}"),
+            );
         }
     }
 }

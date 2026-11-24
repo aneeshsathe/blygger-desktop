@@ -321,10 +321,14 @@ scenes! {
         RdResponsesKeys = "rd-responses-keys",
     }
     /// reading/demo.rs (--- ux 0.28 ---): the user-testing pass's steps:
-    /// the Agentic feed's edition, Saved, Kit's tides (a copy
+    /// the Agentic feed's edition (and the tab on a blyg with no edition
+    /// yet: the fake's `set_agentic_edition(false)`; `-narrow` in an 800 px
+    /// window), Saved, Kit's tides (a copy
     /// elsewhere) opened from the stream
     Reading {
         RdAgentic = "rd-agentic",
+        RdAgenticEmpty = "rd-agentic-empty",
+        RdAgenticEmptyNarrow = "rd-agentic-empty-narrow",
         RdSaved = "rd-saved",
         RdStreamCopies = "rd-stream-copies",
         RdStreamCatchupSummary = "rd-stream-catchup-summary",

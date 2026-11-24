@@ -1547,8 +1547,14 @@ impl MainView {
             .into_any_element()
     }
 
+    /// A muted message that wraps within whatever holds it. In a flex row
+    /// (the reading pane) a text box is as wide as its one-line text unless
+    /// it may shrink: the Agentic feed's no-edition note ran off the pane.
     fn muted_note(&self, s: impl Into<SharedString>) -> AnyElement {
         div()
+            .debug_selector(|| "reading-note".into())
+            .w_full()
+            .min_w_0()
             .p(px(16.))
             .italic()
             .text_size(px(12.5))
@@ -1565,6 +1571,8 @@ impl MainView {
         };
         div()
             .id("reading-empty")
+            .w_full()
+            .min_w_0()
             .pt(px(16.))
             .px(px(16.))
             .flex()

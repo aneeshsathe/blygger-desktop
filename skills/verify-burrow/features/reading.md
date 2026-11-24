@@ -36,6 +36,8 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 | `rd-responses-keys` | Responses with the row cursor on the link notice (j ×3); the header lists j/k, h, r, o |
 | `rd-feed`, `rd-raw` | the Reader on the pace-layered Feed (order in the header); Raw |
 | `rd-agentic` | the Agentic feed tab with the sample edition (masthead, sections, cards) |
+| `rd-agentic-empty` | the Agentic feed tab on a blyg with no edition yet: its explanation, wrapped across the reading pane |
+| `rd-agentic-empty-narrow` | the same in an 800 px window: the explanation still wraps |
 | `rd-saved` | Saved (the shelf, renamed), its sync line, the first post open |
 | `rd-stream-copies` | Kit's tides opened from the stream: "the author says it is also at …" under its source line |
 | `rd-stream-catchup-summary` | Catch up on Rue's thread, then `s`: the blyg's summary first |
