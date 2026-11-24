@@ -22,9 +22,14 @@ use crate::app::browser::automation::{self, MacroRun};
 /// How long the opening paragraph may be in `{{excerpt}}`.
 pub const EXCERPT_CHARS: usize = 280;
 
-/// The palette row's label: the macro's title and the site it posts to.
+/// The palette row's label: the macro's title and the site it posts to,
+/// unless the title names it already ("Cross-post to Bluesky…").
 pub fn row_label(m: &MacroEntry) -> String {
-    format!("{} ↗ {}", m.spec.title, m.site.title)
+    if m.spec.title.contains(&m.site.title) {
+        m.spec.title.clone()
+    } else {
+        format!("{} ↗ {}", m.spec.title, m.site.title)
+    }
 }
 
 /// The template's values for a published `item` at `permalink`.
@@ -50,6 +55,16 @@ impl MainView {
     fn macro_item(&self) -> Option<Item> {
         let id = &self.current.as_ref()?.local_id;
         self.backend.item(id).or_else(|| self.current.clone())
+    }
+
+    /// `macro_item`, or post `id` when one is named (an automatic
+    /// cross-post runs for the post that was published, wherever the user
+    /// has gone since).
+    fn macro_item_for(&self, id: Option<&blyg_core::LocalId>) -> Option<Item> {
+        match id {
+            Some(id) => self.backend.item(id),
+            None => self.macro_item(),
+        }
     }
 
     /// The palette's macro rows on `screen`: granted macros of running
@@ -135,6 +150,14 @@ impl MainView {
                 cx,
             );
         };
+        // --- onboarding --- the tour's sample sites stay unopened.
+        if self.ext_tour_on() {
+            return self.show_toast(
+                format!("{} would open in the browser pane", entry.site.title),
+                Some("Tour sample: nothing is loaded".into()),
+                cx,
+            );
+        }
         if self.browser.automation.running() {
             return self.show_toast(
                 "A macro is running in the browser pane",
@@ -154,26 +177,45 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ext_run_macro_for(ext, id, None, window, cx);
+    }
+
+    /// `ext_run_macro` for post `post` (the open one when `None`). `false`
+    /// when it was refused before it started (a toast says why).
+    pub(crate) fn ext_run_macro_for(
+        &mut self,
+        ext: String,
+        id: String,
+        post: Option<blyg_core::LocalId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(host) = self.ext.host.clone() else {
-            return;
+            return false;
         };
+        // --- onboarding --- the tour's sample cross-post loads no website.
+        if self.ext_tour_refuses_run(&ext, &id, cx) {
+            return false;
+        }
         // The grant may have gone (Reload Config) since the palette opened.
         let Some(entry) = host.macro_entry(&ext, &id) else {
-            return self.show_toast(
+            self.show_toast(
                 format!("{ext} can't post there any more"),
                 Some("Its site isn't allowed: Manage extensions…".into()),
                 cx,
             );
+            return false;
         };
         if crate::connection::mode(cx) == Some(crate::connection::Mode::Disconnected) {
-            return self.show_toast(
+            self.show_toast(
                 format!("Connect your blyg to cross-post to {}", entry.site.title),
                 Some("A post needs its link on your blyg first".into()),
                 cx,
             );
+            return false;
         }
-        let Some(item) = self.macro_item() else {
-            return self.show_toast(
+        let Some(item) = self.macro_item_for(post.as_ref()) else {
+            self.show_toast(
                 format!(
                     "Open a published post to cross-post it to {}",
                     entry.site.title
@@ -181,20 +223,23 @@ impl MainView {
                 None,
                 cx,
             );
+            return false;
         };
         let Some(permalink) = published_link(&item).map(str::to_string) else {
-            return self.show_toast(
+            self.show_toast(
                 format!("Publish it first to cross-post it to {}", entry.site.title),
                 Some("Only a published post has a link to share".into()),
                 cx,
             );
+            return false;
         };
         if self.browser.automation.running() {
-            return self.show_toast(
+            self.show_toast(
                 "A macro is already running in the browser pane",
                 Some("Stop it in the pane's bar first".into()),
                 cx,
             );
+            return false;
         }
         // --- syndication --- a macro on a published post makes a copy of it.
         let copy_of = (entry.spec.when == blyg_ext::protocol::When::Published).then(|| {
@@ -216,11 +261,14 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let prepared = task.await;
             let _ = this.update_in(cx, |v, window, cx| match prepared {
-                Err(err) => v.show_toast(
-                    err.message(&ext),
-                    Some(format!("Nothing was posted to {}", entry.site.title).into()),
-                    cx,
-                ),
+                Err(err) => {
+                    v.show_toast(
+                        err.message(&ext),
+                        Some(format!("Nothing was posted to {}", entry.site.title).into()),
+                        cx,
+                    );
+                    v.auto_crosspost_not_started(window, cx); // --- auto cross-post ---
+                }
                 Ok(p) => {
                     let (text, note) = match p {
                         Some(r) => (r.text, r.note),
@@ -235,6 +283,7 @@ impl MainView {
             });
         })
         .detach();
+        true
     }
 
     // ------------------------------------------------------------ browser.*

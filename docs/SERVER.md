@@ -3,7 +3,7 @@
 Burrow talks to a blyg's **owner API**: blygger-studio's private authoring and reading
 API (https://github.com/blygger/blygger-studio), documented as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). Burrow 0.16 and later speak
-**API contract 5.x only**, which means **blygger-studio 0.49.12 or later**. It is tested
+**API contract 5.x** (and 6.x since 0.27.3), which means **blygger-studio 0.49.12 or later**. It is tested
 end to end against **studio 0.49.12** (contract 5.0.0), and every route it uses is
 checked against that `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
@@ -22,9 +22,12 @@ blyg is too old):
    `https://blyg.example.com/blyg/` answers at `https://blyg.example.com/blyg/api/…`).
    It is authenticated, so a refused credential stops the check (`401`), never passing
    as "an older studio".
-2. Its `contractVersion` decides: **major 5** is spoken. Anything older, or no
-   capabilities route (a `404`: a studio before 0.49.7, or a Worker fork), is too old.
-   A newer major is a contract this Burrow doesn't know yet.
+2. Its `contractVersion` decides. **Majors 5 and 6** are spoken in full. Anything
+   older, or no capabilities route (a `404`: a studio before 0.49.7, or a Worker
+   fork), is too old. A newer major, or a version that isn't a number, is **newer**:
+   Burrow warns once a session, keeps syncing what the capabilities offer, and prunes
+   nothing held here on that studio's lists' word (below). The check runs again on
+   each safety-net pull and before a removal, so an upgrade mid-session is seen.
 3. A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
 
 **Too old:** nothing is pushed or pulled. Burrow says "Your blyg needs updating" once
@@ -34,7 +37,20 @@ stays on this Mac and syncs once the studio is updated; Burrow notices on the ne
 (a manual sync checks at once). The connect sheet refuses such a blyg with "update your
 studio to 0.49.12 or later".
 
-**Too new:** nothing syncs either, and Burrow asks to be updated.
+**Newer:** sync goes on (since 0.28.0), each feature gated on the operations the
+capabilities list, and your writes go through. But nothing held here is removed on that
+studio's lists' word until Burrow knows the contract: a page in a shape Burrow doesn't
+know would read as an empty or ended list. Items, reading posts, subscriptions,
+hoppers, thumbs, read marks, contacts and Saved entries it doesn't list stay on this
+Mac; removals made here (an unsubscribe and its posts, a deleted post) still go. The
+contract is read again on each safety-net pull and before a removal, so a studio
+upgraded while Burrow runs is seen first. Saved is read but not written: a change to it
+waits, queued, until Burrow is updated (the status bar reads Synced meanwhile). Burrow
+says "Your blyg runs a newer studio" once a session, and asks to be updated.
+
+`wholeBlyg` on `POST /api/subscriptions` is sent to every studio but contract 5.0, and
+asked again without it only when a 400 names the key (studio 0.49's strict body:
+`request: Unrecognized key: "wholeBlyg"`).
 
 ## Signing in
 
@@ -326,7 +342,7 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
 - Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention hiding
   and subscription edits are `PATCH` too.
 - Mentions may have `relation: "source"` (generated text drew on your post).
-- Contract 5.7.0 (studio 0.56), asked for only when the capabilities say 5.7 or later:
+- Contract 5.7.0 (studio 0.56), asked for only when the capabilities list `listContacts`:
   `GET /api/contacts` (the owner's address book, `{handle, name, origin}`), publish's
   `unresolvedHandles` (it rewrites `@handle` to an h-card link), and `mentions=true` on
   `GET /api/reading`. The repo's OpenAPI fixture is still 5.0.0.

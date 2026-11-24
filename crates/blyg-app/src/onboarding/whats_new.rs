@@ -27,6 +27,10 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.28.0",
+        first_step: Some("tk-checkpoint"),
+    },
+    Release {
         version: "0.27.0",
         first_step: Some("tangle"),
     },

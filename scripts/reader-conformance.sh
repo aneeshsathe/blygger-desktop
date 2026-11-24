@@ -11,8 +11,9 @@
 #
 # What it does:
 #   1. builds the adapter (`cargo build -p blyg-app --example blyg-conformance`);
-#   2. shallow-fetches blygger-spec at the pinned commit below into a scratch
-#      dir (nothing is written to this repo or to an existing checkout);
+#   2. shallow-fetches blygger-spec at the pinned commit (SPEC_COMMIT in
+#      scripts/conformance/spec.sh) into a scratch dir (nothing is written to
+#      this repo or to an existing checkout);
 #   3. runs the suite in batch mode, writing summary.json, results.json and
 #      report.html to the scratch dir (never the suite's own out/);
 #   4. compares every case with scripts/reader-conformance.expected.
@@ -25,17 +26,10 @@
 # reason. It is not wired into CI: it needs the network and Node 20.
 set -euo pipefail
 
-SPEC_REPO=https://github.com/aneeshsathe/blygger-spec
-SPEC_COMMIT=510c76c953f7caab3207ed443e4edf8294ffd559 # branch conformance-0.4
-# The baseline was last checked (2026-11-13) with BLYG_SPEC_DIR at blygger-spec
-# d248bc4 (protocol 0.4 r15, decision #102's fixtures), which is not on
-# SPEC_REPO yet: move the pin once it is.
-# Studio target: blygger-studio v0.65.0 (contract 5.14.0, Burrow 0.27.0);
-# its rendering is 0.64.1's, the parity fixtures' reference (docs/RENDER.md).
-
 die() { printf 'reader-conformance: %s\n' "$*" >&2; exit 2; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXPECTED="$ROOT/scripts/reader-conformance.expected"
+. "$ROOT/scripts/conformance/spec.sh"
 NODE="${NODE:-node}"
 command -v "$NODE" >/dev/null || die "Node 20+ is needed (set NODE)"
 
@@ -49,24 +43,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [ -n "${BLYG_CONFORMANCE_BIN:-}" ]; then
-  BIN="$BLYG_CONFORMANCE_BIN"
-else
-  (cd "$ROOT" && cargo build -q -p blyg-app --example blyg-conformance)
-  TARGET="$(cd "$ROOT" && cargo metadata --format-version 1 --no-deps |
-    "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')"
-  BIN="$TARGET/debug/examples/blyg-conformance"
-fi
+BIN="$(conformance_bin "$ROOT" "$NODE")"
 [ -x "$BIN" ] || die "no adapter binary at $BIN"
-
-if [ -n "${BLYG_SPEC_DIR:-}" ]; then
-  SPEC="$BLYG_SPEC_DIR"
-else
-  SPEC="$SCRATCH/blygger-spec"
-  git init -q "$SPEC"
-  git -C "$SPEC" fetch -q --depth 1 "$SPEC_REPO" "$SPEC_COMMIT"
-  git -C "$SPEC" -c advice.detachedHead=false checkout -q FETCH_HEAD
-fi
+SPEC="$(spec_checkout "$SCRATCH")"
 SUITE="$SPEC/conformance/reader"
 [ -f "$SUITE/run.mjs" ] || die "no reader suite at $SUITE"
 
@@ -95,15 +74,15 @@ for (const [id, c] of now) {
   const was = known.get(id) ?? "pass";
   if (rank[c.status] > rank[was]) regressed.push(`${id}: ${was} -> ${c.status}: ${c.detail}`);
   else if (rank[c.status] < rank[was]) fixed.push(`${id}: ${was} -> ${c.status}`);
-  else if (c.status !== "pass") still.push(`${c.status} ${id}`);
+  else if (rank[c.status] > 0) still.push(`${c.status} ${id}`);
 }
 // A subset run (--only) can't tell a removed case from one not selected.
 if (extraArgs === "0") {
   for (const id of known.keys()) if (!now.has(id)) regressed.push(`${id}: no longer in the suite`);
 }
-const n = { pass: 0, warn: 0, fail: 0 };
+const n = { pass: 0, info: 0, warn: 0, fail: 0 };
 for (const c of now.values()) n[c.status] = (n[c.status] ?? 0) + 1;
-console.log(`reader-conformance: ${n.pass} pass, ${n.warn} warn, ${n.fail} fail of ${now.size}`);
+console.log(`reader-conformance: ${n.pass} pass, ${n.info} unreported (pass, links[] not reported), ${n.warn} warn, ${n.fail} fail of ${now.size}`);
 if (still.length) console.log(`known (${still.length}):\n  ${still.join("\n  ")}`);
 if (fixed.length) console.log(`fixed, take out of the baseline (${fixed.length}):\n  ${fixed.join("\n  ")}`);
 if (regressed.length) {

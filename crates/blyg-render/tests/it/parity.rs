@@ -32,8 +32,9 @@ const TO_ADOPT: &[(&str, &str)] = &[];
 /// rewritten here, so the rest of each case is still compared byte for
 /// byte. `docs/RENDER.md` ("Decision #102") explains each.
 ///
-/// #102 (9): a baked quote is never inside a `blyg-tk-gen` wrapper; an
-/// inline span that a quote interrupts closes before it and reopens after.
+/// #102 (9): an inline span that a quote interrupts closes before it and
+/// reopens after. (Studio 0.67 #161 took up the block form, the fragment's
+/// directive line and the no-page link address; the fixtures have them.)
 const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
     (
         "tr_inline_tk_multiline_directive",
@@ -59,6 +60,16 @@ const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
             ),
         ],
     ),
+    // #102 (9) drops a wrapper left empty; studio 0.67 (#161) leaves an
+    // empty `div.blyg-tk-gen` between two quotes in a row (blank prose
+    // between them is flushed as a part). Not yet reported upstream.
+    (
+        "tr_block_tk_two_quotes",
+        &[(
+            "</blockquote><div class=\"blyg-tk-gen\"></div><blockquote",
+            "</blockquote><blockquote",
+        )],
+    ),
     // #102 (2): the reserved form with a label is reserved too.
     (
         "label_directive_malformed",
@@ -69,139 +80,25 @@ const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-/// #102 (9) for a block scope (decision #60): the studio (0.59 on) bakes a
-/// quote in a generated block inside the block's `div.blyg-tk-gen`; the
-/// spec puts it between two wrappers, and drops a wrapper left empty.
-const SPEC_BLOCK_SPLIT: &[&str] = &[
-    "tr_block_tk_directive_output",
-    "tr_block_tk_directive_split",
-    "tr_block_tk_directive_attached",
-    "tr_in_tk_block",
-];
-
-/// #102 (1) and (2): publish errors the fixtures (which publish both) lack.
-const SPEC_ERRORS: &[(&str, &[(&str, &str)])] = &[
-    (
-        "tr_in_fragment",
-        &[("![[01j9zq3k4m5n6p7q8r9s0t1v2w]]", FRAGMENT_DIRECTIVE)],
-    ),
-    (
-        "label_directive_fragment",
-        &[("![[01j9zq3k4m5n6p7q8r9s0t1v2w | note]]", FRAGMENT_DIRECTIVE)],
-    ),
-    (
-        "label_directive_malformed",
-        &[(
-            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]",
-            "explicit-version references (@vN) are reserved, not supported in v0.1",
-        )],
-    ),
-];
-
-const FRAGMENT_DIRECTIVE: &str = "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code";
+/// #102 (2): publish errors the fixture (which publishes it) lacks.
+const SPEC_ERRORS: &[(&str, &[(&str, &str)])] = &[(
+    "label_directive_malformed",
+    &[(
+        "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]",
+        "explicit-version references (@vN) are reserved, not supported in v0.1",
+    )],
+)];
 
 /// The fixture's HTML (normalised) as protocol 0.4 r15 has it.
-fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {
+fn spec_expected(name: &str, html: &str) -> String {
     let mut out = normalize(html);
-    // #102 (5): a link to an imported item with no `page` names its item
-    // document. The provenance line is presentation and keeps the
-    // convention.
-    for url in no_page {
-        let (base, id) = url
-            .rsplit_once("/f/")
-            .or_else(|| url.rsplit_once("/t/"))
-            .unwrap();
-        let id = id.trim_end_matches('/');
-        let from = format!("<a href=\"{url}\">");
-        let to = format!("<a href=\"{base}/items/{id}.json\">");
-        let mut rebuilt = String::new();
-        let mut rest = out.as_str();
-        while let Some(i) = rest.find(&from) {
-            rebuilt.push_str(&rest[..i]);
-            let provenance = rebuilt.ends_with("<p class=\"provenance\">")
-                || rebuilt.ends_with("<p class=\"provenance nested\">");
-            rebuilt.push_str(if provenance { &from } else { &to });
-            rest = &rest[i + from.len()..];
-        }
-        rebuilt.push_str(rest);
-        out = rebuilt;
-    }
     for (_, pairs) in SPEC_REWRITES.iter().filter(|(n, _)| *n == name) {
         for (from, to) in *pairs {
             assert!(out.contains(from), "{name}: rewrite {from:?} found nothing");
             out = out.replacen(from, to, 1);
         }
     }
-    if SPEC_BLOCK_SPLIT.contains(&name) {
-        let split = split_block_quotes(&out);
-        assert_ne!(split, out, "{name}: no quote inside a generated block");
-        out = split;
-    }
     out
-}
-
-/// Every top-level quote inside a `div.blyg-tk-gen` moved out between two
-/// wrappers, whitespace-only wrappers dropped (normalised HTML in and out).
-fn split_block_quotes(html: &str) -> String {
-    const OPEN: &str = "<div class=\"blyg-tk-gen\">";
-    const QUOTE: &str = "<blockquote class=\"blyg-transclusion";
-    let mut out = String::new();
-    let mut rest = html;
-    while let Some(at) = rest.find(OPEN) {
-        out.push_str(&rest[..at]);
-        let body = &rest[at + OPEN.len()..];
-        let end = body.find("</div>").expect("a closed generated block");
-        let mut inner = &body[..end];
-        let wrap = |prose: &str, out: &mut String| {
-            if !prose.trim().is_empty() {
-                out.push_str(OPEN);
-                out.push_str(prose);
-                out.push_str("</div>");
-            }
-        };
-        while let Some(q) = inner.find(QUOTE) {
-            wrap(&inner[..q], &mut out);
-            let len = blockquote_len(&inner[q..]);
-            out.push_str(&inner[q..q + len]);
-            inner = &inner[q + len..];
-        }
-        wrap(inner, &mut out);
-        rest = &body[end + "</div>".len()..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// The length of the blockquote at the start of `s`, nested ones included.
-fn blockquote_len(s: &str) -> usize {
-    let mut depth = 0usize;
-    let mut i = 0;
-    while i < s.len() {
-        if s[i..].starts_with("<blockquote") {
-            depth += 1;
-        } else if s[i..].starts_with("</blockquote>") {
-            depth -= 1;
-            if depth == 0 {
-                return i + "</blockquote>".len();
-            }
-        }
-        i += s[i..].chars().next().unwrap().len_utf8();
-    }
-    panic!("an unclosed blockquote");
-}
-
-#[test]
-fn split_block_quotes_moves_quotes_out_of_wrappers() {
-    let q = "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"x\"><p>q</p><blockquote><p>n</p></blockquote></blockquote>";
-    let html = format!(
-        "<p>a</p><div class=\"blyg-tk-gen\"><p>one</p>{q}<p>two</p></div><div class=\"blyg-tk-gen\">{q}</div>"
-    );
-    assert_eq!(
-        split_block_quotes(&html),
-        format!(
-            "<p>a</p><div class=\"blyg-tk-gen\"><p>one</p></div>{q}<div class=\"blyg-tk-gen\"><p>two</p></div>{q}"
-        )
-    );
 }
 
 fn load_fixtures() -> Vec<Value> {
@@ -260,21 +157,6 @@ fn parity_with_worker() {
         fixtures.len()
     );
 
-    // Imported items with no `page`, by the URL the convention gave them.
-    let no_page: Vec<String> = store.json["imported"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|r| r["page"].is_null())
-        .map(|r| {
-            let seg = if r["kind"] == "thread" { "t" } else { "f" };
-            format!(
-                "{}{seg}/{}/",
-                r["origin"].as_str().unwrap(),
-                r["remote_id"].as_str().unwrap()
-            )
-        })
-        .collect();
     let mut exact = 0;
     let mut matched = 0;
     let mut rewritten = 0;
@@ -296,7 +178,7 @@ fn parity_with_worker() {
         if got.html == expected {
             exact += 1;
         }
-        let spec = spec_expected(name, expected, &no_page);
+        let spec = spec_expected(name, expected);
         if spec != normalize(expected) {
             rewritten += 1;
         }
@@ -382,7 +264,7 @@ fn parity_with_worker() {
         }
     }
     eprintln!(
-        "parity: {matched}/{} match ({exact} byte-identical, {rewritten} rewritten to protocol 0.4 r15, {formulas} with formulas compared by shape); {expected_fails} expected to fail ({} known, {} pending WP1/WP2, {} to adopt)",
+        "parity: {matched}/{} match ({exact} byte-identical, {rewritten} rewritten to the spec (r15), {formulas} with formulas compared by shape); {expected_fails} expected to fail ({} known, {} pending WP1/WP2, {} to adopt)",
         fixtures.len(),
         KNOWN_DIVERGENCES.len(),
         PENDING.len(),

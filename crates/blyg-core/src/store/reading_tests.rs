@@ -4,7 +4,10 @@ use super::Store;
 use crate::model::*;
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 fn ri(
@@ -419,7 +422,12 @@ fn changelog_and_pin_cache() {
     }];
     s.put_changelog(o, "X", &v).unwrap();
     assert_eq!(s.cached_changelog(o, "X").unwrap().0, v);
+    // --- reader order --- all of them at once, for the pace-layered Feed.
+    let all = s.cached_changelogs();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[&(o.to_string(), "X".to_string())], v);
     s.drop_changelog(o, "X").unwrap();
+    assert!(s.cached_changelogs().is_empty());
     assert!(s.cached_changelog(o, "X").is_none());
 
     s.put_pin(&pin(o, "X", 1, "first")).unwrap();
@@ -464,6 +472,7 @@ fn migration_purges_old_snapshots_and_withdrawn_content() {
             .unwrap();
     }
     let s = Store::open(&path).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     assert_eq!(s.schema_version().unwrap(), super::schema::latest());
     let cols: Vec<String> = {
         let c = s.conn();
@@ -617,6 +626,7 @@ fn migration_fills_sort_at_for_existing_rows() {
         }
     }
     let s = Store::open(&path).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     assert_eq!(s.schema_version().unwrap(), super::schema::latest());
     // By observed_at it would be x, y; by the posts' dates it's y, x.
     assert_eq!(order_of(&s), ["y", "x"]);
@@ -773,6 +783,7 @@ fn migration_indexes_existing_rows_references() {
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let r = s.responses_to("https://a.example/", "x");
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].relation, crate::profile::Relation::Stubs);
@@ -844,6 +855,7 @@ fn text_index_follows_text_changes_only_after_migrating() {
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     assert_eq!(s.schema_version().unwrap(), super::schema::latest());
     assert!(fts_has(&s, "oldfash"), "the index survives the migration");
     let a = ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "alphabetical");
@@ -917,6 +929,7 @@ fn reading_cache_follows_every_write() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("blygger.db");
     let s = Store::open(&path).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let k = kinds(&[("s", SubscriptionKind::Blyg)]);
     let o = "https://a.example/";
     let a = ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "a");

@@ -275,6 +275,13 @@ pub struct Studio {
 }
 
 impl Studio {
+    /// --- esc --- The preview and the reader's post give the keyboard back
+    /// to the app (a no-op where they don't have it).
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.focus_parent());
+        self.reader.hand_back_keyboard();
+    }
+
     /// The window became active again: if a WebView kept the keyboard (or it
     /// fell to the window itself), give it back to GPUI so typing works.
     pub fn reclaim_keyboard(&self) {
@@ -411,6 +418,17 @@ impl Studio {
             .map(|(_, b)| *b)
     }
 
+    /// The newest render was made from the text on screen (`len` bytes of
+    /// it). Until a render catches up with an edit, its line map is stale:
+    /// a new line shifts every block after the caret down one, so the map
+    /// would name the next block and the preview would scroll there, then
+    /// back once the render landed (pressing ⏎ twice to start a paragraph
+    /// bounced it down and up). Any edit changes the length, bar a
+    /// same-length replacement, which leaves line breaks where they were.
+    fn renders(&self, len: usize) -> bool {
+        self.latest_src.as_ref().is_some_and(|s| s.len() == len)
+    }
+
     fn sync_scroll(&mut self) {
         if !self.ready {
             return;
@@ -485,7 +503,7 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
     let unresolved =
         (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")));
     let fragment = (fragment_lines > 0)
-        .then(|| "⚠ A fragment can't quote: quote from a thread, or put the line in code".into());
+        .then(|| "⚠ A fragment can't quote: make this a thread, or link it with [[id]]".into());
     match (fragment, unresolved) {
         (Some(a), Some(b)) => Some(format!("{a} · {b}")),
         (a, b) => a.or(b),
@@ -544,7 +562,7 @@ fn prepare(backend: &dyn Backend, item: Option<&Item>, md: &str) -> (StoreResolv
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
     let resolver = if md.contains("[[") {
-        StoreResolver::snapshot(backend, &opts.mount)
+        StoreResolver::snapshot(backend, &opts.mount).publishing(opts.self_id.as_deref())
     } else {
         StoreResolver::empty(&opts.mount)
     };
@@ -562,7 +580,7 @@ fn prepare_lazy(
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
     let resolver = if md.contains("[[") {
-        StoreResolver::lazy(backend.clone(), &opts.mount)
+        StoreResolver::lazy(backend.clone(), &opts.mount).publishing(opts.self_id.as_deref())
     } else {
         StoreResolver::empty(&opts.mount)
     };
@@ -673,10 +691,15 @@ impl MainView {
         }
         self._subs
             .push(cx.observe(&self.editor, |this, editor, cx| {
-                let line = editor.read(cx).cursor_position().line as usize;
+                let ed = editor.read(cx);
+                let line = ed.cursor_position().line as usize;
                 if line != this.studio.caret_line {
                     this.studio.caret_line = line;
-                    this.studio.sync_scroll();
+                    // Only with a line map for the text on screen: the render
+                    // scrolls the preview itself when it lands.
+                    if this.studio.renders(ed.text().len()) {
+                        this.studio.sync_scroll();
+                    }
                 }
             }));
         if self.studio.view.preview_visible() {
@@ -720,6 +743,7 @@ impl MainView {
                     self.editor.update(cx, |s, cx| s.focus(window, cx));
                 }
             }
+            SurfaceEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
             // --- quote targets --- in the studio preview, still the profile.
@@ -992,7 +1016,7 @@ impl MainView {
     }
 
     /// The preview pane: the WebView is placed over this element's bounds.
-    pub(super) fn studio_pane(&self, p: &Palette) -> AnyElement {
+    pub(super) fn studio_pane(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let base = div()
             .id("preview-pane")
             .flex_1()
@@ -1014,14 +1038,31 @@ impl MainView {
                 .into_any_element();
         }
         let slot = self.studio.slot.clone();
-        base.child(
-            canvas(
-                |bounds, _, _| bounds,
-                move |_, bounds, _, _| slot.borrow_mut().place(bounds),
-            )
-            .size_full(),
-        )
-        .into_any_element()
+        let page = canvas(
+            |bounds, _, _| bounds,
+            move |_, bounds, _, _| slot.borrow_mut().place(bounds),
+        );
+        // --- studio 0.71 --- under the page, what its generated text read
+        // (the studio's TK panel lists it; the page itself never shows it).
+        match self.render_tk_read(cx) {
+            None => base.child(page.size_full()).into_any_element(),
+            Some(read) => base
+                .flex()
+                .flex_col()
+                .child(page.w_full().flex_1().min_h_0())
+                .child(
+                    div()
+                        .id("preview-tk-read")
+                        .flex_none()
+                        // The list scrolls inside itself (`READ_LIST_MAX_H`).
+                        .px(px(16.))
+                        .pt(px(8.))
+                        .rule_t(p)
+                        .font_family(self.theme.chrome_font(&self.prefs))
+                        .child(read),
+                )
+                .into_any_element(),
+        }
     }
 
     /// The status bar's preview segment (preview modes only).
@@ -1222,7 +1263,7 @@ mod tests {
         assert_eq!(
             unresolved_warning(&s).as_deref(),
             Some(
-                "⚠ A fragment can't quote: quote from a thread, or put the line in code · \
+                "⚠ A fragment can't quote: make this a thread, or link it with [[id]] · \
                  ⚠ 2 quotes and 1 link can't be resolved"
             )
         );

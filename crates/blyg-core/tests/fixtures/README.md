@@ -15,7 +15,7 @@ commit dc632c5 (branch ext/lineage-glyph, PR #53, studio 0.39.0; same
 license). The Rust types are in `src/lineage.rs`; its tests check them
 against this file, and the e2e checks a real studio's answers against it.
 
-`openapi-current.json` is the newest studio's contract (5.14.0, studio v0.65.0,
+`openapi-current.json` is the newest studio's contract (6.3.0, studio v0.71.0,
 same license). The e2e (`tests/it/e2e`) checks a real studio's answers against it
 (`contract::current()`); the mock keeps to `openapi.json`, the oldest contract
 Burrow supports, so it isn't taught every new field.
@@ -41,3 +41,9 @@ git -C <studio checkout> show v0.61.0:openapi.json > /tmp/baseline.json
 BLYG_BASELINE_CONTRACT=/tmp/baseline.json BLYG_BASELINE_STUDIO=0.61.0 \
   cargo test -p blyg-core --test it contract_coverage::regenerate_baseline -- --ignored
 ```
+
+`feeds/` is blygger-spec's pace-layered order fixtures (`conformance/feeds/`,
+RFC-3, decision #97), vendored verbatim from the spec commit pinned in
+`scripts/conformance/spec.sh`. blyg-core's `src/pace_tests.rs` runs them
+(`the_specs_feed_fixtures_give_their_expected_order`), and
+`scripts/feeds-conformance.sh` fails when the copy differs from the spec's.

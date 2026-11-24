@@ -9,7 +9,10 @@ use crate::api::wire::{ReadMark, UnreadMark};
 use crate::model::*;
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 fn ri(sub: &str, rid: &str, page: Option<&str>, version: u32, observed: &str) -> ReadingItem {
@@ -316,6 +319,44 @@ fn a_clear_from_another_device_is_taken_once_this_read_was_confirmed() {
     );
     assert_eq!(row(&s, "s1", "A").read_version, None);
     assert_eq!(row(&s, "s1", "C").read_version, Some(1));
+}
+
+/// On a contract newer than Burrow knows, a confirmed read the server now
+/// reports unread may be a field it moved: kept here, and not pushed back.
+#[test]
+fn a_newer_contracts_unread_clears_nothing_here() {
+    let s = seeded();
+    s.mark_many_read(&pairs(&[("s1", "A")]), false).unwrap();
+    s.reconcile_read_state(&server(&[("s1", "A", Some(2))]), true)
+        .unwrap();
+    s.set_lists_prune(crate::api::Prune::Withheld);
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan, Default::default());
+    assert_eq!(row(&s, "s1", "A").read_version, Some(2), "still read");
+}
+
+/// A check from an earlier pull is stale: a clear it would take is held
+/// back until the contract is read again.
+#[test]
+fn a_stale_checks_unread_clear_is_held_back() {
+    let s = seeded();
+    s.mark_many_read(&pairs(&[("s1", "A")]), false).unwrap();
+    s.reconcile_read_state(&server(&[("s1", "A", Some(2))]), true)
+        .unwrap();
+    s.contract_stale();
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan.cleared, 0);
+    assert_eq!(row(&s, "s1", "A").read_version, Some(2), "held back");
+    assert!(s.take_held_back());
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    let plan = s
+        .reconcile_read_state(&server(&[("s1", "A", None)]), true)
+        .unwrap();
+    assert_eq!(plan.cleared, 1, "read again: taken");
 }
 
 #[test]

@@ -17,6 +17,7 @@
 //! Nothing here needs a blyg: the host answers extensions from the window's
 //! backend, whatever it holds (a blyg, the fake, or none).
 
+pub(crate) mod auto_crosspost; // --- auto cross-post ---
 mod declines;
 mod library;
 mod macros;
@@ -359,6 +360,8 @@ pub(crate) struct Extensions {
     pub slots: reading_slots::Slots,
     /// --- onboarding --- the tour's sample extensions, while it runs.
     pub tour: Option<tour::Tour>,
+    /// --- auto cross-post --- per post, the sites to start on publish.
+    pub auto: auto_crosspost::Auto,
 }
 
 impl Extensions {
@@ -1111,6 +1114,21 @@ impl MainView {
             (s @ (Scene::ExtSlots | Scene::ExtSlotsInspect), n) => {
                 self.slots_demo(s, n, window, cx)
             } // --- reading slots ---
+            // --- ux 0.28 --- Allow on cross-post's first-start question
+            // (config `extension = cross-post`), then a published post
+            // edited and ⌘⏎: the Publish sheet with "Then cross-post to".
+            (Scene::ExtAutoCrosspost | Scene::ExtAutoCrosspostPalette, 1) => {
+                self.ext_allow(window, cx)
+            }
+            (Scene::ExtAutoCrosspostPalette, 2) => {
+                self.open(&blyg_core::LocalId("01J9PX1".into()), window, cx);
+                self.ext_toggle_palette(window, cx);
+            }
+            (Scene::ExtAutoCrosspost, 2) => {
+                self.open(&blyg_core::LocalId("01J9PX1".into()), window, cx);
+                self.demo_type(" Then the rain came.", window, cx);
+                self.publish(window, cx);
+            }
             (Scene::ExtPalette, 1) => self.ext_toggle_palette(window, cx),
             (Scene::ExtManage, 1) => self.ext_open_manage(window, cx),
             (Scene::ExtNotes, 1) => self.ext_lib_show(window, cx),

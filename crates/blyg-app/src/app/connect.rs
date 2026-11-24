@@ -319,9 +319,11 @@ impl MainView {
             Err(e) => return self.set_connect_state(Some(e), false, cx),
         };
         let host = vm::url_host(&url).unwrap_or(url.clone());
+        self.flush_seen_now(); // --- studio 0.71 --- before the backend changes
         match crate::connection::go_live(&url, cx) {
             Ok(true) => {
                 self.sheet.close();
+                self.reading_for_new_backend(cx);
                 self.base_url = self.backend.base_url();
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
@@ -383,6 +385,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         self.sheet.close();
+        self.flush_seen_now(); // --- studio 0.71 --- before the backend changes
         match crate::connection::disconnect(delete_local, cx) {
             Ok(host) => {
                 self.current = None;
@@ -407,6 +410,9 @@ impl MainView {
                 {
                     self.blyg_switched(window, cx);
                 } else {
+                    // No blyg's rows, folders or rule stay in the reading
+                    // state (`blyg_switched` does this for the next blyg).
+                    self.reading_for_new_backend(cx);
                     self.open_connect(window, cx);
                 }
             }

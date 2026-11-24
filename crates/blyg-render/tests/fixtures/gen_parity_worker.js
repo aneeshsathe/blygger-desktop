@@ -15,6 +15,7 @@ import { applyInternalLinks, previewInternalLinks, previewTransclusions, resolve
 import { injectNestedProvenance, injectProvenance, transclusionProvenance, mediaHtml } from "worker-src/pages.ts";
 import { previewComments } from "worker-src/comments.ts";
 import { consumeHandles, withMentionCards } from "worker-src/contacts.ts";
+import { directiveLines } from "worker-src/directives.ts";
 import { previewTangles } from "worker-src/read-api.ts";
 import { DIRECTIVE_LINE, label, labelText, linkInline, linkSource, stripGeneratedGrammar } from "worker-src/grammar.ts";
 import { linkLabel } from "worker-src/link-label.ts";
@@ -44,6 +45,21 @@ function fakeDb(store) {
       const r = store.imported.find((x) => x.remote_id === args[0] && x.origin === args[1]);
       return { first: r ? { kind: r.kind, page: r.page, title: r.sub_title } : null };
     }
+    // An origin's item template (§16.6e; resolveInternalLinks, studio 0.67):
+    // the fake store keeps none, so a link with no `page` takes the default
+    // `items/{id}.json`, as Burrow's store (which holds no templates) does.
+    if (s === "SELECT surface FROM subscriptions WHERE kind = 'blyg' AND origin = ? LIMIT 1") {
+      return { first: null };
+    }
+    // The address book (consumeHandles; studio 0.66 asks for every candidate
+    // handle, any case).
+    if (s.startsWith("SELECT * FROM contacts WHERE")) {
+      const asked = new Set(JSON.parse(args[0]).map((h) => h.toLowerCase()));
+      return { all: { results: (store.contacts ?? []).filter((c) => asked.has(c.handle.toLowerCase())) } };
+    }
+    if (s === "SELECT 1 FROM contacts LIMIT 1") {
+      return { first: store.contacts?.length ? { 1: 1 } : null };
+    }
     throw new Error("fake D1: unexpected query: " + s);
   };
   return {
@@ -60,10 +76,10 @@ function fakeDb(store) {
 }
 
 // --- The preview pipeline (read-api.ts, POST /api/preview) -------------------------
-// previewOperation (fragment) and threadPreview (thread) as of studio 0.64,
+// previewOperation (fragment) and threadPreview (thread) as of studio 0.68,
 // step for step. `[[id]]` resolves against siteOrigin; here the mount plus
 // "/", which is what the Rust side derives from `mount`.
-async function render(store, c) {
+async function render(store, c, fragmentDirectiveReason) {
   const db = fakeDb(store);
   const origin = store.mount + "/";
   // A thread's `![[+ …]]` spans and `[[+ …]]` placeholders (studio 0.62).
@@ -80,11 +96,16 @@ async function render(store, c) {
   const splice = (html) => [links, ...blocks.docs].reduce((acc, doc) => applyInternalLinks(acc, doc), tk.finish(html));
   const linkErrors = [...links.errors, ...blocks.errors];
   if (c.kind === "fragment") {
-    // Fragments never resolve transclusions, and are not sanitized.
-    return { html: splice(renderMarkdown(links.text)), tk: tkOut, transclusions: [], errors: linkErrors };
+    // Fragments never resolve transclusions, and are not sanitized. A
+    // directive line in one, in the body or in a generated block's output,
+    // is a publish error (model.ts publishScoped, studio 0.67, #161): the
+    // preview shows it as text, and the errors carry what publish refuses.
+    const quoted = [links.text, ...tk.blockSources.values()].flatMap(directiveLines);
+    const directiveErrors = quoted.map((directive) => ({ directive, reason: fragmentDirectiveReason }));
+    return { html: splice(renderMarkdown(links.text)), tk: tkOut, transclusions: [], errors: [...directiveErrors, ...linkErrors] };
   }
   // threadPreview(): the generated blocks go to the walk, which bakes their
-  // quotes inside the block (#105).
+  // quotes between the block's wrappers (#105; outside them since 0.67, #102).
   const resolved = await previewTransclusions(db, links.text, store.self_id, tk);
   const preview = splice(resolved.html);
   // The studio's thread preview adds the provenance lines (injectProvenance,
@@ -105,9 +126,9 @@ async function render(store, c) {
 
 export default {
   async fetch(req) {
-    const { store, corpus, spec, vectors, media, grammar } = await req.json();
+    const { store, corpus, spec, vectors, media, grammar, fragmentDirectiveReason } = await req.json();
     const cases = [];
-    for (const c of corpus) cases.push({ name: c.name, kind: c.kind, md: c.md, ...(await render(store, c)) });
+    for (const c of corpus) cases.push({ name: c.name, kind: c.kind, md: c.md, ...(await render(store, c, fragmentDirectiveReason)) });
     return Response.json({
       cases,
       // The CommonMark spec examples through renderMarkdown (html:false, linkify, embeds).

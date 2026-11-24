@@ -1,0 +1,21 @@
+{
+  "name": "tr_partial_list_loose_paragraphs",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq3]]\n> first, loose\n>\n> with a second paragraph",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq3\" data-blyg-version=\"1\">\n<ul>\n<li><p>first, loose</p>\n<p>with a second paragraph</p></li>\n</ul>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq3/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq3",
+      "version": 1,
+      "selector": {
+        "exact": "first, loose\nwith a second paragraph",
+        "suffix": "\nsecond, loose\nnested, loose\nthi"
+      }
+    }
+  ],
+  "errors": []
+}

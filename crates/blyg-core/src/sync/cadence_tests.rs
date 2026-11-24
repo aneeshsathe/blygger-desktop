@@ -41,6 +41,7 @@ fn row(rid: &str, thumb: Option<i8>) -> ReadingItem {
 /// An engine on an in-memory store; the API points at a closed port.
 fn engine() -> Engine {
     let store = Store::open_in_memory().unwrap();
+    store.set_lists_prune(crate::api::Prune::Allowed);
     let api = Api::new("http://127.0.0.1:9", Credential::Token("t".into()));
     Engine::new(
         store,

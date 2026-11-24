@@ -214,7 +214,8 @@ fn fonts_and_size_are_tried_and_put_back_on_leaving(cx: &mut TestAppContext) {
     assert_eq!(config_text(cx), before);
     // ⏎ on a tried size keeps it.
     open_settings(cx);
-    // ⇧⇥ from nothing: BACKGROUND's rules, THEME, then SIZE.
+    // ⇧⇥ from nothing: BACKGROUND's rules, READ MARKS, THEME, then SIZE.
+    keys(cx, "shift-tab");
     keys(cx, "shift-tab");
     keys(cx, "shift-tab");
     keys(cx, "shift-tab");

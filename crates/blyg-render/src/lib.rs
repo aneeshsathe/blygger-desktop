@@ -44,8 +44,8 @@ pub use grammar::{
 };
 pub use handles::HandleCard; // --- contacts ---
 pub use links::{
-    anchor_label, excerpt_from_html, link_label, normalize_selection, plain_text_from_html,
-    selection_text,
+    ListLevel, SelectionLine, anchor_label, excerpt_from_html, link_label, normalize_selection,
+    plain_text_from_html, selection_lines, selection_text,
 };
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
@@ -55,7 +55,8 @@ pub use shell::{
 pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
     Found, NestedSource, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT,
-    TextQuoteSelector, Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
+    TextQuoteSelector, Unresolved, UnresolvedReason, locate_selection, partial_bake_body,
+    selection_from_quote,
 };
 pub use util::{absolutize_html, escape_html, is_js_ws, item_document_url};
 
@@ -192,7 +193,7 @@ pub fn render_preview(
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
     // h-cards with the `[[id]]` tokens below (`withMentionCards`).
-    let handles = handles::consume(md, &|h| resolver.contact(h));
+    let handles = handles::consume(md, &|h| resolver.contact(h), &|| resolver.natural_handles());
     let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);

@@ -17,6 +17,10 @@ use crate::model::*;
 use crate::store::Store;
 use crate::sync::{Engine, Msg, SyncOptions, is_hopper_conflict, spawn};
 
+/// --- dictionary --- Held while the queued dictionary edits
+/// (`dictionary::PENDING_META`) are read and written back.
+static DICTIONARY_QUEUE: Mutex<()> = Mutex::new(());
+
 pub struct LiveBackend {
     engine: Arc<Engine>,
     /// Unauthenticated reads of other blygs' public surface. Holds no token.
@@ -158,10 +162,19 @@ pub const DB_FILE: &str = "blygger.db";
 /// How long a fetched public changelog is trusted before refetching.
 pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 
+/// --- studio 0.71 --- How long an edit typed during a generate on the blyg
+/// waits for the writer's merge (`Backend::keep_generated`) before its push
+/// goes (and is refused). The window makes the merge as it takes the
+/// answer, well inside this.
+const GENERATE_MERGE_WAIT_MS: i64 = 3_000;
+
 /// --- contacts --- the address book as last fetched (JSON), and whether
 /// the blyg served it ("1"/"0").
-const CONTACTS_META: &str = "contacts.json";
 const CONTACTS_SERVED_META: &str = "contacts.served";
+/// --- contacts --- The studio version (`blyg.json`'s generator) last seen,
+/// so a launch knows whether handles read in natural grammar (studio 0.66)
+/// before any check, and offline.
+const STUDIO_VERSION_META: &str = "studio.version";
 
 /// --- loose ends --- your posts a verified mention names, as last fetched.
 const MENTIONED_META: &str = "loose_ends.mentioned";
@@ -262,6 +275,88 @@ impl LiveBackend {
         self.engine.store.provenance(id)
     }
 
+    /// --- dictionary --- Send the queued edits (studio 0.69): read the
+    /// dictionary, apply them onto the owner's words, write back from that
+    /// revision; a 409 is another client's write, merged onto and sent
+    /// again (three tries). The queue is cleared once stored, kept on what
+    /// a later try can mend (`dictionary::keeps_queue`: offline, 429, 5xx,
+    /// an ended sign-in, conflicts that kept coming), and dropped when the
+    /// blyg keeps no dictionary or refuses the words (the error says why).
+    fn send_dictionary(
+        &self,
+        queued: &crate::dictionary::Pending,
+    ) -> Result<Option<crate::dictionary::Dictionary>> {
+        use crate::api::dictionary::PutDictionary;
+        use crate::dictionary::{OWNER, PENDING_META, SOURCE_WORDS_MAX};
+        let store = &self.engine.store;
+        let sent = (|| {
+            let api = &self.e().api;
+            let Some(mut d) = self.e().track(api.dictionary())? else {
+                return Ok(None);
+            };
+            if !d.writable {
+                // A read-only sign-in: words queued before Burrow knew stay
+                // on this computer only, so they were never Burrow's to
+                // unlearn either.
+                let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+                let mut taught = self.taught_record();
+                for w in queued.added() {
+                    taught.set(&w, false);
+                }
+                store.set_meta(crate::dictionary::TAUGHT_META, &taught.to_meta())?;
+                return Ok(Some(d));
+            }
+            for _ in 0..3 {
+                let words = queued.apply(d.owner_words());
+                if words.len() > SOURCE_WORDS_MAX {
+                    return Err(CoreError::Other(format!(
+                        "your dictionary holds at most {SOURCE_WORDS_MAX} words of your own"
+                    )));
+                }
+                match self
+                    .e()
+                    .track(api.put_dictionary_source(OWNER, &words, d.revision))?
+                {
+                    PutDictionary::Stored(now) => return Ok(Some(now)),
+                    PutDictionary::Conflict(Some(now)) => d = now,
+                    // No longer offered: nothing to send to.
+                    PutDictionary::Conflict(None) => return Ok(None),
+                }
+            }
+            // Three conflicts in a row: kept, and the next read tries again.
+            Err(CoreError::RevisionConflict)
+        })();
+        // An edit queued meanwhile (another thread) stays for the next send.
+        let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        if !matches!(&sent, Err(e) if crate::dictionary::keeps_queue(e))
+            && crate::dictionary::Pending::parse(
+                store.meta(PENDING_META).as_deref(),
+                self.dictionary_blyg(),
+            ) == *queued
+        {
+            store.delete_meta(PENDING_META)?;
+        }
+        sent
+    }
+
+    /// --- dictionary --- This blyg's base URL: the queue and the taught
+    /// record are kept for it alone.
+    fn dictionary_blyg(&self) -> &str {
+        self.e().api.base_url()
+    }
+
+    /// --- dictionary --- The words Learn Spelling taught this computer
+    /// for this blyg (`dictionary::Taught`).
+    fn taught_record(&self) -> crate::dictionary::Taught {
+        crate::dictionary::Taught::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::TAUGHT_META)
+                .as_deref(),
+            self.dictionary_blyg(),
+        )
+    }
+
     /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
     pub fn server_hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
@@ -333,7 +428,9 @@ impl LiveBackend {
     /// version history.
     fn refresh(&self, id: &LocalId, sid: &str) -> Option<WireItem> {
         let w = self.e().api.get_item_full(sid).ok()?;
-        self.e().store.apply_server(id, &w).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())
+            .ok()?;
         Some(w)
     }
 
@@ -478,12 +575,16 @@ impl LiveBackend {
                 continue;
             };
             let _ = match self.e().store.local_id_for_server(&part.id) {
-                Some(local) => self.e().store.apply_server(&local, &pw),
+                Some(local) => self
+                    .e()
+                    .lay_list(|| self.e().store.apply_server(&local, &pw), |_, _| ()),
                 None => self.e().store.insert_from_server(&pw).map(|_| ()),
             };
         }
         let w = w?;
-        self.e().store.replace_from_server(id, w).ok()?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, w), |_, _| ())
+            .ok()?;
         Some(w.content_md.clone())
     }
 
@@ -505,6 +606,16 @@ enum ProfileTarget {
 const PROFILE_TEXT_MAX: u64 = 4 * 1024 * 1024;
 
 impl LiveBackend {
+    /// --- contacts --- Keep the studio version just seen
+    /// ([`Backend::studio_version`]); written only when it changed.
+    fn keep_studio_version(&self, v: &str) {
+        let store = &self.engine.store;
+        if store.meta(STUDIO_VERSION_META).as_deref() != Some(v) {
+            // Best effort: the next sighting writes it again.
+            let _ = store.set_meta(STUDIO_VERSION_META, v);
+        }
+    }
+
     /// Resolve a URL the way subscribing does: what we already know (your
     /// own blyg, your subscriptions) first, then the subscribe preview (the
     /// owner Worker's §12.1 resolution). Only when that isn't available
@@ -798,20 +909,28 @@ impl Backend for LiveBackend {
     // --- end syndication ---
 
     fn contacts(&self) -> Vec<crate::contacts::Contact> {
-        self.engine
-            .store
-            .meta(CONTACTS_META)
-            .and_then(|j| serde_json::from_str(&j).ok())
-            .unwrap_or_default()
+        self.engine.store.contacts()
     }
 
     fn refresh_contacts(&self) -> Result<()> {
         let got = self.e().track(self.e().api.contacts())?;
         let store = &self.engine.store;
         store.set_meta(CONTACTS_SERVED_META, if got.is_some() { "1" } else { "0" })?;
-        let json = serde_json::to_string(&got.unwrap_or_default())
-            .map_err(|e| CoreError::Other(e.to_string()))?;
-        store.set_meta(CONTACTS_META, &json)
+        // Handles' grammar follows the studio's version: learn it with them.
+        if got.is_some()
+            && let Some(v) = self.e().api.studio_version()
+        {
+            self.keep_studio_version(&v);
+        }
+        let list = got.unwrap_or_default();
+        // --- newer contract --- a book that drops one checks the contract
+        // again first; on a newer one what it lacks stays here.
+        let prune = if store.contacts_dropped_by(&list) {
+            self.e().recheck_contract()
+        } else {
+            crate::api::Prune::Allowed
+        };
+        store.take_served_contacts(list, prune)
     }
 
     fn rewrites_handles(&self) -> bool {
@@ -858,6 +977,8 @@ impl Backend for LiveBackend {
 
     fn delete_contact(&self, id: &str) -> Result<()> {
         self.e().track(self.e().api.delete_contact(id))?;
+        // Gone here too, whatever the re-read keeps (`refresh_contacts`).
+        let _ = self.e().store.drop_contact(id);
         let _ = self.refresh_contacts();
         Ok(())
     }
@@ -899,8 +1020,9 @@ impl Backend for LiveBackend {
     }
 
     fn refresh_subscriptions(&self) -> Result<()> {
+        self.e().check_contract()?;
         let subs = self.e().track(self.e().api.list_subscriptions())?;
-        if self.e().store.replace_subscriptions(&subs)? {
+        if self.e().hold_subscriptions(subs)?.changed {
             self.e().emit(CoreEvent::ReadingChanged);
         }
         Ok(())
@@ -1031,6 +1153,68 @@ impl Backend for LiveBackend {
     ) -> Option<(String, Vec<Option<ScopeProvenance>>)> {
         let t = LiveBackend::tracked_provenance(self, id);
         Some((t.keyed_to?, t.scopes?))
+    }
+
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<crate::generate::GenerateOutcome> {
+        let sid = self.server_id(id)?;
+        // The blyg generates from its copy: a local edit not yet there
+        // would be overwritten by (or conflict with) the spliced text.
+        if self.row(id)?.item.pending_sync {
+            return Err(CoreError::NotSynced);
+        }
+        let _net = self.e().net_lock();
+        let out = self.command(id, &sid, |rev| {
+            self.e().api.generate(&sid, scope, Some(rev), proceed)
+        })?;
+        if let crate::generate::GenerateOutcome::Generated(g) = &out {
+            // That edit's push waits a moment for the writer's merge
+            // (`keep_generated`), which the window makes as it takes the
+            // answer; without one it goes, and is refused, as below. Held
+            // whether or not the blyg's copy can be read back.
+            let until = crate::util::now_ms() + GENERATE_MERGE_WAIT_MS;
+            self.e()
+                .store
+                .hold_for_merge(id, g.content_md.as_deref(), until)?;
+            // The spliced text and the provenance the blyg recorded, kept
+            // here so the writer shows what it read and an edit that moves
+            // the scopes carries it. The answer's revision isn't stored on
+            // its own: the merge stores the blyg's revision only with the
+            // text it accounts for. A keystroke during the request left a
+            // local edit that never saw the generated text; under it the
+            // old revision stays, so that edit's push is refused (409) and
+            // read again with conflict detection rather than going through
+            // over the generated words. Unread (offline), the old revision
+            // stays too, with the same effect.
+            if let Some(w) = self.refresh(id, &sid)
+                && let Some(p) = w.server_provenance()
+            {
+                self.e().store.adopt_prov(id, &w.content_md, &p)?;
+            }
+            self.e().emit(CoreEvent::ItemsChanged);
+        }
+        Ok(out)
+    }
+
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let kept = self
+            .e()
+            .store
+            .keep_generated(id, generated, revision, merged)?;
+        if kept {
+            self.wake();
+        }
+        Ok(kept)
     }
 
     fn provenance_available(&self) -> bool {
@@ -1309,7 +1493,8 @@ impl Backend for LiveBackend {
         match self.e().track(self.e().api.get_item_full(&sid.0)) {
             Ok(w) => {
                 let _net = self.e().net_lock();
-                self.e().store.apply_server(id, &w)?;
+                self.e()
+                    .lay_list(|| self.e().store.apply_server(id, &w), |_, _| ())?;
                 Ok(w.versions.unwrap_or_default())
             }
             Err(CoreError::Offline) => {
@@ -1337,7 +1522,8 @@ impl Backend for LiveBackend {
         let _net = self.e().net_lock();
         self.command(id, &sid, |rev| self.e().api.restore(&sid, rev, version))?;
         let w = self.e().track(self.e().api.get_item_full(&sid))?;
-        self.e().store.replace_from_server(id, &w)?;
+        self.e()
+            .lay_list(|| self.e().store.replace_from_server(id, &w), |_, _| ())?;
         self.e().emit(CoreEvent::ItemsChanged);
         self.e().emit_status();
         Ok(())
@@ -1492,7 +1678,7 @@ impl Backend for LiveBackend {
         let sub = subs.iter().find(|s| s.id == id).cloned();
         let sub = match sub {
             Some(s) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
                 s
             }
             None => {
@@ -1507,9 +1693,7 @@ impl Backend for LiveBackend {
                     title_follows_source: title.is_none(),
                     poll: Default::default(),
                 };
-                let mut all = self.e().store.subscriptions();
-                all.push(s.clone());
-                self.e().store.replace_subscriptions(&all)?;
+                self.e().store.add_subscription(&s)?;
                 s
             }
         };
@@ -1521,6 +1705,9 @@ impl Backend for LiveBackend {
     fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.e().track(self.e().api.delete_subscription(sub_id))?;
         self.e().store.edit_subscription(sub_id, |_| false)?;
+        // Your removal: its rows go now, not on the next whole walk's word
+        // (which a newer contract's never is: `sync/newer.rs`).
+        self.e().store.drop_subscription_rows(sub_id)?;
         self.e().emit(CoreEvent::ReadingChanged);
         self.send(Msg::Pull);
         Ok(())
@@ -1565,7 +1752,7 @@ impl Backend for LiveBackend {
         // with `title: null`); a failed refresh keeps the local edit.
         match self.e().api.list_subscriptions() {
             Ok(subs) => {
-                self.e().store.replace_subscriptions(&subs)?;
+                self.e().hold_subscriptions(subs)?;
             }
             Err(_) => self.e().store.edit_subscription(sub_id, |s| {
                 if let Some(t) = title {
@@ -1801,11 +1988,28 @@ impl Backend for LiveBackend {
     }
 
     fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
-        self.engine.api.cached_studio_update()
+        let u = self.engine.api.cached_studio_update();
+        if let Some(v) = u.as_ref().and_then(|u| u.current.as_deref()) {
+            self.keep_studio_version(v);
+        }
+        u
+    }
+
+    fn studio_version(&self) -> Option<String> {
+        self.engine
+            .api
+            .cached_studio_update()
+            .and_then(|u| u.current)
+            .inspect(|v| self.keep_studio_version(v))
+            .or_else(|| self.engine.store.meta(STUDIO_VERSION_META))
     }
 
     fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
-        self.engine.api.refresh_studio_update(force)
+        let u = self.engine.api.refresh_studio_update(force)?;
+        if let Some(v) = u.as_ref().and_then(|u| u.current.as_deref()) {
+            self.keep_studio_version(v);
+        }
+        Ok(u)
     }
     // --- end site ---
 
@@ -2046,6 +2250,10 @@ impl Backend for LiveBackend {
         self.e().background_served()
     }
 
+    fn background_placing(&self) -> bool {
+        self.e().background_placing()
+    }
+
     fn background_set(&self) -> Option<crate::background::BackgroundSet> {
         self.e().store.background_set()
     }
@@ -2056,15 +2264,19 @@ impl Backend for LiveBackend {
         withdrawn: bool,
         placement: Option<crate::background::Placement>,
     ) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().set_reading_placement(key, withdrawn, placement)
     }
 
     fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         let rows = self.e().store.reading_rows_of(sub);
         self.e().set_blyg_background(sub, on, &rows)
@@ -2079,12 +2291,101 @@ impl Backend for LiveBackend {
         rule: &str,
         on: bool,
     ) -> Result<crate::background::BackgroundRules> {
-        if !self.e().background_served() {
-            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        if !self.e().background_placing() {
+            return Err(CoreError::Other(crate::background::not_placing(
+                self.e().background_served(),
+            )));
         }
         self.e().track(self.e().api.put_background_rule(rule, on))
     }
     // --- end background ---
+
+    // --- reader order ---
+    fn reader_order(&self) -> crate::order::ReaderOrder {
+        self.e()
+            .store
+            .meta(crate::order::READER_ORDER_META)
+            .and_then(|s| crate::order::ReaderOrder::parse(&s))
+            .unwrap_or_default()
+    }
+
+    fn load_reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        let got = self.e().track(self.e().api.reader_order())?;
+        let store = &self.e().store;
+        store.set_meta(
+            crate::order::READER_ORDER_SERVED_META,
+            if got.is_some() { "1" } else { "0" },
+        )?;
+        if let Some(o) = got {
+            store.set_meta(crate::order::READER_ORDER_META, o.as_str())?;
+        }
+        Ok(got)
+    }
+
+    fn save_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let store = &self.e().store;
+        let served = store
+            .meta(crate::order::READER_ORDER_SERVED_META)
+            .as_deref()
+            == Some("1");
+        let kept = if served {
+            self.e().track(self.e().api.put_reader_order(order))?
+        } else {
+            order
+        };
+        store.set_meta(crate::order::READER_ORDER_META, kept.as_str())?;
+        Ok(kept)
+    }
+
+    // --- studio 0.71 --- readerMarkRead
+    fn reader_mark_read(&self) -> Option<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META, MarkRead};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return None;
+        }
+        Some(
+            store
+                .meta(MARK_READ_META)
+                .and_then(|s| MarkRead::parse(&s))
+                .unwrap_or_default(),
+        )
+    }
+
+    fn load_reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let got = self.e().track(self.e().api.reader_mark_read())?;
+        let store = &self.e().store;
+        store.set_meta(MARK_READ_SERVED_META, if got.is_some() { "1" } else { "0" })?;
+        if let Some(m) = got {
+            store.set_meta(MARK_READ_META, m.as_str())?;
+        }
+        Ok(got)
+    }
+
+    fn save_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        use crate::mark_read::{MARK_READ_META, MARK_READ_SERVED_META};
+        let store = &self.e().store;
+        if store.meta(MARK_READ_SERVED_META).as_deref() != Some("1") {
+            return Err(CoreError::Other(
+                "your blyg doesn't have this setting".into(),
+            ));
+        }
+        let kept = self.e().track(self.e().api.put_reader_mark_read(m))?;
+        store.set_meta(MARK_READ_META, kept.as_str())?;
+        Ok(kept)
+    }
+
+    fn cached_changelogs(&self) -> std::collections::HashMap<(String, String), Vec<RemoteVersion>> {
+        self.e().store.cached_changelogs()
+    }
+    // --- end reader order ---
 
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {
@@ -2354,6 +2655,95 @@ impl Backend for LiveBackend {
         self.command(id, &sid, |rev| self.e().api.draft_note_history(&sid, rev))
     }
     // --- end changelog display ---
+
+    // --- studio 0.69 ---
+    fn agentic_feeds(&self) -> Result<Option<Vec<crate::agentic::Feed>>> {
+        self.e().track(self.e().api.agentic_feeds())
+    }
+
+    fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
+        self.e().track(self.e().api.agentic_edition(feed))
+    }
+
+    /// The read also sends edits made offline (`dictionary::Pending`).
+    fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
+        let queued = crate::dictionary::Pending::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::PENDING_META)
+                .as_deref(),
+            self.dictionary_blyg(),
+        );
+        if queued.is_empty() {
+            return self.e().track(self.e().api.dictionary());
+        }
+        self.send_dictionary(&queued)
+    }
+
+    /// Queued first, so a blyg that can't be reached gets it on the next
+    /// read; `CoreError::Offline` then says so.
+    fn edit_dictionary(
+        &self,
+        edit: &crate::dictionary::Edit,
+    ) -> Result<crate::dictionary::Dictionary> {
+        use crate::dictionary::{PENDING_META, Pending, word_problem};
+        if let Some(p) = word_problem(&edit.word()) {
+            return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
+        }
+        let store = &self.engine.store;
+        let api = &self.e().api;
+        // A read-only sign-in: nothing to send or queue (offline, Burrow
+        // can't tell yet, so it queues and the next read drops it).
+        if let Ok(false) = self.e().track(api.serves_dictionary_write()) {
+            return self
+                .e()
+                .track(api.dictionary())?
+                .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()));
+        }
+        // One read-change-write of the queue at a time (two quick Learn
+        // Spellings on their own threads would otherwise drop one).
+        let queued = {
+            let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queued =
+                Pending::parse(store.meta(PENDING_META).as_deref(), self.dictionary_blyg());
+            queued.push(edit.clone());
+            store.set_meta(PENDING_META, &queued.to_meta())?;
+            queued
+        };
+        self.send_dictionary(&queued)?
+            .ok_or_else(|| CoreError::Other("your blyg doesn't keep a dictionary".into()))
+    }
+
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(self.taught_record().words().to_vec())
+    }
+
+    fn dictionary_pending(&self) -> Result<crate::dictionary::Pending> {
+        Ok(crate::dictionary::Pending::parse(
+            self.engine
+                .store
+                .meta(crate::dictionary::PENDING_META)
+                .as_deref(),
+            self.dictionary_blyg(),
+        ))
+    }
+
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let _held = DICTIONARY_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = self.taught_record();
+        t.set(word, taught);
+        self.engine
+            .store
+            .set_meta(crate::dictionary::TAUGHT_META, &t.to_meta())
+    }
+
+    fn summarize_catch_up(
+        &self,
+        entry: &crate::shelf::Entry,
+    ) -> Result<Option<crate::helpers::CatchUpSummary>> {
+        self.e().track(self.e().api.summarize_catch_up(entry))
+    }
+    // --- end studio 0.69 ---
 }
 
 impl LiveBackend {
@@ -2365,7 +2755,16 @@ impl LiveBackend {
         let fresh = match self.e().track(self.e().api.hopper(id)) {
             Ok(h) => h,
             Err(CoreError::NotFound) => {
-                self.e().store.remove_hopper(id)?;
+                // --- newer contract --- gone only on a contract that lets
+                // the blyg's answers remove (not before the check either).
+                let prune = self.e().lists_prune_fresh();
+                if !self.e().store.hopper_not_found(id, prune)? {
+                    return Err(hopper_conflict_error(
+                        "Your blyg didn't find this hopper while Burrow was saving the change. \
+                         Burrow keeps it here for now."
+                            .into(),
+                    ));
+                }
                 self.e().emit(CoreEvent::ReadingChanged);
                 return Err(hopper_conflict_error(
                     "This hopper was deleted on your blyg while Burrow was saving the change."

@@ -1,0 +1,24 @@
+{
+  "name": "tr_fragment_tk_block_directive",
+  "kind": "fragment",
+  "md": "Opening.\n\n[TK]write it[=]Mine.\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]",
+  "html": "<p>Opening.</p>\n<div class=\"blyg-tk-gen\"><p>Mine.</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write it",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+      "reason": "a fragment can't quote another item: make this a thread, or link it with [[id]]"
+    }
+  ]
+}

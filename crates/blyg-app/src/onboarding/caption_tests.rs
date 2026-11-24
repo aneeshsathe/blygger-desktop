@@ -19,7 +19,9 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         Key::ViewWrite => &["ViewWrite"],
         Key::ViewSplit => &["ViewSplit"],
         Key::ViewStudio => &["ViewStudio"],
-        Key::AiGenerate => &["AiGenerate"],
+        // --- studio 0.71 --- ⌘G, with the blyg as the provider, opens the
+        // checkpoint sheet.
+        Key::AiGenerate | Key::TkCheckpoint => &["AiGenerate"],
         Key::AiShorten => &["AiShorten"],
         Key::ShowVersions => &["ShowVersions"],
         Key::QuotePicker | Key::Picker => &["QuotePicker"],
@@ -75,6 +77,10 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         | Key::Background
         | Key::ShelfLens
         | Key::MentionsFeed
+        | Key::FeedOrder // clicks (`feed::render_feed_controls`, the sources)
+        | Key::RawTab
+        | Key::AgenticTab
+        | Key::StreamDate // a click on a card's date (`stream::render_card`)
         | Key::MoreMenu
         | Key::Parts // `p`: reading_key_down
         | Key::ConflictAnswered => &[],
@@ -244,7 +250,7 @@ fn every_label_a_step_quotes_is_shown_by_the_app() {
             for p in [Platform::Mac, Platform::Windows] {
                 let text = t.on(p);
                 for q in text.split('“').skip(1).filter_map(|r| r.split('”').next()) {
-                    // "Also posted at …": the label's fixed parts, around
+                    // "the author says it is also at …": the label's fixed parts, around
                     // what the app fills in.
                     let parts: Vec<&str> = q
                         .split('…')

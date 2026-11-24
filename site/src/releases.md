@@ -5,6 +5,105 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.28.0
+
+Burrow catches up with blygger-studio 0.71: 0.68's reading, 0.69's Agentic
+feed, dictionary and text helpers, and 0.70–0.71's links read while
+generating and choice of what counts as read.
+
+### Reading in the studio's tabs
+
+The Reader's sources have the studio's tabs: **Feed**, **Mentions**,
+**Agentic feed**, **Saved**, **Background** and **Raw**, beside Burrow's own.
+The Feed is **pace-layered** by default: new posts arrive on top and sink as
+others come, more slowly the more their blyg pinned them, and a new version
+climbs one place. **Chronological** lists newest first; the choice is in the
+reading header and Settings › READER ORDER, and your blyg keeps it. **Raw**
+lists what came in, newest first, with nothing moved to Background or folded.
+
+### The Agentic feed's edition
+
+On blygger-studio 0.69, an assistant can write you an **edition**: your
+reading as a digest, in sections, each post with a headline, a short summary
+and why it's there. The **Agentic feed** tab shows it, under the name your
+blyg gives it; j/k step through its posts and ⏎ opens one. Burrow reads
+editions; your assistant writes them.
+
+### Your blyg's dictionary
+
+The spellcheck accepts every word in your blyg's dictionary, shared with
+Studio. **Learn Spelling** adds the word there too, and **Blyg ›
+Dictionary…** lists your words and adds or takes them out.
+
+### Catch up, summarized by your blyg
+
+**s** in Catch up now asks your blyg's text helpers model first, when it has
+one, and keeps Burrow's own AI as the fallback. **Blyg › AI on Your Blyg…**
+sets that model, the Agentic feed's name, and whether the change classifier
+also judges other blygs' changes.
+
+### Saved
+
+The shelf is now called **Saved**, as in the studio: **+ Save** under a post,
+⌘B opens Saved and ⌥⌘B saves the open post. Nothing you saved moves.
+
+### Four more Background rules
+
+Quotes refreshed, Including rewritten quotes, Small edits and Followed within
+15 minutes each put a post in Background, with a badge saying why and a switch
+on Settings' BACKGROUND row.
+
+### Cross-post a post each time you publish it
+
+With the bundled cross-post on, the Publish sheet has **Then cross-post to**,
+with a chip for each site you allowed (Substack Notes, Bluesky, Farcaster).
+Tick one, and every time you publish that post Burrow starts its cross-post
+by itself, one site after another. ⇧⌘P with the post open has the same
+**Cross-post automatically to …: on/off** rows. The choice is kept per
+post on this computer. It only starts the run: each one still shows you the
+text and posts only when you click Post. See [Cross-posting automatically,
+per post](extensions.md#cross-posting-automatically-per-post).
+
+### Generating on your blyg: links it can't read, and what it read
+
+With your blyg as the AI provider (blygger-studio 0.70 and later), ⌘G reads
+every link in the gap first. When some can't be read, Burrow asks whether
+to **generate anyway**, naming the links that failed under **Details** (open
+when there are a few; **d** opens and closes it): ⏎ generates anyway, esc
+leaves the draft alone. Afterwards the preview and the Publish sheet list
+what each gap read: the posts it drew on, by title, and the web pages, marking
+the ones publishing tells. Posts you read list the same, when their publisher
+disclosed it. Keep typing while your blyg generates: what you type elsewhere
+in the post is kept with the generated text. See
+[When your blyg can't read a link](ai.md#when-your-blyg-cant-read-a-link). The AI and TK tour has a step for it.
+
+### Count an entry as read
+
+On blygger-studio 0.70 and later, Settings › READ MARKS has **Count an
+entry as read**: when I see it (a card on screen for about a second,
+sent to your blyg in batches), when I open it, or only when I mark it. Your
+blyg keeps the choice, shared with Studio: change it there and Burrow follows
+when you come back to it. A card's **date** now opens the post, in the stream
+and the Reader. See [Count an entry as read](reading.md#count-an-entry-as-read).
+
+### Windows
+
+**Esc** closes the open sheet, palette, Menu or browser pane even after a
+click in a web page (the browser pane, the preview, the reader's post), and
+a click anywhere else in the window takes the keyboard back from the page.
+The extensions guide walks through [cross-posting on Windows, step by
+step](extensions.md#on-windows-step-by-step).
+
+### Smaller fixes
+
+- **Responses** (⇧⌘M): clicking who responded opens their post in Burrow's
+  reader, ↗ opens its page in the browser pane, and **On “…”** opens your
+  own post.
+- A post whose **current version is pinned** can be forked: ⋯ More lists
+  **Fork this pin**, and the version pill reads `📌 vN · current`.
+- The full editor's **live preview** no longer jumps down and back when you
+  start a new line.
+
 ## Burrow 0.27.3
 
 A fix for blygs on blygger-studio 0.67 or later. Those studios speak a newer

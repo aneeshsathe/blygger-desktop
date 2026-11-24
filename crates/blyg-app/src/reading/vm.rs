@@ -376,6 +376,9 @@ pub struct ActionCtx {
     pub current: u32,
     /// Pinned versions the pill can step to, oldest first.
     pub pins: Vec<u32>,
+    /// The current version is itself pinned: the pill shows it once, as
+    /// the current version, so Fork forks it from there.
+    pub current_pinned: bool,
     /// --- shelf sync --- the post is on your shelf.
     pub shelved: bool,
 }
@@ -423,6 +426,16 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             "AI reply",
             "A reply with an AI-drafted answer for you to review; nothing is published.".into(),
         ),
+        // A pinned current version is a pin: the pill has no separate
+        // 📌 entry to step to, so Fork works here.
+        "Fork" if cx.current_pinned => on(
+            "Fork this pin",
+            format!(
+                "Makes a new thread draft of yours from 📌 v{}'s text (the current version \
+                 is pinned), recorded as forked from it (forked_from).",
+                cx.current
+            ),
+        ),
         "Fork" => ActionChip {
             id,
             label: "Fork".into(),
@@ -465,17 +478,17 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
              shows it on its page."
                 .into(),
         ),
-        // --- shelf sync --- the studio's words ("+ add to shelf").
+        // --- shelf sync --- the studio's words since 0.68 ("+ save", "✓ saved").
         "Shelf" if cx.shelved => on(
-            "− Remove from shelf",
-            "Takes this post off your shelf (Reading › Shelf). The shelf syncs with \
-             your blyg when it keeps one."
+            "✓ Saved",
+            "Removes this post from Saved (Reading › Saved). Saved syncs with your \
+             blyg when it keeps it."
                 .into(),
         ),
         "Shelf" => on(
-            "+ Add to shelf",
-            "Keeps this post to hand on your shelf (Reading › Shelf), in your order. \
-             The shelf syncs with your blyg when it keeps one."
+            "+ Save",
+            "Keeps this post to hand in Saved (Reading › Saved), in your order. Saved \
+             syncs with your blyg when it keeps it."
                 .into(),
         ),
         // --- catch up --- shown only when the post draws on something.
@@ -586,7 +599,9 @@ pub fn pill(
     let v = shown.get(ix)?;
     let date = |v: &RemoteVersion| crate::vm::relative_time(&v.at, now);
     let pinned_view = !v.current;
-    let label = if v.current {
+    let label = if v.current && v.pinned {
+        format!("📌 v{} · current ▾", v.version)
+    } else if v.current {
         format!("v{} · current ▾", v.version)
     } else {
         format!("📌 v{} · {} ▾", v.version, date(v))
@@ -596,7 +611,9 @@ pub fn pill(
         .enumerate()
         .rev()
         .map(|(i, v)| {
-            let l = if v.current {
+            let l = if v.current && v.pinned {
+                format!("📌 v{} · current", v.version)
+            } else if v.current {
                 format!("v{} · current", v.version)
             } else {
                 format!("📌 v{}", v.version)
@@ -818,6 +835,9 @@ pub struct MentionRow {
     /// A link notice (studio 0.64): listed apart, under "Linked from",
     /// after the post's responses.
     pub notice: bool,
+    /// The post that mentioned yours, as a blyg item (origin, id, version)
+    /// when the mention says which one: it opens in the reader.
+    pub post: Option<(String, String, Option<u32>)>,
 }
 
 pub fn relation_label(r: Option<&str>) -> &'static str {
@@ -855,6 +875,12 @@ pub fn mention_row(
         hidden: m.hidden,
         source: m.source.clone(),
         notice: blyg_core::outbound::is_link_notice(m.relation.as_deref()),
+        post: m
+            .source_origin
+            .clone()
+            .zip(m.source_id.clone())
+            .filter(|(o, i)| !o.trim().is_empty() && !i.trim().is_empty())
+            .map(|(o, i)| (o, i, m.source_version)),
     }
 }
 

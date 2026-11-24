@@ -11,6 +11,10 @@
 //! posts with labelled links waited. It still shows for such a post while
 //! the blyg is outdated, though now everything waits.
 //!
+//! A blyg on a studio newer than this Burrow knows (`NEWER_TOAST`) gets a
+//! toast once a session: sync goes on, but removes nothing on this Mac
+//! until Burrow is updated (`blyg_core::api::Contract::Newer`).
+//!
 //! There used to be a second notice here, a sheet listing what a studio
 //! older than 0.40 limits. The 0.47 floor made it unreachable: every blyg
 //! old enough to see it already gets this one, and nothing is sent to it.
@@ -21,6 +25,7 @@
 use gpui_kit::*;
 
 use super::MainView;
+use crate::platform_text::{Text, ui_text_per_platform};
 
 /// Where the notice's link goes: the server requirements, which link on to
 /// upstream's upgrade guide.
@@ -59,7 +64,36 @@ pub const HELD_FIX: &str = "write them as [[id]] and publish";
 /// The list row's tooltip on a post that waits for them.
 pub const HELD_TIP: &str = concat!("Waiting: your blyg needs studio ", blyg_core::min_studio!());
 
+/// The toast when the blyg runs a studio newer than this Burrow knows
+/// (`CoreEvent::ServerNewer`): sync goes on, and removes nothing here.
+pub const NEWER_TOAST: &str = "Your blyg runs a newer studio";
+
+/// [`NEWER_TOAST`]'s line: what Burrow does, and where a newer Burrow
+/// comes from (Windows has no updater, `update::disabled_reason`). No
+/// contract number: the user can't act on it (user testing, 0.28).
+const NEWER_TOAST_SUB: Text = ui_text_per_platform(
+    "Your blyg's studio is newer than this Burrow. Burrow keeps syncing what it can, and \
+     removes nothing on this Mac. To get the newest Burrow: Check for Updates… in the \
+     Burrow menu.",
+    "Your blyg's studio is newer than this Burrow. Burrow keeps syncing what it can, and \
+     removes nothing on this Mac. To get the newest Burrow, download it from the Releases \
+     page on GitHub.",
+);
+
+/// [`NEWER_TOAST`]'s line, as this platform says it.
+pub fn newer_toast_sub() -> &'static str {
+    NEWER_TOAST_SUB.get()
+}
+
 impl MainView {
+    /// Sync found a blyg on a newer studio: said once a session, and kept
+    /// up until clicked.
+    pub(super) fn server_newer(&mut self, contract: &str, cx: &mut Context<Self>) {
+        eprintln!("blygger: the blyg serves contract {contract}, newer than this Burrow knows");
+        self.show_toast(NEWER_TOAST, Some(newer_toast_sub().into()), cx);
+        self.studio.guards.sticky_toast = Some(self.toast_seq);
+    }
+
     /// Sync just found an outdated server (or a connect did).
     pub(super) fn server_outdated(&mut self, cx: &mut Context<Self>) {
         self.show_toast(
@@ -106,6 +140,10 @@ impl MainView {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "newer_notice_tests.rs"]
+mod newer_tests;
 
 #[cfg(test)]
 mod tests {

@@ -63,9 +63,11 @@ scratch notes can be deleted (⇧⌘⌫).
 ### Why can't I fork this post?
 
 Forking descends only from **pinned** versions. Pick a pin in the post's
-version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. If the post has
-no pins, it can't be forked. Your own posts fork the same way, from ⌘Y: pick
-a pinned version, then **Fork this pin**.
+version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. When the
+current version is the pin (the pill reads `📌 vN · current`), ⋯ More offers
+**Fork this pin** right there. If the post has no pins, it can't be forked.
+Your own posts fork the same way, from ⌘Y: pick a pinned version, then **Fork
+this pin**.
 
 ### How do I undo my edits to a published post?
 
@@ -88,6 +90,17 @@ Your blyg runs a studio older than 0.49.12 (or a patched Worker), whose API
 Burrow no longer speaks, so nothing syncs until the blyg is updated. Your posts
 and changes stay on your Mac and are sent once it is. Burrow's status bar has
 an **Update your blyg** link. See [Server requirements](server.md).
+
+### Why does Burrow say "Your blyg runs a newer studio"?
+
+Your blyg was updated to a studio whose API is newer than this Burrow knows.
+Burrow keeps syncing what it can, and your posts and changes still go to the
+blyg, but it won't remove anything on your Mac because of what that studio
+lists (a post, a subscription or a hopper it doesn't list stays here) until
+Burrow is updated. One side effect: when an RSS feed gives a post a new id
+meanwhile, the post shows twice in Reading (under its old id and its new one)
+until Burrow is updated and the old one goes. Check for updates in the Burrow menu (Burrow › Check for
+Updates…).
 
 ### Why won't my quote go in?
 

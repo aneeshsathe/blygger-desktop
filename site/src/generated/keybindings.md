@@ -51,8 +51,8 @@
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, not a reply | Post › Link Post · New Fragment |
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
-| ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
-| ⌥⌘B | Add the open post to your shelf, or remove it | Post › Add to Shelf / Remove from Shelf |
+| ⌘B | Saved: the posts you keep to hand (1–9 opens one) | Post › Saved… |
+| ⌥⌘B | Save the open post, or remove it from Saved | Post › Save / Remove from Saved |
 | ⌥⌘T | Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops) | Blyg › Publish Trail… |
 | ⌥⌘K | Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading) | Post › Put on Quote Tray |
 | ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
@@ -109,6 +109,24 @@
 | ⏎ | Macro Post sheet: post |  |
 | esc | Macro Preview or Post sheet: cancel |  |
 
+### On the Site sheet
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘⏎ | Site sheet: save |  |
+
+### In the Reader's list
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘A | Reader: pick every post the list shows (r marks them read, u unread) |  |
+
+### In the About window
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘W | About window: close it |  |
+
 ### In the menus, without a key
 
 | What it does | Menu |
@@ -129,6 +147,7 @@
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |
 | AI on your blyg: a model per function, house style, change notes, the change classifier | Blyg › AI on Your Blyg… |
+| Your blyg's dictionary: the words its spellcheck accepts, shared with Studio; add and take out your own | Blyg › Dictionary… |
 | The blyg's public site: theme, typeface, front page, menus, avatar, collection feeds, studio updates and extensions | Blyg › Site… |
 | Stale quotes: your threads whose quoted posts have newer versions; refresh them | Blyg › Stale Quotes… |
 | Signals: your likes, dislikes and private activity log (never published) | Blyg › Signals… |

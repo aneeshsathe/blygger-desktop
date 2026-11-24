@@ -2,9 +2,9 @@
 //! updating (a /now page, a reading log), at the top of the Write list in
 //! your order, and one key away.
 //!
-//! - ⌥⌘B (Post › Add to Shelf / Remove from Shelf) shelves the open post or
+//! - ⌥⌘B (Post › Save / Remove from Saved) shelves the open post or
 //!   takes it off. Any post of yours: thread, fragment, draft or scratch note.
-//! - ⌘B (Post › Shelf…) opens the shelf: 1–9 or ⏎ opens a post, ↑/↓ move,
+//! - ⌘B (Post › Saved…) opens the shelf: 1–9 or ⏎ opens a post, ↑/↓ move,
 //!   ⌥↑/⌥↓ reorder, ⌫ takes the highlighted post off, esc closes.
 //! - Shelved posts that match the omnibar come first in the list, each with
 //!   📚 before its title (`vm::ListModel`).
@@ -51,9 +51,9 @@ impl crate::app::sheet::SheetView for ShelfSheet {
 /// The toast after ⌥⌘B.
 pub fn toggled_toast(on: bool) -> &'static str {
     if on {
-        crate::keymap::hint("On your shelf · ⌘B")
+        crate::keymap::hint("Added to Saved · ⌘B")
     } else {
-        "Taken off your shelf"
+        "Removed from Saved"
     }
 }
 
@@ -106,7 +106,7 @@ impl MainView {
     /// ⌥⌘B: shelve the open post, or take it off.
     pub(crate) fn toggle_on_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
-            return self.show_toast("Open a post to put it on your shelf", None, cx);
+            return self.show_toast("Open a post to save it", None, cx);
         };
         let on = !self.list.is_on_shelf(&id);
         self.set_on_shelf(&id, on, window, cx);
@@ -120,7 +120,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         if let Err(e) = self.backend.set_on_shelf(id, on) {
-            return self.show_toast(format!("Couldn't change your shelf: {e}"), None, cx);
+            return self.show_toast(format!("Couldn't change Saved: {e}"), None, cx);
         }
         self.after_shelf_change(window, cx);
         self.show_toast(toggled_toast(on), None, cx);
@@ -245,7 +245,7 @@ impl MainView {
                         div()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(13.))
-                            .child(format!("{GLYPH} Shelf")),
+                            .child(format!("{GLYPH} Saved")),
                     )
                     .child(div().text_size(px(11.)).text_color(p.muted).child(
                         match s.posts.len() {
@@ -274,9 +274,9 @@ impl MainView {
                     .text_color(p.muted)
                     .line_height(relative(1.45))
                     .child(crate::keymap::hint(
-                        "None of your own posts are on the shelf. Keep the ones you keep \
-                         updating here: open one and press ⌥⌘B. Others' posts you shelve \
-                         are under Reading › Shelf.",
+                        "None of your own posts are saved. Keep the ones you keep \
+                         updating here: open one and press ⌥⌘B. Others' posts you save \
+                         are under Reading › Saved.",
                     )),
             );
         }
@@ -354,15 +354,15 @@ mod tests {
     fn the_toast_says_where_it_went() {
         assert_eq!(
             toggled_toast(true),
-            crate::keymap::hint("On your shelf · ⌘B")
+            crate::keymap::hint("Added to Saved · ⌘B")
         );
-        assert_eq!(toggled_toast(false), "Taken off your shelf");
+        assert_eq!(toggled_toast(false), "Removed from Saved");
         use crate::platform_text::{Platform, spelled_as};
         spelled_as(Platform::Windows, || {
-            assert_eq!(toggled_toast(true), "On your shelf · Ctrl+B");
+            assert_eq!(toggled_toast(true), "Added to Saved · Ctrl+B");
         });
         spelled_as(Platform::Mac, || {
-            assert_eq!(toggled_toast(true), "On your shelf · ⌘B");
+            assert_eq!(toggled_toast(true), "Added to Saved · ⌘B");
         });
     }
 }

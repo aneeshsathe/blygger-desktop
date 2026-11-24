@@ -103,6 +103,11 @@ scenes! {
         AiPalette = "ai-palette",
         AiShorten = "ai-shorten",
         AiSettings = "ai-settings",
+        // --- studio 0.71 --- ⌘G on the blyg: the checkpoint, what it read.
+        AiCheckpoint = "ai-checkpoint",
+        AiCheckpointDetails = "ai-checkpoint-details",
+        AiTkRead = "ai-tk-read",
+        AiTkReadPreview = "ai-tk-read-preview",
     }
     /// reading/demo.rs (rd-browse*, rd-stream-nested: reading/browse.rs)
     Reading {
@@ -124,6 +129,10 @@ scenes! {
         RdStreamLineage = "rd-stream-lineage",
         RdStreamLineageRing = "rd-stream-lineage-ring",
         RdThreePane = "rd-three-pane",
+        // --- studio 0.71 --- a card's date opens the post; what a post's
+        // generated text read, at the end of the post in the Reader.
+        RdStreamDate = "rd-stream-date",
+        RdGenRead = "rd-gen-read",
         RdHoppers = "rd-hoppers",
         RdHopperPicker = "rd-hopper-picker",
         RdPicks = "rd-picks",
@@ -255,6 +264,7 @@ scenes! {
         AaToken = "aa-token",
         AaAi = "aa-ai",
         AaPublish = "aa-publish",
+        AaDictionary = "aa-dictionary", // --- dictionary ---
     }
     /// site/mod.rs
     Site {
@@ -294,6 +304,12 @@ scenes! {
     Reading {
         RdProvenance = "rd-provenance",
     }
+    /// reading/demo.rs (--- reader order ---): studio 0.68's tabs: the
+    /// Reader on the pace-layered Feed, its controls in the header; Raw
+    Reading {
+        RdFeed = "rd-feed",
+        RdRaw = "rd-raw",
+    }
     /// app/demo.rs (--- FX1 ---): Settings with the keyboard on BACKGROUND's
     /// second rule (⇥ ×5, →), scrolled to it
     Main {
@@ -303,6 +319,31 @@ scenes! {
     /// link notice (j ×3)
     Reading {
         RdResponsesKeys = "rd-responses-keys",
+    }
+    /// reading/demo.rs (--- ux 0.28 ---): the user-testing pass's steps:
+    /// the Agentic feed's edition, Saved, Kit's tides (a copy
+    /// elsewhere) opened from the stream
+    Reading {
+        RdAgentic = "rd-agentic",
+        RdSaved = "rd-saved",
+        RdStreamCopies = "rd-stream-copies",
+        RdStreamCatchupSummary = "rd-stream-catchup-summary",
+    }
+    /// demo.rs (--- ux 0.28 ---): the toast sync shows for a blyg on a
+    /// newer studio; Settings for a sign-in that can't change Background
+    /// rules (the fake's `background_placing` is off for the scene)
+    Main {
+        Newer = "newer",
+        SettingsBackgroundLocked = "settings-background-locked",
+        // --- studio 0.71 --- READ MARKS' "Count an entry as read".
+        SettingsCountRead = "settings-count-read",
+    }
+    /// extensions/mod.rs (--- ux 0.28 ---): cross-post on and allowed, a
+    /// published post edited, ⌘⏎: the Publish sheet's "Then cross-post to";
+    /// `-palette`: ⇧⌘P on that post instead (its on/off rows)
+    Extensions {
+        ExtAutoCrosspost = "ext-auto-crosspost",
+        ExtAutoCrosspostPalette = "ext-auto-crosspost-palette",
     }
 }
 

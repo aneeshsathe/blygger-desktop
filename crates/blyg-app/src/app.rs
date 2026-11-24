@@ -278,6 +278,7 @@ use sheet::publish::{HeldLabelsSheet, PublishSheet, TangleSheet};
 // The main window's features, each a child module extending `MainView`.
 mod chrome; // title bar, config-problems banner, status bar, toasts
 mod connect; // connecting and disconnecting a blyg
+pub(crate) mod esc; // Esc and clicks take the keyboard back from web views (Windows)
 mod looks; // config file, prefs, theme, fonts, Settings' hotkey
 #[cfg(test)]
 mod size_cap; // app.rs's line cap
@@ -418,12 +419,12 @@ impl MainView {
             this.apply_theme(window, cx);
             cx.notify();
         }));
-        // A WebView can end up holding (or dropping) the keyboard while the
-        // window is in the background; typing must work when it comes back.
-        subs.push(cx.observe_window_activation(window, |this, window, _| {
+        // Back in front: the keyboard a WebView held or dropped, a rule changed on the web.
+        subs.push(cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.studio.reclaim_keyboard();
                 this.browser.reclaim_lost_keyboard(); // --- browser ---
+                this.count_read_on_front(cx); // --- studio 0.71 --- chosen on the web
             }
         }));
 
@@ -571,6 +572,7 @@ impl MainView {
         this.ext_init(window, cx); // --- extensions ---
         this.nearby_init(cx); // --- nearby ---
         this.site_init(cx); // --- site ---
+        this.dictionary_refresh(true, cx); // --- dictionary ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -756,6 +758,7 @@ impl MainView {
             CoreEvent::ReadMarked(rows) => self.read_marked(&rows, reading_follows, cx),
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
+            CoreEvent::ServerNewer(contract) => self.server_newer(&contract, cx),
             // The "older than 0.40" sheet is gone: below the 0.47 floor the
             // outdated notice already says it all (`server_notice`).
             CoreEvent::ServerLimited => {}
@@ -1089,7 +1092,7 @@ impl Render for MainView {
                                         // whose body is the reader's WebView); --- side ---
                                         // the divider between them drags.
                                         if preview_beside {
-                                            let preview = self.studio_pane(&p);
+                                            let preview = self.studio_pane(&p, cx);
                                             row.child(
                                                 self.side_preview_row(editor, preview, rest, cx),
                                             )

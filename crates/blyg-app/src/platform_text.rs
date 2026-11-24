@@ -34,7 +34,9 @@ impl Platform {
     /// The platform whose spelling the app's text uses: [`Self::HERE`].
     /// Tests can pick either ([`spelled_as`] for one test,
     /// `BLYGGER_TEST_SPELLING=windows` for the whole suite), so a macOS run
-    /// checks Windows' wording too. Outside tests it's the constant.
+    /// checks Windows' wording too. A debug build reads the same variable
+    /// (a DevFlag), so a scene on a Mac shows Windows' words
+    /// (`burrow-verify.sh`); a release build is the constant.
     #[inline]
     pub fn spelling() -> Platform {
         #[cfg(test)]
@@ -43,6 +45,11 @@ impl Platform {
         }
         #[cfg(not(test))]
         {
+            if cfg!(debug_assertions)
+                && let Some(p) = crate::dev_flags::get().spelling
+            {
+                return p;
+            }
             Self::HERE
         }
     }
@@ -50,7 +57,7 @@ impl Platform {
 
 /// Run `f` with the app's text spelled as `p` on this thread (tests only):
 /// `spelled_as(Platform::Windows, || toggled_toast(true))` is
-/// "On your shelf · Ctrl+B" on any machine. The previous spelling comes
+/// "Added to Saved · Ctrl+B" on any machine. The previous spelling comes
 /// back afterwards, panic or not. Only the wording changes, not the key
 /// bindings.
 #[cfg(test)]
@@ -74,11 +81,7 @@ mod test_spelling {
 
     fn default() -> Platform {
         static DEFAULT: OnceLock<Platform> = OnceLock::new();
-        *DEFAULT.get_or_init(|| {
-            crate::dev_flags::TestEnv::from_env()
-                .spelling
-                .unwrap_or(Platform::HERE)
-        })
+        *DEFAULT.get_or_init(|| crate::dev_flags::get().spelling.unwrap_or(Platform::HERE))
     }
 
     pub fn current() -> Platform {
@@ -422,6 +425,18 @@ pub(crate) mod scan {
     }
 }
 
+/// The key a test sends for redo in a text field: Ctrl+Y on Windows, where
+/// the field binds no Ctrl+Shift+Z, and Cmd+Shift+Z on the Mac. Tests never
+/// spell redo as a literal (`tests_dont_send_macos_only_caret_keys`).
+#[cfg(test)]
+pub(crate) fn redo_keys() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "ctrl-y"
+    } else {
+        "cmd-shift-z"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,7 +634,9 @@ mod tests {
     #[test]
     fn tests_dont_send_macos_only_caret_keys() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let this_file = root.join("platform_text.rs");
         let mut bad = Vec::new();
+        let mut edit = Vec::new();
         let mut dirs = vec![root.clone()];
         while let Some(d) = dirs.pop() {
             for e in std::fs::read_dir(&d).expect("read src") {
@@ -632,18 +649,25 @@ mod tests {
                     continue;
                 }
                 let text = std::fs::read_to_string(&p).expect("read");
-                for (n, line) in text.lines().enumerate() {
-                    for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
-                        let Some(at) = line.find(call) else { continue };
-                        let lit = line[at + call.len()..].split('"').next().unwrap_or("");
-                        if lit.split(' ').any(macos_caret_key) {
-                            let rel = p.strip_prefix(&root).expect("under src");
-                            bad.push(format!("  {}:{}: {}", rel.display(), n + 1, line.trim()));
-                        }
-                    }
+                let rel = p.strip_prefix(&root).expect("under src");
+                // The helper's own file holds the literals it hides.
+                let found = key_offenders(&text, p != this_file);
+                for (n, line, helper) in found.edit {
+                    edit.push(format!("  {}:{n}: {line} (call {helper})", rel.display()));
+                }
+                for (n, line) in found.caret {
+                    bad.push(format!("  {}:{n}: {line}", rel.display()));
                 }
             }
         }
+        edit.sort();
+        assert!(
+            edit.is_empty(),
+            "tests sending an editing key the Windows text field binds differently, so \
+             the test passes on the Mac and fails on Windows CI:\n{}\nSend it through the \
+             helper named on each line (redo is Ctrl+Y on Windows, not Ctrl+Shift+Z).",
+            edit.join("\n")
+        );
         bad.sort();
         assert!(
             bad.is_empty(),
@@ -664,5 +688,287 @@ mod tests {
         assert!(!macos_caret_key("shift-left"));
         assert!(!macos_caret_key("cmd-enter"));
         assert!(!macos_caret_key("alt-cmd-left"));
+    }
+
+    /// What `key_offenders` found in one source text: (line number, trimmed
+    /// line[, helper to call instead]).
+    struct KeyOffenders {
+        edit: Vec<(usize, String, &'static str)>,
+        caret: Vec<(usize, String)>,
+    }
+
+    fn is_ident_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    /// Where the raw string literal starting at `s[i]` ends (`r"…"`, `r#"…"#`,
+    /// `br#"…"#`, any number of hashes), if one starts there; the end of the
+    /// text when it is never closed. The close is a quote followed by as many
+    /// hashes as the opening had (none: the first quote), with no escapes.
+    /// `r#type` (a raw identifier) is not a string.
+    fn raw_string_end(s: &[char], i: usize) -> Option<usize> {
+        let mut j = i;
+        if s[j] == 'b' {
+            j += 1;
+        }
+        if s.get(j) != Some(&'r') {
+            return None;
+        }
+        j += 1;
+        let hashes = s[j..].iter().take_while(|&&c| c == '#').count();
+        j += hashes;
+        if s.get(j) != Some(&'"') {
+            return None;
+        }
+        let close = (j + 1..s.len())
+            .find(|&k| s[k] == '"' && (1..=hashes).all(|h| s.get(k + h) == Some(&'#')));
+        Some(close.map_or(s.len(), |k| k + 1 + hashes))
+    }
+
+    /// `src` with every raw string literal (delimiters and contents) replaced
+    /// by spaces, newlines kept so line numbers stay right. Ordinary string
+    /// literals are left as they are. A raw string starts at `r` or `br` not
+    /// preceded by an identifier character. To keep a `r"` inside an ordinary
+    /// string, a char literal (`'"'`) or a comment from starting one, those
+    /// are stepped over (unchanged); a raw string is not looked for in them.
+    fn blank_raw_strings(src: &str) -> String {
+        let s: Vec<char> = src.chars().collect();
+        let n = s.len();
+        let mut out = s.clone();
+        let mut i = 0;
+        while i < n {
+            let next = s.get(i + 1).copied();
+            match s[i] {
+                '/' if next == Some('/') => {
+                    while i < n && s[i] != '\n' {
+                        i += 1;
+                    }
+                }
+                '/' if next == Some('*') => {
+                    let mut depth = 1;
+                    i += 2;
+                    while i < n && depth > 0 {
+                        match (s[i], s.get(i + 1).copied()) {
+                            ('/', Some('*')) => {
+                                depth += 1;
+                                i += 2;
+                            }
+                            ('*', Some('/')) => {
+                                depth -= 1;
+                                i += 2;
+                            }
+                            _ => i += 1,
+                        }
+                    }
+                }
+                '"' => {
+                    i += 1;
+                    while i < n && s[i] != '"' {
+                        i += if s[i] == '\\' { 2 } else { 1 };
+                    }
+                    i += 1;
+                }
+                '\'' => {
+                    i = match (next, s.get(i + 2).copied()) {
+                        (Some('\\'), _) => (i + 2..n).find(|&j| s[j] == '\'').map_or(n, |j| j + 1),
+                        (Some(x), Some('\'')) if x != '\'' => i + 3,
+                        _ => i + 1, // a lifetime
+                    };
+                }
+                'b' | 'r' if i == 0 || !is_ident_char(s[i - 1]) => {
+                    if let Some(end) = raw_string_end(&s, i) {
+                        for c in &mut out[i..end] {
+                            if *c != '\n' {
+                                *c = ' ';
+                            }
+                        }
+                        i = end;
+                    } else {
+                        i += 1;
+                    }
+                }
+                _ => i += 1,
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    /// The per-file check of `tests_dont_send_macos_only_caret_keys`, on source
+    /// text. Raw string literals are data (scan self-tests hold sample
+    /// offenders in them), so they are blanked first; ordinary string
+    /// literals are read, because the keys are ordinary string arguments.
+    /// `check_edit` is off for the file that holds the edit-key helper.
+    fn key_offenders(src: &str, check_edit: bool) -> KeyOffenders {
+        let blanked = blank_raw_strings(src);
+        let mut out = KeyOffenders {
+            edit: Vec::new(),
+            caret: Vec::new(),
+        };
+        for (i, (line, orig)) in blanked.lines().zip(src.lines()).enumerate() {
+            let n = i + 1;
+            if check_edit && let Some(k) = windows_edit_key(line) {
+                let helper = windows_edit_row(k).map_or("", |r| r.2);
+                out.edit.push((n, orig.trim().to_string(), helper));
+            }
+            for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
+                let Some(at) = line.find(call) else { continue };
+                let lit = line[at + call.len()..].split('"').next().unwrap_or("");
+                if lit.split(' ').any(macos_caret_key) {
+                    out.caret.push((n, orig.trim().to_string()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Editing keys the text field binds per platform, where the Windows key
+    /// is not the plain Ctrl respelling: (Mac key, naive Windows key, what a
+    /// test calls instead). gpui-base 0.6.6, `input/base/state.rs`: redo is
+    /// Cmd+Shift+Z on the Mac but only Ctrl+Y on Windows. Undo, cut, copy,
+    /// paste and select-all respell plainly, so they are not here. Cmd+Backspace
+    /// and Cmd+Delete also differ (Windows' Ctrl+Backspace deletes a word), but
+    /// the app binds them on sheets, so a string alone cannot tell them apart.
+    const WINDOWS_EDIT_KEYS: &[(&str, &str, &str)] = &[(
+        "cmd-shift-z",
+        "ctrl-shift-z",
+        "crate::platform_text::redo_keys()",
+    )];
+
+    fn windows_edit_row(k: &str) -> Option<&'static (&'static str, &'static str, &'static str)> {
+        WINDOWS_EDIT_KEYS
+            .iter()
+            .find(|&&(mac, win, _)| k == mac || k == win)
+    }
+
+    /// The first keystroke in a string literal after a `simulate_keystrokes(`
+    /// or `keys(cx, ` call on `line` that is in `WINDOWS_EDIT_KEYS`. Sees a
+    /// literal on the same line as its call, also through
+    /// `keymap::keys("...")`; not one split across lines or held in a variable.
+    fn windows_edit_key(line: &str) -> Option<&str> {
+        let at = ["simulate_keystrokes(", "keys(cx, "]
+            .iter()
+            .filter_map(|call| line.find(call))
+            .min()?;
+        line[at..]
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .flat_map(|lit| lit.split(' '))
+            .find(|k| windows_edit_row(k).is_some())
+    }
+
+    #[test]
+    fn the_edit_key_rule_flags_keys_windows_reads_differently() {
+        // The line that failed Windows CI at cb1def7, copied exactly.
+        let real = "    cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-shift-z\"));";
+        assert_eq!(windows_edit_key(real), Some("cmd-shift-z"));
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(\"cmd-shift-z\");"),
+            Some("cmd-shift-z")
+        );
+        assert_eq!(
+            windows_edit_key("keys(cx, \"ctrl-shift-z\");"),
+            Some("ctrl-shift-z")
+        );
+        // The helper, an app key, and undo (Windows binds plain Ctrl+Z) pass.
+        assert_eq!(windows_edit_key("cx.simulate_keystrokes(redo);"), None);
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(crate::platform_text::redo_keys());"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-b\"));"),
+            None
+        );
+        assert_eq!(
+            windows_edit_key("cx.simulate_keystrokes(&crate::keymap::keys(\"cmd-z\"));"),
+            None
+        );
+    }
+
+    // Sample sources below are data, so they sit in raw strings, which the
+    // scan under test skips in this file too.
+
+    #[test]
+    fn a_call_inside_a_raw_string_is_not_reported() {
+        // The collision: a scan self-test held a sample call as data.
+        let src = r####"
+fn bad() {
+    for bad in [
+        r#"cx.simulate_keystrokes("a cmd-shift-z");"#,
+        r#"cx.simulate_keystrokes("cmd-down");"#,
+    ] {}
+}
+"####;
+        let found = key_offenders(src, true);
+        assert!(found.edit.is_empty(), "{:?}", found.edit);
+        assert!(found.caret.is_empty(), "{:?}", found.caret);
+    }
+
+    #[test]
+    fn the_same_calls_outside_a_raw_string_are_reported() {
+        let src = r####"
+cx.simulate_keystrokes("a cmd-shift-z");
+cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        assert_eq!(found.edit.len(), 1, "{:?}", found.edit);
+        assert_eq!(found.edit[0].0, 2);
+        assert_eq!(found.caret.len(), 1, "{:?}", found.caret);
+        assert_eq!(found.caret[0].0, 3);
+    }
+
+    #[test]
+    fn every_raw_string_form_is_skipped_and_scanning_resumes() {
+        let src = r####"let a = r#"
+simulate_keystrokes("cmd-down")
+"#;
+let b = r##"
+simulate_keystrokes("cmd-down") and "# stays inside
+"##;
+let c = br#"
+simulate_keystrokes("cmd-down")
+"#;
+cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        assert_eq!(found.caret.len(), 1, "{:?}", found.caret);
+        assert_eq!(found.caret[0].0, 10, "{:?}", found.caret);
+        // With no hashes the literal ends at the first quote.
+        assert_eq!(
+            blank_raw_strings(r###"x r"ab" cd"###),
+            format!("x {} cd", " ".repeat(5))
+        );
+        assert_eq!(
+            blank_raw_strings(r###"br"a" b"###),
+            format!("{} b", " ".repeat(5))
+        );
+    }
+
+    #[test]
+    fn raw_identifiers_and_names_ending_in_r_are_not_raw_strings() {
+        let src = r####"
+let r#type = 1; cx.simulate_keystrokes("cmd-down");
+let bar = "x"; cx.simulate_keystrokes("cmd-up");
+let t = "r"; cx.simulate_keystrokes("cmd-end");
+let c = '"'; cx.simulate_keystrokes("cmd-down");
+"####;
+        let found = key_offenders(src, true);
+        let lines: Vec<usize> = found.caret.iter().map(|c| c.0).collect();
+        assert_eq!(lines, [2, 3, 5], "{:?}", found.caret);
+        let same = r###"bar"x" r#type"###;
+        assert_eq!(blank_raw_strings(same), same);
+    }
+
+    #[test]
+    fn an_unterminated_raw_string_blanks_to_the_end() {
+        let src = r####"ok
+let a = r#"abc
+simulate_keystrokes("cmd-down")"####;
+        let out = blank_raw_strings(src);
+        assert_eq!(out.len(), src.len());
+        assert_eq!(out.lines().count(), 3);
+        assert!(out.lines().nth(2).expect("line").trim().is_empty());
+        assert!(key_offenders(src, true).caret.is_empty());
     }
 }

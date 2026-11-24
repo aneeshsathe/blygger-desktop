@@ -34,10 +34,19 @@ pub struct StoreResolver {
     mount: String,
     /// Ids being baked right now (cycle and depth guard).
     stack: RefCell<Vec<String>>,
+    /// The thread being published (`publishing`), and whether the quote
+    /// being baked now reaches it again: a local closure containing the
+    /// publishing thread (§10.2), which publish refuses.
+    publishing: Option<String>,
+    reaches_self: std::cell::Cell<bool>,
     /// --- contacts --- The address book, when the blyg rewrites `@handle`
     /// (`snapshot`: read now; `lazy`: on the first handle). Empty: every
     /// `@handle` stays prose, as publish leaves it on such a blyg.
     handles: OnceCell<Vec<blyg_core::contacts::Contact>>,
+    /// --- contacts --- Whether the blyg reads `@handle`s in natural grammar
+    /// (studio 0.66; `snapshot`: read now; `lazy`: on the first handle;
+    /// `new`, with no backend to ask: yes, the target studio's reading).
+    natural: OnceCell<bool>,
 }
 
 /// --- contacts --- The book, when publish would rewrite handles.
@@ -90,7 +99,10 @@ impl StoreResolver {
             rss: OnceCell::new(),
             mount: mount.to_string(),
             stack: RefCell::new(Vec::new()),
+            publishing: None,
+            reaches_self: std::cell::Cell::new(false),
             handles: OnceCell::new(), // --- contacts ---
+            natural: OnceCell::new(),
         }
     }
 
@@ -104,6 +116,9 @@ impl StoreResolver {
             .collect();
         let r = Self::new(backend.items(), backend.reading(), &rss, mount);
         let _ = r.handles.set(handle_book(backend)); // --- contacts ---
+        let _ = r
+            .natural
+            .set(blyg_core::contacts::natural_grammar_at(backend));
         r
     }
 
@@ -159,6 +174,15 @@ impl StoreResolver {
         rows
     }
 
+    /// Renders for publishing the item with server id `id` (`None`: a new
+    /// post, which nothing quotes yet): a top-level quote of one of your
+    /// threads whose own quotes lead back to it is refused as circular
+    /// (§10.2), as the studio refuses that publish.
+    pub fn publishing(mut self, id: Option<&str>) -> Self {
+        self.publishing = id.map(str::to_string);
+        self
+    }
+
     /// Resolves nothing (a document without `[[`: no snapshot needed).
     pub fn empty(mount: &str) -> Self {
         Self::new(Vec::new(), Vec::new(), &[], mount)
@@ -173,6 +197,15 @@ impl StoreResolver {
             }
             Status::Withdrawn => return Resolution::Unavailable(UnresolvedReason::Withdrawn),
             Status::Public => {}
+        }
+        let top = self.stack.borrow().is_empty();
+        let is_publishing = self.publishing.as_deref() == Some(id);
+        if top {
+            self.reaches_self.set(false);
+        } else if is_publishing {
+            // A quote inside a quote leads back to the post being published.
+            self.reaches_self.set(true);
+            return Resolution::Unavailable(UnresolvedReason::Circular);
         }
         if self.stack.borrow().iter().any(|s| s == id) {
             return Resolution::Unavailable(UnresolvedReason::Circular);
@@ -195,6 +228,10 @@ impl StoreResolver {
         // edits that is newer than the published snapshot publish would bake.
         let html = render_preview(&item.content_md, render_kind(item.kind), self, &opts).html;
         self.stack.borrow_mut().pop();
+        // Quoting yourself stays the walk's self-quote refusal.
+        if top && !is_publishing && self.reaches_self.replace(false) {
+            return Resolution::Unavailable(UnresolvedReason::Circular);
+        }
         Resolution::Found(Found {
             origin: None,
             id: id.to_string(),
@@ -273,6 +310,16 @@ impl Resolver for StoreResolver {
         })
     }
 
+    /// --- contacts --- Natural grammar (`@lin-driven`) only where the
+    /// studio reads it, so the preview never links what publish won't.
+    fn natural_handles(&self) -> bool {
+        *self.natural.get_or_init(|| {
+            self.source
+                .as_deref()
+                .is_none_or(blyg_core::contacts::natural_grammar_at)
+        })
+    }
+
     /// A nested quote's provenance line, from what the store holds: no
     /// render and no cycle guard, as `resolve` would have.
     fn nested_source(&self, origin: Option<&str>, id: &str) -> NestedSource {
@@ -336,6 +383,10 @@ impl Resolver for StoreResolver {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "resolver_closure_tests.rs"]
+mod closure_tests;
 
 #[cfg(test)]
 mod tests {

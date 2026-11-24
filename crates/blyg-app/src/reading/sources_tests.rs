@@ -30,7 +30,11 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
             cx,
         );
     });
-    let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
+    let fake = Arc::new(
+        FakeBackend::with_timing(Timing::instant())
+            .chronological() // the list these tests read is newest first
+            .without_media_cache(),
+    );
     let backend: Arc<dyn Backend> = fake.clone();
     let f2 = fake.clone();
     let (view, cx) = cx.add_window_view(move |window, cx| {
@@ -339,25 +343,22 @@ fn folders_are_made_renamed_reordered_and_deleted(cx: &mut TestAppContext) {
 fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     assert_eq!(pane(&view, cx), Pane::List);
-    // ← to the sources; ↓ picks the next source (Shelf, Background, Your blyg,
-    // then the hoppers, then the first folder).
+    // ← to the sources; ↓ picks the next source (Agentic feed, Saved,
+    // Background, Raw, Your blyg, then the hoppers, then the first folder).
     cx.simulate_keystrokes("left");
     settle(cx);
     assert_eq!(pane(&view, cx), Pane::Sources);
     cx.simulate_keystrokes("left");
     assert_eq!(pane(&view, cx), Pane::Sources, "stops at the edge");
-    cx.simulate_keystrokes("down");
-    settle(cx);
-    assert_eq!(
-        view.read_with(cx, |v, _| v.reading.source.clone()),
-        Source::Smart(Smart::Shelf) // --- shelf sync ---
-    );
-    cx.simulate_keystrokes("down");
-    settle(cx);
-    assert_eq!(
-        view.read_with(cx, |v, _| v.reading.source.clone()),
-        Source::Smart(Smart::Background)
-    );
+    // Studio 0.68's tabs after the Feed: Agentic feed, Saved, Background, Raw.
+    for smart in [Smart::Agentic, Smart::Shelf, Smart::Background, Smart::Raw] {
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        assert_eq!(
+            view.read_with(cx, |v, _| v.reading.source.clone()),
+            Source::Smart(smart)
+        );
+    }
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(
@@ -390,7 +391,7 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let first = shown(&view, cx)[0].clone();
     assert_eq!(opened(&view, cx).as_deref(), Some(first.as_str()));
     assert_eq!(pane(&view, cx), Pane::Sources, "the keys stay put");
-    for _ in 0..6 {
+    for _ in 0..8 {
         cx.simulate_keystrokes("up");
     }
     settle(cx);

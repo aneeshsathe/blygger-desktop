@@ -37,7 +37,8 @@ pub struct Candidate {
     /// --- contacts --- In your address book (listed first).
     pub contact: bool,
     /// --- contacts --- The contact's handle, when the blyg rewrites
-    /// `@handle` on publish: ⏎ writes `@handle` instead of the link.
+    /// `@handle` on publish: ⏎ writes `@handle ` (with a space, from studio
+    /// 0.66; see [`insert`]) instead of the link.
     pub handle: Option<String>,
 }
 
@@ -406,16 +407,73 @@ pub fn query(text: &str, at: usize, cursor: usize) -> Option<&str> {
 }
 
 /// Replace the typed `@query` (`at..cursor`) with the link. Returns the new
-/// text and the caret (just after the link).
-pub fn insert(text: &str, at: usize, cursor: usize, c: &Candidate) -> (String, usize) {
+/// text and the caret (just after the link). Where the studio reads
+/// natural grammar (`natural`, studio 0.66: `blyg_core::contacts::natural_grammar`),
+/// a contact's `@handle` is followed by a space, as the studio's picker
+/// writes it (`handleInsert`); punctuation typed next takes it back
+/// ([`punctuation_after_pick`]). On an older studio `@lin-driven` would
+/// publish as text, so the pick writes the bare handle, as before.
+pub fn insert(
+    text: &str,
+    at: usize,
+    cursor: usize,
+    c: &Candidate,
+    natural: bool,
+) -> (String, usize) {
     let range: Range<usize> = at.min(text.len())..cursor.min(text.len());
-    let link = c.link();
+    let mut link = c.link();
+    if natural && c.handle.is_some() {
+        link.push(' ');
+    }
     let mut out = String::with_capacity(text.len() + link.len());
     out.push_str(&text[..range.start]);
     out.push_str(&link);
     out.push_str(&text[range.end..]);
     (out, range.start + link.len())
 }
+
+/// What may follow a handle with no space: a possessive, a hyphenated word,
+/// closing punctuation (studio 0.66, #158, `handle-trigger.ts` `CLOSE_UP`).
+const CLOSE_UP: &[&str] = &[
+    "'", "\u{2019}", "-", "_", ",", ".", ":", ";", "!", "?", ")", "]", "}", "\"", "\u{201d}",
+    "\u{2026}", "\u{2013}", "\u{2014}", "/",
+];
+
+/// `@lin's`, `@lin-driven`, `(@lin).`: a pick writes `@handle ` with a
+/// space, so a [`CLOSE_UP`] character `typed` with the caret right after
+/// that space (`at`, where the pick left it, in `text` as it was before the
+/// key) replaces the space. The new text and caret, or `None` when the key
+/// isn't one of these (`punctuationAfterPick`).
+pub fn punctuation_after_pick(text: &str, at: usize, typed: &str) -> Option<(String, usize)> {
+    if !CLOSE_UP.contains(&typed) || at < 1 || text.as_bytes().get(at - 1) != Some(&b' ') {
+        return None;
+    }
+    // `(^|[^\w@./:+-])@[A-Za-z0-9][A-Za-z0-9_-]* $` before the caret.
+    let before = text.get(..at - 1)?.as_bytes();
+    let run = before
+        .iter()
+        .rev()
+        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_' || **b == b'-')
+        .count();
+    let start = before.len() - run;
+    if run == 0 || !before[start].is_ascii_alphanumeric() || start == 0 || before[start - 1] != b'@'
+    {
+        return None;
+    }
+    let lead = before[..start - 1].last();
+    if lead.is_some_and(|&b| b.is_ascii_alphanumeric() || b"_@./:+-".contains(&b)) {
+        return None;
+    }
+    let mut out = String::with_capacity(text.len() + typed.len());
+    out.push_str(&text[..at - 1]);
+    out.push_str(typed);
+    out.push_str(&text[at..]);
+    Some((out, at - 1 + typed.len()))
+}
+
+#[cfg(test)]
+#[path = "mention_tests.rs"]
+mod natural_tests;
 
 #[cfg(test)]
 mod tests {
@@ -533,7 +591,7 @@ mod tests {
     #[test]
     fn insert_replaces_the_typed_query_only() {
         let c = cand(Some("Ada"), None, "https://ada.blyg.example.org/", 0);
-        let (t, caret) = insert("Thanks @ad, see you", 7, 10, &c);
+        let (t, caret) = insert("Thanks @ad, see you", 7, 10, &c, true);
         assert_eq!(t, "Thanks [Ada](https://ada.blyg.example.org/), see you");
         assert_eq!(&t[..caret], "Thanks [Ada](https://ada.blyg.example.org/)");
     }

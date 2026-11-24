@@ -255,11 +255,16 @@ impl Store {
     ///   read is queued (with its `read_at` when `clear`).
     /// - Marked unread here, still read there (at or below the floor):
     ///   queued as an unread when `clear`; otherwise it stays on this Mac.
+    ///
+    /// On a contract newer than Burrow knows (`lists_prune`), a confirmed
+    /// read reported unread may be a field the studio moved: it stays read
+    /// here, and isn't sent back either.
     pub fn reconcile_read_state(
         &self,
         server: &HashMap<(SubId, RemoteId), Option<u32>>,
         clear: bool,
     ) -> Result<ReadPlan> {
+        let removal = self.lists_prune_now();
         let pending = self.pending_read_rows()?;
         let mut plan = ReadPlan::default();
         let mut c = self.conn();
@@ -297,6 +302,9 @@ impl Store {
                     }
                 }
                 (Some(l), s) if Some(l) > s => {
+                    if clear && at.is_none() && !removal.may(self) {
+                        continue;
+                    }
                     if clear && at.is_none() {
                         tx.execute(
                             "UPDATE reading SET read_version = ?3, read_floor = NULL \

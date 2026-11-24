@@ -88,6 +88,14 @@ pub trait Resolver {
         let _ = handle;
         None
     }
+
+    /// --- contacts --- Whether the blyg reads `@handle`s in natural
+    /// grammar (studio 0.66, #158): a word naming no contact falls back to
+    /// its longest prefix before a `-` or `_` that does. `false` keeps the
+    /// whole-token reading of studio 0.56-0.65. Default: yes.
+    fn natural_handles(&self) -> bool {
+        true
+    }
 }
 
 /// A nested quote's source, for its provenance line ([`Resolver::nested_source`]).
@@ -162,8 +170,9 @@ impl fmt::Display for UnresolvedReason {
                     "quoted passage not found in the target's version {version}"
                 );
             }
+            // The studio's publish refusal (model.ts publishScoped, 0.67, #161).
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code"
+                "a fragment can't quote another item: make this a thread, or link it with [[id]]"
             }
             UnresolvedReason::Other(s) => s,
         };
@@ -195,8 +204,7 @@ impl UnresolvedReason {
                 format!("the quoted passage isn't in version {version} of that post")
             }
             UnresolvedReason::DirectiveInFragment => {
-                "a fragment can't quote. Quote it from a thread, or put the line in code to show it"
-                    .into()
+                "a fragment can't quote: make this a thread, or link it with [[id]]".into()
             }
             UnresolvedReason::Other(s) => s.clone(),
         }
@@ -381,6 +389,121 @@ pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteS
         prefix: nonempty(&hay[prefix_start..at]),
         suffix: nonempty(&hay[end..suffix_end]),
     })
+}
+
+/// transclusion.ts `partialBakeBody` (§10.2, decision #114, the shape ruled
+/// in §16.15): each line of `exact` as escaped plain text, in an `<li>` of a
+/// list like the target's when the target has that line in a list item,
+/// else in a `<p>`. The structure comes from the target only, never from
+/// the quoter's markers. Lines map onto the target's at the first match,
+/// where [`locate_selection`] takes its context.
+///
+/// Nesting is kept where the lines it joins are both quoted; an outer item
+/// with none of its own text quoted is not invented, so its list starts at
+/// the deeper level. An `ol` not starting at 1 carries `start`. Two lines
+/// of one item (a loose item's paragraphs) are `<p>`s in it. Its text
+/// content is `exact` again: `selection_text(body) == exact`.
+pub fn partial_bake_body(target_html: &str, exact: &str) -> String {
+    use crate::links::{SelectionLine, selection_lines};
+    enum Node<'a> {
+        Text(&'a str),
+        List(usize),
+    }
+    struct List {
+        list: usize,
+        tag: &'static str,
+        start: i64,
+        /// (ordinal, container index)
+        items: Vec<(i64, usize)>,
+    }
+    let lines = selection_lines(target_html);
+    let hay = lines
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let Some(at) = hay.find(exact) else {
+        return exact
+            .split('\n')
+            .map(|l| format!("<p>{}</p>", escape_html(l)))
+            .collect::<Vec<_>>()
+            .join("\n");
+    };
+    let (mut first, mut offset) = (0, 0);
+    while first < lines.len() && offset + lines[first].text.len() < at {
+        offset += lines[first].text.len() + 1;
+        first += 1;
+    }
+
+    // Containers by index: 0 is the root, then each item's content.
+    let mut containers: Vec<Vec<Node>> = vec![Vec::new()];
+    let mut lists: Vec<List> = Vec::new();
+    for (i, text) in exact.split('\n').enumerate() {
+        let levels = lines
+            .get(first + i)
+            .map_or(&[][..], |l: &SelectionLine| &l.lists);
+        let mut c = 0;
+        for (depth, level) in levels.iter().enumerate() {
+            let list = match containers[c].last() {
+                Some(Node::List(k)) if lists[*k].list == level.list => Some(*k),
+                _ => None,
+            };
+            if let Some(&(ordinal, content)) = list.and_then(|k| lists[k].items.last())
+                && ordinal == level.ordinal
+            {
+                c = content;
+                continue;
+            }
+            // An outer item with no quoted text of its own is not invented.
+            if depth + 1 < levels.len() {
+                continue;
+            }
+            let k = list.unwrap_or_else(|| {
+                lists.push(List {
+                    list: level.list,
+                    tag: level.tag,
+                    start: level.ordinal,
+                    items: Vec::new(),
+                });
+                containers[c].push(Node::List(lists.len() - 1));
+                lists.len() - 1
+            });
+            containers.push(Vec::new());
+            lists[k].items.push((level.ordinal, containers.len() - 1));
+            c = containers.len() - 1;
+        }
+        containers[c].push(Node::Text(text));
+    }
+
+    fn render(c: usize, in_item: bool, containers: &[Vec<Node>], lists: &[List]) -> String {
+        let nodes = &containers[c];
+        nodes
+            .iter()
+            .map(|node| match node {
+                Node::Text(t) if in_item && nodes.len() == 1 => escape_html(t),
+                Node::Text(t) => format!("<p>{}</p>", escape_html(t)),
+                Node::List(k) => {
+                    let l = &lists[*k];
+                    let start = if l.tag == "ol" && l.start != 1 {
+                        format!(" start=\"{}\"", l.start)
+                    } else {
+                        String::new()
+                    };
+                    let items = l
+                        .items
+                        .iter()
+                        .map(|&(_, content)| {
+                            format!("<li>{}</li>", render(content, true, containers, lists))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("<{tag}{start}>\n{items}\n</{tag}>", tag = l.tag)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    render(0, false, &containers, &lists)
 }
 
 /// The id of an own-line `![[id]]` or `![[id | label]]` directive
@@ -602,15 +725,12 @@ pub(crate) fn walk(
                     .map(|l| format!(" data-blyg-label=\"{}\"", escape_html(l)))
                     .unwrap_or_default();
                 let (class, body) = match &selector {
-                    // The bake is the selection's plain text in paragraphs
-                    // (plan §7.3 P4), not a carved range of the target's HTML.
+                    // The bake is the selection's plain text (plan §7.3 P4),
+                    // not a carved range of the target's HTML: paragraphs,
+                    // and list items where the target has lists (#114).
                     Some(sel) => (
                         "blyg-transclusion blyg-partial",
-                        sel.exact
-                            .split('\n')
-                            .map(|p| format!("<p>{}</p>", escape_html(p)))
-                            .collect::<Vec<_>>()
-                            .join("\n"),
+                        partial_bake_body(&f.content_html, &sel.exact),
                     ),
                     // A non-conformant source's relative URLs resolve
                     // against the source's identity origin before the bake

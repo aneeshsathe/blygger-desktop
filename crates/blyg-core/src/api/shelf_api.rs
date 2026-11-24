@@ -1,10 +1,11 @@
 //! --- shelf sync --- The owner-API calls for the synced shelf (studio
-//! 0.61; the shapes and the merge are in `crate::shelf`). Asked only of a
-//! studio whose capabilities list `getShelf` and `putShelf`.
+//! 0.61; the shapes and the merge are in `crate::shelf`). Read only from
+//! a studio whose capabilities list `getShelf`, written only where they
+//! list `putShelf` too.
 
-use super::{Api, is_transient};
+use super::Api;
 use crate::backend::{CoreError, Result};
-use crate::shelf::{Entry, Remote, parse, put_body, serves};
+use crate::shelf::{Entry, Remote, parse, put_body};
 
 /// What a `PUT /api/shelf` came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,16 +18,17 @@ pub enum PutShelf {
 }
 
 impl Api {
-    /// Whether this studio offers the synced shelf: its capabilities'
-    /// `operations` list `getShelf` and `putShelf`. A studio without
+    /// Whether this studio offers the synced shelf to read: its
+    /// capabilities' `operations` list `getShelf`. A studio without
     /// capabilities (404, or not readable) doesn't; a failed read is an
     /// error.
     pub fn serves_shelf(&self) -> Result<bool> {
-        match self.call("GET", "/api/capabilities", None) {
-            Ok(v) => Ok(serves(&v)),
-            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
-            Err(_) => Ok(false),
-        }
+        self.offers_all(&[crate::shelf::GET_OPERATION])
+    }
+
+    /// Whether this sign-in may write it too (`putShelf`, owner:manage).
+    pub fn takes_shelf(&self) -> Result<bool> {
+        self.offers_all(&[crate::shelf::PUT_OPERATION])
     }
 
     /// `GET /api/shelf`. `Ok(None)`: not served here (404).

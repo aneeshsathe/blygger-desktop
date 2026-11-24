@@ -91,10 +91,13 @@ fn sub(id: &str, kind: SubscriptionKind) -> Subscription {
 /// and a fragment).
 fn seed(dir: &std::path::Path) -> (LocalId, LocalId) {
     let s = Store::open(&dir.join("blygger.db")).unwrap();
-    s.replace_subscriptions(&[
-        sub("lin", SubscriptionKind::Blyg),
-        sub("feed", SubscriptionKind::Rss),
-    ])
+    s.take_served_subscriptions(
+        &[
+            sub("lin", SubscriptionKind::Blyg),
+            sub("feed", SubscriptionKind::Rss),
+        ],
+        blyg_core::api::Prune::Allowed,
+    )
     .unwrap();
     s.merge_all(&[
         published(
@@ -364,7 +367,8 @@ fn timing_nearby_at_scale() {
     let dir = tempfile::tempdir().unwrap();
     {
         let s = Store::open(&dir.path().join("blygger.db")).unwrap();
-        s.replace_subscriptions(&synth::subscriptions()).unwrap();
+        s.take_served_subscriptions(&synth::subscriptions(), blyg_core::api::Prune::Allowed)
+            .unwrap();
         s.merge_reading(&synth::reading(n, 3), true, &synth::kinds())
             .unwrap();
     }
@@ -906,4 +910,22 @@ fn quiet_writing_hides_the_drawer_and_alt_cmd_u_opens_it_for_the_sitting(cx: &mu
     cx.run_until_parked();
     assert!(cx.debug_bounds("nearby-rail").is_some(), "back");
     assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+}
+
+/// User testing of 0.71: Windows' Settings said "A model on this Mac"
+/// under NEARBY.
+#[test]
+fn the_nearby_note_says_this_pc_on_windows() {
+    use crate::platform_text::{Platform, spelled_as};
+    for emb in ["none", "local"] {
+        let win = spelled_as(Platform::Windows, || super::embedder_note(emb, ""));
+        assert!(!win.contains("Mac"), "{emb}: {win}");
+        assert!(win.contains("this PC"), "{emb}: {win}");
+        let mac = spelled_as(Platform::Mac, || super::embedder_note(emb, ""));
+        assert!(mac.contains("this Mac"), "{emb}: {mac}");
+    }
+    let label = spelled_as(Platform::Windows, || {
+        crate::keymap::hint("This Mac's model")
+    });
+    assert_eq!(label, "This PC's model");
 }

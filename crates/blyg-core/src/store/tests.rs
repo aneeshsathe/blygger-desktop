@@ -2,7 +2,10 @@ use super::*;
 use std::time::Instant;
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 #[test]
@@ -225,6 +228,7 @@ fn a_search_against_a_snapshot_older_than_the_store_finds_what_a_fresh_store_doe
 fn a_search_after_deletes_withdrawals_syncs_and_edits_stays_on_the_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    s.set_lists_prune(crate::api::Prune::Allowed);
     let wire = |i: usize, status: &str, md: String| WireItem {
         id: format!("S{i}"),
         kind: "fragment".into(),
@@ -454,7 +458,9 @@ fn generated(model: &str) -> Option<ScopeProvenance> {
     Some(ScopeProvenance {
         model: model.into(),
         sources: vec![],
+        pages: vec![],
         at: None,
+        ..Default::default()
     })
 }
 
@@ -642,4 +648,46 @@ fn a_save_checked_against_its_base_compares_the_cleaned_text() {
     let base = content_hash("\u{e9}");
     s.save_if_base(&id, "e\u{301}!", &base, 0).unwrap();
     assert_eq!(s.item(&id).unwrap().content_md, "\u{e9}!");
+}
+
+// --- studio 0.71 --- an edit typed while the blyg generated
+
+/// After a generate on the blyg, an edit typed during the request waits
+/// for the writer's merge, whether or not the blyg's copy could be read
+/// back (`answer` is the text the generate answered with, if any). Before
+/// the fix the hold was taken only after a successful read-back, so a
+/// failed GET let the edit go at once and come back as a conflict.
+#[test]
+fn an_edit_typed_during_a_generate_waits_for_the_merge() {
+    let s = store();
+    let id = s
+        .create_draft(Kind::Fragment, "Fog. [TK]a line[/TK]", 0)
+        .unwrap();
+    s.conn().execute("DELETE FROM outbox", []).unwrap();
+    s.conn()
+        .execute(
+            "UPDATE items SET server_id = 'S1' WHERE local_id = ?1",
+            [&id.0],
+        )
+        .unwrap();
+    let answer = "Fog. [TK]a line[=]Written.[/TK]";
+    let until = now_ms() + 60_000;
+    let held = |s: &Store| s.ops().unwrap().iter().all(|o| o.not_before >= until);
+    // Nothing typed: nothing to hold.
+    assert!(!s.hold_for_merge(&id, Some(answer), until).unwrap());
+    // Typed during the request: held, with the answer read or not.
+    s.save(&id, "Grey. Fog. [TK]a line[/TK]", 0).unwrap();
+    assert!(s.hold_for_merge(&id, Some(answer), until).unwrap());
+    assert!(held(&s), "{:?}", s.ops().unwrap());
+    s.conn()
+        .execute("UPDATE outbox SET not_before = 0", [])
+        .unwrap();
+    assert!(s.hold_for_merge(&id, None, until).unwrap());
+    assert!(held(&s), "held without the answer's text too");
+    // The edit already holds the answer: it can go.
+    s.conn()
+        .execute("UPDATE outbox SET not_before = 0", [])
+        .unwrap();
+    s.save(&id, answer, 0).unwrap();
+    assert!(!s.hold_for_merge(&id, Some(answer), until).unwrap());
 }

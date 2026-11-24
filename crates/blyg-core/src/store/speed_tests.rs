@@ -200,7 +200,7 @@ fn saved_locally_is_what_a_save_stores() {
 #[test]
 fn reading_with_id_is_reading_filtered() {
     let s = Store::open_in_memory().unwrap();
-    s.replace_subscriptions(&crate::synth::subscriptions())
+    s.take_served_subscriptions(&crate::synth::subscriptions(), crate::api::Prune::Allowed)
         .unwrap();
     let mut rows = crate::synth::reading(600, 4);
     // A duplicate of a post through another subscription, under another id.

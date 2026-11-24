@@ -20,22 +20,26 @@ pub fn keys(backend: &dyn blyg_core::Backend) -> Vec<Key> {
         .collect()
 }
 
-/// The toast after "+ Add to shelf" / "− Remove from shelf" (the studio's
-/// words).
+/// The toast after "+ Save" / "✓ Saved" (Saved: the studio's name since 0.68,
+/// when the Shelf became Saved).
 pub fn toggled_toast(on: bool) -> &'static str {
     if on {
-        "Added to shelf"
+        "Added to Saved"
     } else {
-        "Removed from shelf"
+        "Removed from Saved"
     }
 }
 
 /// What the Shelf lens says about where the shelf lives.
 pub fn state_note(s: SyncState) -> &'static str {
     match s {
-        SyncState::Local => "On this computer only: your blyg doesn't keep a shelf.",
+        SyncState::Local => "On this computer only: your blyg doesn't keep Saved.",
         SyncState::Synced => "Synced with your blyg.",
         SyncState::Waiting => "Changed here · syncing with your blyg…",
+        SyncState::HeldNewer => "Changed here · kept on this computer until Burrow is updated.",
+        SyncState::HeldReadOnly => {
+            "Changed here · kept on this computer: this sign-in can't change Saved on your blyg."
+        }
     }
 }
 
@@ -74,9 +78,23 @@ mod tests {
 
     #[test]
     fn the_toasts_and_notes_say_where_the_shelf_is() {
-        assert_eq!(toggled_toast(true), "Added to shelf");
-        assert_eq!(toggled_toast(false), "Removed from shelf");
+        assert_eq!(toggled_toast(true), "Added to Saved");
+        assert_eq!(toggled_toast(false), "Removed from Saved");
         assert!(state_note(SyncState::Local).contains("this computer"));
         assert!(state_note(SyncState::Synced).contains("Synced"));
+    }
+
+    /// A held change never claims to be syncing: it's kept here, and the
+    /// note says until when, or why.
+    #[test]
+    fn a_held_change_says_it_is_kept_here() {
+        let newer = state_note(SyncState::HeldNewer);
+        assert!(newer.contains("kept on this computer until Burrow is updated"));
+        let read_only = state_note(SyncState::HeldReadOnly);
+        assert!(read_only.contains("kept on this computer"));
+        assert!(read_only.contains("can't change Saved"));
+        for n in [newer, read_only] {
+            assert!(!n.contains("syncing"), "{n}");
+        }
     }
 }

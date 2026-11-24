@@ -8,7 +8,10 @@
 //! there is one, and, for someone's post, **⇊ Blyg to Background** / **⇈ Blyg
 //! to Foreground**. Settings › Reading has the rules the blyg offers
 //! (studio 0.64: parts published with a thread, posts with no words of
-//! their own, republished unchanged, your own minor changes). None of it
+//! their own, republished unchanged, your own minor changes; studio 0.68
+//! adds quotes refreshed, including rewritten quotes, small edits and
+//! followed within 15 minutes). "Including rewritten quotes" acts only
+//! while "Quotes refreshed" is on, and is greyed out without it. None of it
 //! marks anything read or changes anything published. An older studio gets
 //! none of it: its Background lens holds withdrawn posts, as before.
 //!
@@ -42,6 +45,9 @@ use crate::app::MainView;
 pub struct Background {
     /// The blyg serves Background (as of the last reading refresh).
     pub served: bool,
+    /// This sign-in may place posts in Background (a read-only one sees
+    /// the lens and no chips).
+    pub placing: bool,
     /// Its rules, read when Settings opens.
     pub rules: Load<BackgroundRules>,
     /// A rule is being saved.
@@ -173,6 +179,10 @@ pub fn rule_toast(rule: &str, on: bool) -> String {
         "wordless" => "Posts with no words of their own",
         "maintenance" => "Posts republished unchanged",
         "minor" => "Your own minor changes",
+        blyg_core::background::QUOTES_REFRESHED => "Posts whose quotes were refreshed",
+        blyg_core::background::QUOTES_MATERIAL => "Refreshes with rewritten quotes",
+        "near-same" => "Small edits",
+        blyg_core::background::SUPERSEDED => "Posts followed within 15 minutes",
         _ => "Those posts",
     };
     if on {
@@ -218,7 +228,7 @@ impl MainView {
 
     /// The reading pane's Background chips for the open post.
     pub(crate) fn background_chips(&self, r: &ReadingItem) -> Vec<ActionChip> {
-        chips(r, self.reading.background.served)
+        chips(r, self.reading.background.placing)
     }
 
     /// A Background chip under the open post was clicked.
@@ -244,8 +254,9 @@ impl MainView {
 
     /// `b`: the post in front of you to Background, or back to Foreground.
     pub(crate) fn background_key(&mut self, cx: &mut Context<Self>) {
-        if !self.reading.background.served {
-            self.show_toast(blyg_core::background::NOT_SERVED, None, cx);
+        if !self.reading.background.placing {
+            let why = blyg_core::background::not_placing(self.reading.background.served);
+            self.show_toast(why, None, cx);
             return;
         }
         let key: Option<Key> = self
@@ -332,6 +343,9 @@ impl MainView {
         if matches!(self.reading.background.rules, Load::Loading) {
             return;
         }
+        // Whether the rules may be turned, as of now (Settings may open
+        // before Reading has been shown).
+        self.reading.background.placing = self.backend.background_placing();
         if !matches!(self.reading.background.rules, Load::Ready(_)) {
             self.reading.background.rules = Load::Loading;
         }
@@ -355,11 +369,16 @@ impl MainView {
     }
 
     /// Settings' keyboard stops on BACKGROUND: the rules this blyg offers,
-    /// in the page's order (none until they're read).
+    /// in the page's order (none until they're read). None for a sign-in
+    /// that can't place: its rules are locked, so the keyboard passes them
+    /// by rather than stopping where space does nothing.
     pub(crate) fn background_rule_picks(&self) -> Vec<crate::app::pref_preview::Pick> {
         let Load::Ready(rules) = &self.reading.background.rules else {
             return vec![];
         };
+        if !self.reading.background.placing {
+            return vec![];
+        }
         RULES
             .into_iter()
             .filter(|r| rules.offers(r))
@@ -369,10 +388,13 @@ impl MainView {
 
     /// Space or ⏎ on a rule in Settings: turn it off, or back on.
     pub(crate) fn toggle_background_rule(&mut self, rule: &'static str, cx: &mut Context<Self>) {
-        if self.reading.background.saving {
+        if self.reading.background.saving || !self.reading.background.placing {
             return;
         }
         if let Load::Ready(r) = &self.reading.background.rules {
+            if BackgroundRules::needs(rule).is_some_and(|n| !r.on(n)) {
+                return; // greyed out: it acts only under the rule it needs
+            }
             let on = r.on(rule);
             self.save_background_rule(rule, !on, cx);
         }
@@ -385,6 +407,11 @@ impl MainView {
         on: bool,
         cx: &mut Context<Self>,
     ) {
+        // A sign-in that can't place can't change the rules either: the
+        // studio would refuse the write.
+        if !self.reading.background.placing {
+            return;
+        }
         let Load::Ready(cur) = &mut self.reading.background.rules else {
             return;
         };
@@ -461,7 +488,9 @@ impl MainView {
             _ => None,
         };
         // On: the accent edge and a check; off: a plain edge and "off".
-        let chip = |id: SharedString, label: &'static str, on: bool, ring: bool| {
+        // `acts`: a click turns it (not locked, not waiting on another
+        // rule); only then does it look clickable.
+        let chip = |id: SharedString, label: &'static str, on: bool, ring: bool, acts: bool| {
             div()
                 .id(id.clone())
                 .debug_selector(move || id.to_string())
@@ -474,8 +503,10 @@ impl MainView {
                 .when(ring, |d| {
                     d.bg(p.bg).shadow(crate::app::settings_page::focus_ring(&p))
                 })
-                .cursor_pointer()
-                .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .when(acts, |d| {
+                    d.cursor_pointer()
+                        .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                })
                 .child(if on { "✓" } else { "○" })
                 .child(label)
                 .when(!on, |d| d.child(div().text_color(p.muted).child("off")))
@@ -505,48 +536,41 @@ impl MainView {
                     "always in Background; this one can't be turned off",
                 )),
         );
+        // A sign-in that can't place: the rules show, greyed, and say why.
+        let locked = !self.reading.background.placing;
+        if locked {
+            col = col.child(
+                div()
+                    .id("bg-rules-locked")
+                    .debug_selector(|| "bg-rules-locked".into())
+                    .child(crate::app::settings_page::side_note(
+                        &p,
+                        blyg_core::background::NOT_PLACING,
+                    )),
+            );
+        }
         // Only the rules this blyg offers: a 0.61 studio refuses the others.
         for rule in RULES.into_iter().filter(|r| rules.offers(r)) {
             let on = rules.on(rule);
-            let ring = focused == Some(rule);
+            // Locked rules take no keyboard stop (`background_rule_picks`).
+            let ring = focused == Some(rule) && !locked;
             let (label, hint) = rule_label(rule);
-            let c = chip(format!("bg-rule-{rule}").into(), label, on, ring)
+            // "Including rewritten quotes" acts only under "Quotes
+            // refreshed" (studio `enabledRules`): greyed out while it's off.
+            let waits = BackgroundRules::needs(rule).filter(|n| !rules.on(n));
+            let acts = waits.is_none() && !locked;
+            let c = chip(format!("bg-rule-{rule}").into(), label, on, ring, acts)
                 .flex_none()
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
-                );
+                .when(BackgroundRules::needs(rule).is_some(), |d| d.ml(px(18.)))
+                .when(!acts, |d| d.opacity(0.5))
+                .when(acts, |d| {
+                    d.on_click(
+                        cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
+                    )
+                });
             // The ring's own selector (tests), and the scroll to it after ⇥.
             let c: AnyElement = if ring {
-                let reveal = self.preview.reveal.clone();
-                let scroll = self
-                    .sheet
-                    .get::<crate::app::settings_page::SettingsSheet>()
-                    .map(|s| s.scroll.clone());
-                div()
-                    .flex_none()
-                    .debug_selector(|| "bg-rule-focused".into())
-                    .on_children_prepainted(move |b, window, _| {
-                        let (Some(b), Some(scroll)) = (b.first(), scroll.as_ref()) else {
-                            return;
-                        };
-                        if !reveal.replace(false) {
-                            return;
-                        }
-                        let view = scroll.bounds();
-                        let margin = px(48.);
-                        let off = scroll.offset();
-                        let dy = if b.bottom() + margin > view.bottom() {
-                            view.bottom() - (b.bottom() + margin)
-                        } else if b.top() - margin < view.top() {
-                            view.top() - (b.top() - margin)
-                        } else {
-                            return;
-                        };
-                        scroll.set_offset(point(off.x, off.y + dy));
-                        window.refresh();
-                    })
-                    .child(c)
-                    .into_any_element()
+                self.settings_focused_chip("bg-rule-focused", c)
             } else {
                 c.into_any_element()
             };
@@ -779,7 +803,10 @@ impl MainView {
     /// lists them); `None` without parts.
     pub(crate) fn render_parts_count(&self, key: &Key) -> Option<AnyElement> {
         let n = self.reading.background.parts_of(key).len();
-        if n == 0 {
+        // Raw folds nothing: its parts are listed as they came in.
+        let raw =
+            self.reading.source == super::sources_vm::Source::Smart(super::sources_vm::Smart::Raw);
+        if n == 0 || raw {
             return None;
         }
         let (fg, bg) = self.palette.on_page().quiet_badge();

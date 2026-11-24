@@ -27,7 +27,7 @@ pub fn contract() -> &'static Contract {
 }
 
 /// The newest studio's contract (`tests/fixtures/openapi-current.json`,
-/// 5.14.0 from studio v0.65.0). The e2e checks a real studio's answers
+/// 6.2.0 from studio v0.69.0). The e2e checks a real studio's answers
 /// against it; the mock keeps to 5.0.0 (`contract()`), the oldest studio
 /// Burrow supports, so it isn't taught every new field.
 pub fn current() -> &'static Contract {
@@ -73,6 +73,27 @@ impl Contract {
             .iter()
             .filter_map(|(_, _, op)| op["operationId"].as_str().map(str::to_string))
             .collect()
+    }
+
+    /// The OAuth scopes a token needs to call the operation `id`: its
+    /// `security` entry for `ownerOAuth` (empty: any token may). `None`: no
+    /// such operation, or one only the owner's session may call.
+    pub fn oauth_scopes(&self, id: &str) -> Option<Vec<String>> {
+        let (_, _, op) = self
+            .ops
+            .iter()
+            .find(|(_, _, op)| op["operationId"].as_str() == Some(id))?;
+        let scopes = op["security"]
+            .as_array()?
+            .iter()
+            .find_map(|way| way.get("ownerOAuth"))?;
+        Some(
+            scopes
+                .as_array()?
+                .iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect(),
+        )
     }
 }
 

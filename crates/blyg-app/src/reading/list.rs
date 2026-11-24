@@ -319,6 +319,9 @@ impl MainView {
         }
         let backend = self.backend.clone();
         let (sub, rid) = key.clone();
+        // --- studio 0.71 --- opening counts as reading it, unless the
+        // blyg's "Count an entry as read" is "only when I mark it".
+        let mark = self.reading.count_read.on_open();
         let task = cx.background_spawn(async move {
             let fetched = (!tombstone).then(|| {
                 let base = backend.pinned_diff_base(&sub, &rid);
@@ -326,7 +329,9 @@ impl MainView {
                 let shown = backend.remote_shown_versions(&sub, &rid);
                 (base, log, shown)
             });
-            let _ = backend.mark_read(&sub, &rid);
+            if mark {
+                let _ = backend.mark_read(&sub, &rid);
+            }
             fetched
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -510,9 +515,14 @@ impl MainView {
                     vm::quote_pinned(&text, &vm::host(&item.origin), v.version, url.as_deref());
                 self.quote_into_thread(snippet, window, cx);
             }
-            "Fork this pin" => {
-                // Forking descends from pins only.
-                let Some(v) = pinned else { return };
+            "Fork this pin" | "Fork" => {
+                // Forking descends from pins only: the pin on screen, or a
+                // current version that is itself pinned.
+                let version = match pinned {
+                    Some(v) => v.version,
+                    None if o.current_is_pinned() => item.version,
+                    None => return,
+                };
                 // --- own fork --- yours forks from ⌘Y only.
                 if super::own::is_own_row(&item) {
                     return;
@@ -520,7 +530,7 @@ impl MainView {
                 let of = RemoteRef {
                     origin: item.origin.clone(),
                     id: item.remote_id.to_string(),
-                    version: v.version,
+                    version,
                     cited: None,
                 };
                 self.fork_pin(of, window, cx);
@@ -663,6 +673,7 @@ impl MainView {
                 version: item.version,
                 current: item.version,
                 pins: vec![],
+                current_pinned: false,
                 shelved: false,
             };
             return ["Subscribe", "Reply", "Open on web"]
@@ -693,6 +704,7 @@ impl MainView {
                 .filter(|v| !v.current && v.pinned)
                 .map(|v| v.version)
                 .collect(),
+            current_pinned: o.current_is_pinned(),
             shelved: self.on_reading_shelf(item), // --- shelf sync ---
         };
         // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).
@@ -781,6 +793,10 @@ impl MainView {
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
         let mut actions = vec![self.render_mode_toggle(cx)];
+        // --- reader order --- the Feed's own controls (kinds, order).
+        if let Some(c) = self.render_feed_controls(cx) {
+            actions.insert(0, c);
+        }
         if !stream {
             // --- reader folders --- the sources pane's button (⌥⌘S).
             actions.insert(0, self.render_sources_button(cx));
@@ -809,12 +825,20 @@ impl MainView {
                 .children(self.render_source_menu(cx))
                 .into_any_element();
         }
+        // --- agentic feed --- the edition draws itself in the list's place.
+        let agentic = self.reading.source
+            == super::sources_vm::Source::Smart(super::sources_vm::Smart::Agentic);
         let held = self.reading.rows.len();
-        let count = self.reading.shown.len();
+        let count = if agentic { 0 } else { self.reading.shown.len() };
         // --- reader folders --- a source with nothing in it (no search).
-        let empty_source = held > 0 && count == 0 && self.reading.query.trim().is_empty();
+        let empty_source = !agentic
+            && held > 0
+            && count == 0
+            && self.reading.query.trim().is_empty()
+            && !self.reading.feed_waiting(); // --- reader order ---
         let list = div()
             .id("reader-list-pane")
+            .debug_selector(|| "reader-list-pane".into())
             .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
             .flex_none()
             .h_full()
@@ -827,7 +851,10 @@ impl MainView {
             )
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
-            .when(held == 0, |d| {
+            .when(agentic && self.reading.opened.is_some(), |d| {
+                d.child(self.render_agentic_edition(false, cx))
+            })
+            .when(held == 0 && !agentic, |d| {
                 d.child(self.empty_note(crate::keymap::hint(
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
                 )))
@@ -835,32 +862,35 @@ impl MainView {
             .when(empty_source, |d| {
                 d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
             })
-            .when(held > 0 && count == 0 && !empty_source, |d| {
-                d.child(
-                    div()
-                        .id("reading-no-match")
-                        .p(px(16.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .text_size(px(13.))
-                                .text_color(p.ink)
-                                .child(vm::no_match(&self.reading.query)),
-                        )
-                        .child(
-                            div()
-                                .font_family(self.chrome())
-                                .text_size(px(11.5))
-                                .text_color(p.muted)
-                                .child(crate::keymap::hint(
-                                    "Searches titles, authors and text of the posts held \
+            .when(
+                held > 0 && count == 0 && !empty_source && !agentic && !self.reading.feed_waiting(),
+                |d| {
+                    d.child(
+                        div()
+                            .id("reading-no-match")
+                            .p(px(16.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(p.ink)
+                                    .child(vm::no_match(&self.reading.query)),
+                            )
+                            .child(
+                                div()
+                                    .font_family(self.chrome())
+                                    .text_size(px(11.5))
+                                    .text_color(p.muted)
+                                    .child(crate::keymap::hint(
+                                        "Searches titles, authors and text of the posts held \
                                      on this Mac · esc clears",
-                                )),
-                        ),
-                )
-            })
+                                    )),
+                            ),
+                    )
+                },
+            )
             .when(count > 0, |d| {
                 d.child(
                     uniform_list(
@@ -884,12 +914,22 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
-            // --- reader folders --- sources | list | post.
-            .child(self.render_three_panes(
-                list.into_any_element(),
-                self.render_reading_detail(body_font, cx),
-                cx,
-            ))
+            // --- reader folders --- sources | list | post. --- ux 0.28 ---
+            // The Agentic feed's edition is a page, as the studio's: with no
+            // post open it takes the reading pane, and no list column.
+            .child(if agentic && self.reading.opened.is_none() {
+                self.render_three_panes(
+                    div().into_any_element(),
+                    self.render_agentic_edition(true, cx),
+                    cx,
+                )
+            } else {
+                self.render_three_panes(
+                    list.into_any_element(),
+                    self.render_reading_detail(body_font, cx),
+                    cx,
+                )
+            })
             .children(self.render_compose_bar(cx)) // --- reading compose ---
             .into_any_element()
     }
@@ -947,6 +987,7 @@ impl MainView {
         let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
+            .debug_selector(move || format!("reading-row-{ix}"))
             .px(px(14.))
             .py(px(7.))
             .relative()
@@ -1053,7 +1094,21 @@ impl MainView {
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
-                    .child(div().flex_none().whitespace_nowrap().child(when)),
+                    // --- studio 0.71 --- the date opens the post (the row
+                    // does): it looks it, as in the Stream.
+                    .child(
+                        div()
+                            .id("reading-row-date")
+                            .debug_selector(move || format!("reading-row-date-{ix}"))
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .hover(|s| s.text_color(p.accent).underline())
+                            .tooltip(|_, cx| {
+                                cx.new(|_| super::Tip(super::stream::OPEN_ENTRY.into()))
+                                    .into()
+                            })
+                            .child(when),
+                    ),
             )
             .child(
                 div()
@@ -1316,7 +1371,7 @@ impl MainView {
                     cx.new(|_| {
                         super::Tip(
                             "More for this post: AI reply, Link post, → Notes, Hopper ›, \
-                             + Add to shelf, ⤳ Add to trail…"
+                             + Save, ⤳ Add to trail…"
                                 .into(),
                         )
                     })

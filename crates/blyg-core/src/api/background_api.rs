@@ -1,25 +1,38 @@
 //! --- background --- The owner-API calls for Background and Foreground
-//! (studio 0.61.0, contract 5.10.0; `crate::background`). Asked only of a
-//! studio whose capabilities list `setReadingPlacement`.
+//! (studio 0.61.0, contract 5.10.0; `crate::background`). The lens is
+//! read where the capabilities list `listReading` (owner:read; a studio
+//! before 0.61 refuses its filter); placements are sent only where they
+//! list `setReadingPlacement` (owner:manage).
 
 use serde_json::{Value, json};
 
 use super::{Api, CURSOR_RESTARTS, enc, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::background::{
-    BackgroundRules, Key, LENS_LIMIT, LENS_QUERY, Placement, placement_body, serves,
+    BackgroundRules, Key, LENS_LIMIT, LENS_QUERY, Placement, placement_body, places, serves,
 };
 
 /// Pages of the Background lens read at most (50 entries each).
 const MAX_PAGES: usize = 200;
 
 impl Api {
-    /// Whether this studio has Background: its capabilities' `operations`
-    /// list `setReadingPlacement`. A studio without capabilities (404, or
-    /// not readable) doesn't; a failed read is an error.
+    /// Whether this studio's Background lens may be read: its
+    /// capabilities' `operations` list `listReading` (the lens's answer
+    /// then decides: `background::is_lens`). A studio without capabilities
+    /// (404, or not readable) doesn't; a failed read is an error.
     pub fn serves_background(&self) -> Result<bool> {
+        self.capability(serves)
+    }
+
+    /// Whether this sign-in may place posts and blygs in Background: the
+    /// capabilities list `setReadingPlacement`.
+    pub fn places_background(&self) -> Result<bool> {
+        self.capability(places)
+    }
+
+    fn capability(&self, test: fn(&Value) -> bool) -> Result<bool> {
         match self.call("GET", "/api/capabilities", None) {
-            Ok(v) => Ok(serves(&v)),
+            Ok(v) => Ok(test(&v)),
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
             Err(_) => Ok(false),
         }
@@ -27,8 +40,10 @@ impl Api {
 
     /// Every entry of the studio's Background lens (`GET
     /// /api/reading?background=true`, every page), as served. One coherent
-    /// acquisition: a cursor that expires mid-walk starts it over.
-    pub fn background_lens(&self) -> Result<Vec<Value>> {
+    /// acquisition: a cursor that expires mid-walk starts it over. `None`:
+    /// the first page wasn't the lens (`background::is_lens`; a studio that
+    /// ignores the filter), and no more pages were read.
+    pub fn background_lens(&self) -> Result<Option<Vec<Value>>> {
         for _ in 0..=CURSOR_RESTARTS {
             match self.background_walk() {
                 Err(CoreError::CursorExpired) => continue,
@@ -38,7 +53,7 @@ impl Api {
         Err(CoreError::CursorExpired)
     }
 
-    fn background_walk(&self) -> Result<Vec<Value>> {
+    fn background_walk(&self) -> Result<Option<Vec<Value>>> {
         let mut out = Vec::new();
         let mut cursor: Option<String> = None;
         for _ in 0..MAX_PAGES {
@@ -48,6 +63,9 @@ impl Api {
             }
             let v = self.call("GET", &path, None)?;
             if let Some(items) = v.get("items").and_then(Value::as_array) {
+                if cursor.is_none() && !crate::background::is_lens(items) {
+                    return Ok(None);
+                }
                 out.extend(items.iter().cloned());
             }
             let next = v
@@ -62,7 +80,7 @@ impl Api {
                     ));
                 }
                 Some(n) => cursor = Some(n),
-                None => return Ok(out),
+                None => return Ok(Some(out)),
             }
         }
         Err(CoreError::Other(
@@ -111,5 +129,44 @@ impl Api {
         )?;
         BackgroundRules::from_settings(&v)
             .ok_or_else(|| CoreError::Other("your blyg didn't keep the Background rules".into()))
+    }
+
+    /// --- reader order --- The `readerOrder` of `GET /api/settings`
+    /// (studio 0.68, contract 6.1.0). `Ok(None)`: the studio doesn't have
+    /// it (a setting, not an operation: its absence is the gate).
+    pub fn reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        let v: Option<Value> = Self::optional(self.call("GET", "/api/settings", None))?;
+        Ok(v.and_then(|v| crate::order::ReaderOrder::from_settings(&v)))
+    }
+
+    /// `PATCH /api/settings {readerOrder}`: that key only; the stored value
+    /// back. Sent only to a studio whose settings had the key (an older one
+    /// refuses an unknown key with a 400).
+    pub fn put_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let v = self.call("PATCH", "/api/settings", Some(order.patch()))?;
+        crate::order::ReaderOrder::from_settings(&v)
+            .ok_or_else(|| CoreError::Other("your blyg didn't keep the reader order".into()))
+    }
+
+    /// --- studio 0.71 --- The `readerMarkRead` of `GET /api/settings`
+    /// (studio 0.70, contract 6.3.0). `Ok(None)`: the studio doesn't have it.
+    pub fn reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        let v: Option<Value> = Self::optional(self.call("GET", "/api/settings", None))?;
+        Ok(v.and_then(|v| crate::mark_read::MarkRead::from_settings(&v)))
+    }
+
+    /// `PATCH /api/settings {readerMarkRead}`: that key only; the stored
+    /// value back. Sent only to a studio whose settings had the key.
+    pub fn put_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        let v = self.call("PATCH", "/api/settings", Some(m.patch()))?;
+        crate::mark_read::MarkRead::from_settings(&v).ok_or_else(|| {
+            CoreError::Other("your blyg didn't keep when an entry counts as read".into())
+        })
     }
 }

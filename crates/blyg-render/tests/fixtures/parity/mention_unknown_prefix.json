@@ -1,0 +1,12 @@
+{
+  "name": "mention_unknown_prefix",
+  "kind": "fragment",
+  "md": "@nobody-driven, @sam's and @lin.",
+  "html": "<p>@nobody-driven, @sam's and <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

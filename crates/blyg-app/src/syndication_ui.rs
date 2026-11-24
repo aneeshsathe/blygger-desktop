@@ -10,10 +10,11 @@
 //! - **After a cross-post** (a browser macro on a published post): the
 //!   pane's bar offers "＋ Record copy" until the copy is recorded; it takes
 //!   the page on screen when it's the copy (`blyg_ext_crosspost::copy`).
-//! - **Reading** someone's post: their entries as plain links under the
-//!   header, "Also posted at host", as the author's claim: nothing is
-//!   fetched from the copies, nothing is folded or hidden, and no count is
-//!   shown.
+//! - **Reading** someone's post: their entries as plain links under its
+//!   source line, "the author says it is also at host" (Studio's words,
+//!   0.67.1), on every stream card and in the full view: the author's
+//!   claim. Nothing is fetched from the copies, nothing is folded or
+//!   hidden, and no count is shown.
 //!
 //! A child module of `app` (it reads `MainView`); hooks elsewhere are
 //! marked `// --- syndication ---`.
@@ -40,11 +41,11 @@ pub const SHEET_NOTE: &str = "Where you've posted this elsewhere. It's listed on
 pub const NOT_SERVED_NOTE: &str =
     "Your blyg doesn't keep this list yet (it needs a newer studio): it stays on this Mac.";
 
-/// The reader's label.
-pub const ALSO_POSTED: &str = "Also posted at";
+/// The reader's label, as Studio words it (`CopiesElsewhere`, 0.67.1).
+pub const ALSO_AT: &str = "the author says it is also at";
 
 /// Its tooltip.
-pub const ALSO_POSTED_TIP: &str =
+pub const ALSO_AT_TIP: &str =
     "Where the author says they posted this too. Burrow doesn't check or fetch the copies.";
 
 /// The sheet.
@@ -489,6 +490,20 @@ impl MainView {
     /// post's copies elsewhere as plain links. Nothing is fetched; nothing
     /// is folded or hidden.
     pub(crate) fn render_reading_copies(&self, item: &ReadingItem) -> Option<AnyElement> {
+        self.copies_line(item, "reading-copies")
+            .map(|d| d.mb(px(10.)).into_any_element())
+    }
+
+    /// Hook (a stream card, under its source line): the same line. A click
+    /// on a copy opens it and leaves the card alone.
+    pub(crate) fn render_stream_copies(&self, item: &ReadingItem) -> Option<AnyElement> {
+        self.copies_line(item, "stream-copies")
+            .map(IntoElement::into_any_element)
+    }
+
+    /// "the author says it is also at host ↗, host ↗": `None` for a
+    /// withdrawn post or one with no `https:` copies.
+    fn copies_line(&self, item: &ReadingItem, id: &'static str) -> Option<Stateful<Div>> {
         if item.state == "tombstone" {
             return None;
         }
@@ -504,8 +519,8 @@ impl MainView {
         let n = links.len();
         Some(
             div()
-                .id("reading-copies")
-                .mb(px(10.))
+                .id(id)
+                .debug_selector(move || id.to_string())
                 .flex()
                 .flex_wrap()
                 .items_center()
@@ -513,22 +528,25 @@ impl MainView {
                 .font_family(self.chrome())
                 .text_size(px(11.5))
                 .text_color(p.muted)
-                .tooltip(|_, cx| cx.new(|_| reading::Tip(ALSO_POSTED_TIP.to_string())).into())
-                .child(ALSO_POSTED)
+                .tooltip(|_, cx| cx.new(|_| reading::Tip(ALSO_AT_TIP.to_string())).into())
+                .child(ALSO_AT)
                 .children(links.into_iter().enumerate().map(move |(i, (host, url))| {
                     div()
-                        .id(ElementId::Name(format!("reading-copy-{i}").into()))
+                        .id(ElementId::Name(format!("{id}-{i}").into()))
+                        .debug_selector(move || format!("{id}-{i}"))
                         .cursor_pointer()
                         .text_color(p.ink)
                         .hover(|s| s.text_color(p.accent))
-                        .on_click(move |_, _, cx| cx.open_url(&url))
+                        .on_click(move |_, _, cx| {
+                            cx.stop_propagation();
+                            cx.open_url(&url)
+                        })
                         .child(if i + 1 < n {
-                            format!("{host} ↗ ·")
+                            format!("{host} ↗,")
                         } else {
                             format!("{host} ↗")
                         })
-                }))
-                .into_any_element(),
+                })),
         )
     }
 

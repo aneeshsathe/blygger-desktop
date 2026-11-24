@@ -351,6 +351,12 @@ impl Store {
         sub_kinds: &HashMap<SubId, SubscriptionKind>,
     ) -> Result<(bool, Vec<usize>)> {
         let incoming = listed;
+        // A re-key takes the old row's place, its thumb, shelf and hopper
+        // places with it, on the list's word that the old id is gone: not
+        // on a newer contract's (both rows stay; `lists_prune`).
+        // `Engine::read_page` reads the contract again before a page when
+        // the check is from an earlier pull, so `Recheck` here is rare.
+        let re_key = self.lists_prune_now() == super::Removal::Now;
         let mut changed = false;
         let mut written = Vec::new();
         // In slices of `MERGE_CHUNK` rows, each its own transaction, so a
@@ -436,7 +442,7 @@ impl Store {
                 // Same subscription, same page, different id that the server no
                 // longer lists: an RSS guid that changed on edit. Same post.
                 let renamed: Option<RemoteId> = match &it.page {
-                    Some(page) if !page.is_empty() => {
+                    Some(page) if re_key && !page.is_empty() => {
                         let mut st = tx.prepare_cached(
                         "SELECT remote_id FROM reading WHERE subscription_id = ?1 AND page_url = ?2 AND remote_id <> ?3",
                     )?;
@@ -502,8 +508,23 @@ impl Store {
     }
 
     /// Remove the held rows `gone(subscription, remote id, observed_at)`
-    /// picks. True if any went.
+    /// picks. True if any went. Nothing goes on a newer contract's word
+    /// (`lists_prune`).
     fn prune_reading(&self, gone: impl Fn(&SubId, &RemoteId, &str) -> bool) -> Result<bool> {
+        if self.lists_prune() == crate::api::Prune::Withheld {
+            return Ok(false);
+        }
+        self.remove_reading(gone)
+    }
+
+    /// Unsubscribed here: that subscription's rows go now. Your removal,
+    /// not a list's word, so it doesn't wait on the contract (on a newer
+    /// one no list would take them). True if any went.
+    pub fn drop_subscription_rows(&self, sub: &SubId) -> Result<bool> {
+        self.remove_reading(|s, _, _| s == sub)
+    }
+
+    fn remove_reading(&self, gone: impl Fn(&SubId, &RemoteId, &str) -> bool) -> Result<bool> {
         let mut changed = false;
         let mut c = self.conn();
         let tx = c.transaction()?;

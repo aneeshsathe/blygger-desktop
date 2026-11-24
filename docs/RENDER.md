@@ -57,10 +57,9 @@ block scope is rendered on its own, so here the preview splits its output
 at each such line (outside code, with any attached `>` run): the prose on
 either side becomes its own `div.blyg-tk-gen`, the directive stays in the
 document for the thread walk, and whitespace-only prose is dropped. That
-is what the decision says publish produces. Since 0.59 the studio bakes
-the quote too, but inside the block's wrapper, so the parity test rewrites
-the studio's shape to this one for four fixtures (`SPEC_BLOCK_SPLIT`, see
-"Parity"). Since decision #102
+is what the decision says publish produces. Studio 0.59 baked the quote
+too, but inside the block's wrapper; since 0.67 (#161) it closes the
+wrapper before the quote and reopens it after, as here. Since decision #102
 (protocol 0.4 §5.7) this shape is the rule: a baked quote is never inside
 a `blyg-tk-gen` wrapper. An inline span that a quote interrupts closes
 before it and reopens after it (`<span>one</span>` | quote |
@@ -99,8 +98,9 @@ keep listed attributes (`alt class title width height colspan rowspan
 scope datetime open dir lang`), `data-blyg-*`, an `<a href>` that is
 http(s), mailto or tel, and an `<img src>` that is http(s). Scripts,
 styles, iframes, SVG, forms and the like go with their content; other
-unknown tags are unwrapped. So a thread preview loses table alignment,
-`<ol start>` and `loading` on images. Fragments are not sanitized, in the
+unknown tags are unwrapped. So a thread preview loses table alignment and
+`loading` on images; an `ol` keeps an integer `start` (studio 0.69,
+decision #114). Fragments are not sanitized, in the
 Worker or here.
 
 **Partial quotes** (spec §16.4, ported from blygger-studio 0.8.3's
@@ -114,14 +114,53 @@ whitespace character), rendered and flattened by `selection_text`: block
 boundaries become `\n`, whitespace inside a block collapses, empty blocks
 drop. It must be a substring of the `selection_text` of the target's
 `content_html`. If it is, the bake is `blockquote.blyg-transclusion.blyg-partial`
-(same `data-blyg-*` attributes) holding the selection's escaped plain text,
-one `<p>` per line, and the quote's `Quote::selector` carries the wire's
+(same `data-blyg-*` attributes) holding the selection's escaped plain text
+(`partial_bake_body`, below), and the quote's `Quote::selector` carries the wire's
 `selector` (`exact`, plus up to 32 UTF-16 units of `prefix`/`suffix`).
 Otherwise the unresolved marker shows "the attached blockquote is empty" or
 "quoted passage not found in the target's version N". The provenance line
 of a partial quote reads "excerpt of vN". Provenance injection matches the
 `blyg-transclusion` class token (skipping `unresolved`), so a partial quote
 keeps later lines paired with their quotes.
+
+**Text content** (spec §2, decision #118, protocol 0.4 r23; studio 0.71
+`BLOCK_BOUNDARY`). `selection_text`, `selection_lines` and
+`plain_text_from_html` (which also reads a formula as `$TeX$`) share one boundary list (`links.rs` `BOUNDARY`): the
+start tag **and** the end tag of `p`, `h1`–`h6`, `li`, `ul`, `ol`, `dl`,
+`dt`, `dd`, `blockquote`, `pre`, `div`, `table`, `thead`, `tbody`, `tfoot`,
+`tr`, `td`, `th`, `figure`, `figcaption`, `section`, `article`, `aside`,
+`header`, `footer`, `details` and `summary`, and every `br` and `hr`, with
+attributes, in any ASCII case; a longer name (`<prefix>`, `<bra>`) is not
+one. A boundary is a line break in `selection_text` and a space in
+`plain_text_from_html`. Before 0.71 only end tags of a shorter list counted,
+so a tight list item's text ran into its nested list ("tools a pencil") and
+a table row was one line; now those are two lines and one line per cell. A
+draft quoting either as one line no longer resolves ("quoted passage not
+found"), which is what the studio's publish now says too. Other users: the
+Reader's partial-quote check (`reading/vm.rs` `quote_block`, via
+`selection_text`) now matches a browser selection across a tight nested
+list, and no longer one across table cells (that one is quoted as an
+ordinary blockquote); an unlabelled `[[id]]` link's excerpt
+(`excerpt_from_html`) puts a space between table cells. The stub chooser
+uses `normalize_selection` only, which has no boundaries to change.
+
+**List structure in a partial bake** (decision #114, §16.15; studio 0.69
+`partialBakeBody`). `selection_lines` reads the same lines as
+`selection_text`, each with the lists it starts in (`ListLevel`: which list,
+`ul` or `ol`, and the item's number, an `ol`'s integer `start` counted in).
+`partial_bake_body` maps the quoted lines onto the target's at the first
+match and bakes a line that is a list item there as an `<li>` in a list like
+the target's (an `ol` not starting at 1 gets `start`), anything else as a
+`<p>`. Nesting is kept where both lines it joins are quoted; an outer item
+none of whose own text is quoted is not invented, so a nested item quoted
+with the outer item after it bakes as two lists side by side
+(`tr_partial_list_nested_alone`). An item's single line is bare text in its
+`<li>`; with more (a loose item's paragraphs, or its text and a nested list)
+each line is a `<p>`. The quoter's own markers mean nothing:
+`> - Small tools` over a paragraph bakes a `<p>`, and plain lines over a
+list bake a list. The text content of the body is the selector's `exact`
+again (`tests/it/text_content.rs` checks it on every selection of five
+sources).
 
 **The bracket grammar** (`grammar.rs`, the studio's `grammar.ts`, protocol
 0.4 §10.1, studio 0.47). Every site that reads `![[id]]` or `[[id]]` goes
@@ -160,7 +199,11 @@ label included, as the studio reports it.
    `publish_grammar_errors(md, kind)` finds it without a render, and
    `blyg_core::grammar::publish_error` turns it into the message the publish
    path refuses with before anything is sent (`LiveBackend::publish_with`).
-   The studio (0.59) still publishes it as text.
+   Since 0.67 (#161) the studio refuses it at publish too, in the body or
+   in a block scope's output (model.ts `publishScoped`, `directiveLines`),
+   and the reason (`Display`) is its words: "a fragment can't quote another
+   item: make this a thread, or link it with [[id]]". Its preview still
+   reports nothing, so the parity harness adds what publish would refuse.
 2. The `@vN` reservation is the own-line form, labelled or not (above).
    Reported as `ReservedVersion` in both kinds.
 3. Code is CommonMark's block structure (`markdown::code_ranges`, from
@@ -174,8 +217,10 @@ label included, as the studio reports it.
    `{origin}{f|t}/{id}/` convention. The local store does not hold another
    origin's `item` template (§6.1), so the default path is used. The
    provenance line and the Reader's own links are presentation and keep the
-   convention, which §5.8 still allows there. The studio's `blygItemUrl`
-   still guesses.
+   convention, which §5.8 still allows there. Since 0.67 (#161) the studio
+   links its item document too, through the origin's `item` template when
+   the subscription holds one (`surface.ts` `itemUrl`); Burrow's store holds
+   no templates, so it always uses the default `items/{id}.json`.
 6. An author's relative URL resolves by RFC 3986 against the item's
    identity origin (`absolutize_html`, run last when `RenderOpts::mount` is
    absolute): `media/x.png` → `{origin}media/x.png`, `/archive/` →
@@ -244,6 +289,24 @@ to it), which the caller keeps instead of its own label. Its ids are read
 looser (either case), like its directive grammar; labels are read as the
 grammar reads them.
 
+**`@handle` mentions** (`handles.rs`, contacts.ts `consumeHandles`, studio
+0.56). On a blyg that rewrites handles, an `@handle` naming a contact
+(`Resolver::contact`, any case) becomes `[@Name](url)` before anything
+else, and that link the contact's h-card after rendering, through the
+`[[id]]` token splice. Handles in code, quoted lines, bracket grammar,
+Markdown links and autolinks are left alone. Since studio 0.66 (#158) a
+handle reads in natural grammar: a word that names no contact falls back
+to its longest prefix ending before a `-` or `_` that does, so `@lin's`,
+`@lin-driven` and `@lin_ish` all name Lin, while a longer handle in the
+book (`@lin-k-led` → `lin-k`) still wins. Only `@` and the handle become
+the link; the rest of the word stays. Studio 0.56–0.65 publish only a
+whole-token handle, so the fallback runs only when
+`Resolver::natural_handles` says so: the app's resolver asks
+`blyg_core::contacts::natural_grammar` of the studio version `blyg.json`
+names (0.66 or later). The version is kept in the store (`studio.version`
+meta, learnt from the update state and the contacts refresh); one never
+known reads as older, so the preview never links what publish won't.
+
 A line map follows every rewrite (`linemap.rs`), so each top-level block can
 carry `data-line="N"` (0-based source line) for source ↔ preview jumping.
 
@@ -300,7 +363,11 @@ pub struct Found { origin: Option<String>, id, version: u32, kind: ItemKind, con
 
 pub struct Quote { id, version: u32, origin: Option<String>, line: usize, selector: Option<TextQuoteSelector> }
 pub struct TextQuoteSelector { exact: String, prefix: Option<String>, suffix: Option<String> }
-pub fn selection_text(html: &str) -> String;           // markdown.ts selectionText (§16.4 normalizer)
+pub fn selection_text(html: &str) -> String;           // markdown.ts selectionText (§2 text content, §16.4 normalizer)
+pub fn selection_lines(html: &str) -> Vec<SelectionLine>; // markdown.ts selectionLines: lines + the lists each starts in
+pub struct SelectionLine { text: String, lists: Vec<ListLevel> }
+pub struct ListLevel { list: usize, tag: &'static str /* "ul" | "ol" */, ordinal: i64 }
+pub fn partial_bake_body(target_html: &str, exact: &str) -> String; // transclusion.ts partialBakeBody (#114)
 pub fn normalize_selection(text: &str) -> String;      // markdown.ts normalizeSelection
 pub fn selection_from_quote(quote_md: &str) -> String; // transclusion.ts selectionFromQuote
 pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteSelector>;
@@ -386,12 +453,57 @@ node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/studio/clone
 cargo test -p blyg-render
 ```
 
-**Reference version: studio 0.64.1** (tag `v0.64.1`, unpatched),
-re-generated 2026-11-19 from 0.49.1 (markdown-it 14.3.3). The 0.49.1
+**Reference version: studio 0.71.0** (tag `v0.71.0`, unpatched),
+re-generated 2026-11-23 from 0.68.0 (markdown-it 14.3.3). Of the 293
+existing cases one changed: `tr_sanitize_markdown` keeps `<ol start="3">`
+(0.69's sanitizer, #114), which Burrow already did, so its r21 rewrite is
+gone. No other output changed: 0.70 touched no rendering, and 0.71's §2
+boundaries (#118) change no existing case's text. 17 cases were added
+(310), over new fake-store items with lists, a table, a definition list,
+`details`, `figure` and `section` (`…vq1`–`…vq5`, and an imported list
+starting at 7, `…xyz07`): eleven `tr_partial_list_*` cases for #114's list
+bake (an ordered run, a paragraph then an item, a cut inside one item, the
+quoter's markers over a list and over prose, a tight parent with its child,
+the same as one line, a nested item with the outer item after it, a loose
+item's paragraphs and its nested list, a remote list's `start`), four
+`tr_partial_text_*` cases for §2 (table cells as lines, a row as one line,
+`dt`/`dd`, `details`/`summary`/`figure`), a whole quote of the same item
+and `link_label_text_blocks` (an excerpt across cells and sections). Burrow
+followed every one: 295 of the 310 matched before the port, 310 after. One
+more case, `link_label_math` (311), found an older Burrow bug: since 0.64
+(#105) the studio's `plainTextFromHtml` reads a formula as its TeX in
+dollars (`mathAsTex`), so an unlabelled `[[id]]` link to an item with a
+formula reads `“Euler: $e^{i\pi}+1=0$ holds.”`, where Burrow ran the
+MathML's text into the annotation (`ee^{i\pi}+1=0`). `plain_text_from_html`
+does it now (`math_as_tex`); `selection_text` keeps no such exception, as
+§2 has none. No difference needed a rewrite or a divergence entry, and no
+new studio bug was found.
+
+**Studio 0.68.0**, re-generated 2026-11-21 from 0.64.1 (markdown-it 14.3.3). Eight cases were
+added (293): five `mention_*` cases for natural grammar (0.66 #158; the fake
+store has contacts now, `lin` and `Lin-K`), two fragments whose generated
+output holds a directive line, and a block scope with two quotes in a row.
+Of the 285 existing cases 13 changed, all from studio 0.67's #161, which
+took up three r15 rules Burrow already followed, so their rewrites are gone:
+
+- A fragment's own-line `![[id]]` (in its text or in generated output) is a
+  publish error, with Studio's reason, "a fragment can't quote another item:
+  make this a thread, or link it with [[id]]" (`gen_parity.mjs` reads it
+  from `model.ts`). The `SPEC_ERRORS` entries for it went.
+- A link to another blyg's item with no `page` names its item document
+  (`items/{id}.json`); the no-`page` rewrite went.
+- A quote baked in a generated block sits between two `div.blyg-tk-gen`
+  wrappers, never inside one; `SPEC_BLOCK_SPLIT` went.
+
+One studio quirk is rewritten instead (`SPEC_REWRITES`): between two quotes
+in a row the studio leaves an empty `div.blyg-tk-gen`, which #102 (9) drops
+(`tr_block_tk_two_quotes`).
+
+**Studio 0.64.1** (re-generated 2026-11-19 from 0.49.1). The 0.49.1
 fixtures could not be regenerated against 0.59 or later until the
 generator moved to Miniflare 4. The harness now follows 0.64.1's preview
 handler: comments to self dropped (`previewComments`), `@handle` mentions
-resolved (`consumeHandles`; the fake store has no contacts), tangle spans
+resolved (`consumeHandles`; the fake store had no contacts until 0.68), tangle spans
 (`previewTangles`, threads only), the generated blocks passed to the walk,
 and `injectNestedProvenance` after `injectProvenance`.
 
@@ -410,9 +522,8 @@ Of the 257 existing cases 15 changed, all from studio changes:
 - An own-line `![[id]]` in a generated block is baked as a quote, inside
   the block's `div.blyg-tk-gen` (the four decision-#60 cases). This crate
   already baked them, between two wrappers, as #102 (9) says; the parity
-  test now rewrites the studio's shape to the spec's (`SPEC_BLOCK_SPLIT`)
-  and compares the rest byte for byte, so they are no longer known
-  divergences.
+  test rewrote the studio's shape to the spec's until studio 0.67 took the
+  spec's shape (above).
 - `tk_inline_dollar` holds a formula now (maths, below).
 
 28 cases were added: maths (`math_*`: inline, display, display inside a
@@ -487,10 +598,9 @@ from its list", so every list only shrinks:
 
 Bug emulation: none. The patched-Worker bugs (patch 9) and the 0.47.0
 label bugs were dropped earlier; the three Worker behaviours under
-"Worker behaviour pinned as it is" are still the studio's in 0.64.1, and
-the r15 rewrites below that 0.64.1 still needs (#102 (9) inline spans, the
-reserved labelled `@vN`, the no-`page` link, the fragment directive error)
-remain.
+"Worker behaviour pinned as it is" are still the studio's in 0.71.0, and
+the r15 rewrites that 0.71.0 still needs (#102 (9) inline spans and the
+empty wrapper between two quotes, the reserved labelled `@vN`) remain.
 
 ### Earlier syncs
 
@@ -554,15 +664,24 @@ block's quotes inside the block, #105), so a re-sync is its own task. The
 rewrites follow the spec where the studio differs; studio 0.59 already
 bakes `data-blyg-label` exactly as rewritten.
 
-Results (studio 0.64.1). Tests compare after collapsing whitespace between
+**Protocol 0.4 r21 rewrite** (2026-11-22, decision #114, §16.15; studio
+0.69's sanitizer; gone with the 0.71.0 fixtures). `blyg-render` keeps an
+integer `start` on `ol`, so `SPEC_REWRITES` restored it in
+`tr_sanitize_markdown`, whose 0.64.1 fixture dropped it (the spec's reader
+case `whole-list-start-kept`, `docs/CONFORMANCE.md`). #114's other half, a
+partial quote of list items that keeps their structure, came with the
+re-sync to 0.71 (above); until then Burrow flattened those items to
+paragraphs.
+
+Results (studio 0.71.0). Tests compare after collapsing whitespace between
 tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
-`tr_block_tk_directive_attached`) match after the `SPEC_BLOCK_SPLIT`
-rewrite; `tests/it/preview.rs` still pins this crate's output for them.
+`tr_block_tk_directive_attached`) match the studio's own output since 0.67;
+`tests/it/preview.rs` still pins this crate's output for them.
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 285 (258 byte-identical; 15 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes (lists, §2 text content), `[[id]]` links, labels, sanitizing, maths, tangling, comments, `@handle` mentions) | 311 | 311 (290 byte-identical; 5 rewritten to r15; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |
@@ -688,9 +807,12 @@ five local items and one imported item in `fake_store.json`:
 cases: found, emphasis in the quote, paragraph breaks, text inside a nested
 quote, not found, empty, detached by a blank line, a remote target, an
 unknown target (the run is still consumed), partial then whole (provenance
-pairing), and loose `>` markers. Unit tests ported from the studio's
-`selection.test.ts` and `partial-transclusion.test.ts` cover the normalizer
-and selector context as well.
+pairing), and loose `>` markers; since 0.71 also the eleven
+`tr_partial_list_*` and four `tr_partial_text_*` cases (above). Unit tests
+ported from the studio's
+`selection.test.ts`, `partial-transclusion.test.ts` and
+`partial-list-bake.test.ts` cover the normalizer, selector context and the
+list bake as well (`tests/it/text_content.rs`).
 
 **Provenance on the preview is the desktop's own combination.** Since
 studio 0.59 the thread preview adds provenance lines (`injectProvenance`,

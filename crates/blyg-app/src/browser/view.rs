@@ -177,6 +177,10 @@ pub struct Browser {
     /// the page its keyboard this once, or WebKit would drop the page's
     /// selection before the click reads it.
     keep_keyboard: bool,
+    /// --- esc --- This click was one `keep_keyboard` let through, so the
+    /// window's own click handler (`reclaim_keyboard_on_click`) leaves the
+    /// page its keyboard too.
+    pub(crate) kept_click: bool,
     teardown: Option<Task<()>>,
     dark: Option<bool>,
     /// --- onboarding --- The tutorial's sample page is up: what it replaced
@@ -223,6 +227,7 @@ impl Browser {
             selected: false,
             sel_watch: None,
             keep_keyboard: false,
+            kept_click: false,
             teardown: None,
             dark: None,
             tour: None,
@@ -440,9 +445,12 @@ impl MainView {
         }
         let (cmd, alt) = crate::app::studio::webview::take_click_modifiers()
             .or_else(crate::platform::held_link_modifiers)
+            // Last, the keys the window saw: a link followed outside a web
+            // view on a Mac (Windows reads the keyboard above, so this is
+            // never reached there in the app).
             .unwrap_or_else(|| {
                 let m = window.modifiers();
-                (m.platform, m.alt)
+                (crate::keymap::secondary_held(&m), m.alt)
             });
         match super::link_action(self.prefs.open_links, cmd, alt) {
             super::LinkAction::Pane(mode) => self.open_url_in_app(&url, mode, window, cx),
@@ -850,8 +858,14 @@ impl MainView {
         }
     }
 
-    fn browser_event(&mut self, ev: BrowserEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn browser_event(
+        &mut self,
+        ev: BrowserEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match ev {
+            BrowserEvent::Escape => self.escape_from_pane(window, cx), // --- esc ---
             BrowserEvent::Changed => {
                 self.browser_refresh_state(cx);
                 if self.browser.page.loading {
@@ -1242,6 +1256,8 @@ impl MainView {
             .capture_action(fwd::<SelectAll>("selectAll:", cx))
             .capture_action(fwd::<Undo>("undo:", cx))
             .capture_action(fwd::<Redo>("redo:", cx))
+            // --- esc --- a click in the app takes the keyboard back (Windows).
+            .map(|d| self.esc_click_reclaims(d, cx))
     }
 
     /// The pane, over everything below the title bar.
@@ -1321,6 +1337,7 @@ impl MainView {
                         MouseButton::Left,
                         cx.listener(|this, _, _, _| {
                             if std::mem::take(&mut this.browser.keep_keyboard) {
+                                this.browser.kept_click = true; // --- esc ---
                                 return; // --- selection ---
                             }
                             this.browser.with(|s| s.focus_parent());

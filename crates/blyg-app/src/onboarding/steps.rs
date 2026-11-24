@@ -144,13 +144,26 @@ pub enum Key {
     // --- 0.24.0 --- (studio 0.61)
     /// The sample post went to Background (b, or its chip).
     Background,
-    /// The sample post went on the shelf (+ Add to shelf).
+    /// The sample post went on the shelf (+ Save).
     ShelfReading,
     /// Reading's Shelf lens is the source.
     ShelfLens,
     // --- 0.25.0 ---
     /// Reading's Mentions feed is the source.
     MentionsFeed,
+    // --- 0.28.0 --- (studio 0.68)
+    /// The Feed was switched to Chronological (its own control).
+    FeedOrder,
+    /// Reading's Raw is the source.
+    RawTab,
+    /// Reading's Agentic feed is the source (studio 0.69's edition).
+    AgenticTab,
+    /// --- studio 0.71 --- A Stream card's date was clicked: its post is
+    /// open in the side pane.
+    StreamDate,
+    /// --- studio 0.71 --- ⌘G on the blyg stopped at the checkpoint: its
+    /// sheet is up.
+    TkCheckpoint,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -237,6 +250,10 @@ pub enum Setup {
     FullEditor,
     /// The draft with a TK scope appended, caret inside it.
     Tk(&'static str),
+    /// --- studio 0.71 --- The draft with a gap naming a link the tour's
+    /// blyg can't read and one it can, caret inside, in ⌘2; ⌘G goes to the
+    /// blyg for this step only (the canned AI everywhere else).
+    TkOnBlyg,
     /// A thread draft whose generated text echoed a quote its instruction
     /// didn't name, in the full editor (⌘3).
     EchoedQuote,
@@ -296,6 +313,10 @@ pub enum Setup {
     CrossPost,
     /// The ⇧⌘P Extensions palette, open.
     Palette,
+    /// --- auto cross-post --- Posts, the sample's published post open and
+    /// set to cross-post to Bluesky (for the session; the tour's sample
+    /// cross-post lists its sites).
+    AutoCrossPost,
     /// A sample consent sheet for markdown-notes (answering it writes
     /// nothing).
     Consent,
@@ -313,6 +334,8 @@ pub enum Setup {
     ShelfLens,
     /// Reader on All, with posts that quote, reply to, link to and name you.
     MentionsFeed,
+    /// --- 0.28.0 --- Reader on the Feed, pace-layered.
+    FeedOrder,
     /// --- 0.26.0 --- The published sample post open (its lineage line
     /// under it), with Settings open over it at Quiet writing.
     QuietWriting,
@@ -577,6 +600,28 @@ pub const STEPS: &[Step] = &[
         settle: true,
         stay: false,
     },
+    // --- 0.28.0 --- studio 0.71: ⌘G on the blyg stops at a link it can't
+    // read, and lists what it read.
+    Step {
+        id: "tk-checkpoint",
+        since: "0.28.0",
+        title: ui_text("When your blyg can't read a link"),
+        caption: ui_text(
+            "With your blyg as the AI provider (blygger-studio 0.70 or later), ⌘G has it read \
+                  every link in the gap first. One of these two can't be read, so it stops, \
+                  saves nothing and asks: “Details” (d) says which link and why, ⏎ generates \
+                  anyway, esc leaves the draft as it was. Once it fills the gap, what it read \
+                  is listed under the preview, and again in the Publish sheet. Press ⌘G.",
+        ),
+        keys: &[Key::TkCheckpoint],
+        key_label: ui_text("⌘G"),
+        region: Region::Editor,
+        button: Some("Generate"),
+        setup: Setup::TkOnBlyg,
+        pause_ms: 1200,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "shorten",
         since: "0.1.0",
@@ -639,16 +684,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf",
         since: "0.18.0",
-        title: ui_text("Keep it on your shelf"),
+        title: ui_text("Keep it in Saved"),
         caption: ui_text_per_platform(
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             ⌥⌘B adds the open post to your shelf: 📚 marks it and it stays at the top of the \
-             list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
-             the shelf syncs with your blyg; otherwise it's kept on this Mac.",
+             ⌥⌘B saves the open post: 📚 marks it and it stays at the top of the list. ⌘B \
+             opens Saved (it was the shelf), and 1–9 opens a post in it. With blygger-studio \
+             0.61 Saved syncs with your blyg; otherwise it's kept on this Mac.",
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             Ctrl+Shift+A adds the open post to your shelf: 📚 marks it and it stays at the top \
-             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. With \
-             blygger-studio 0.61 the shelf syncs with your blyg; otherwise it's kept on this \
+             Ctrl+Shift+A saves the open post: 📚 marks it and it stays at the top of the \
+             list. Ctrl+B opens Saved (it was the shelf), and 1–9 opens a post in it. With \
+             blygger-studio 0.61 Saved syncs with your blyg; otherwise it's kept on this \
              computer.",
         ),
         keys: &[Key::Shelf],
@@ -1315,7 +1360,7 @@ pub const STEPS: &[Step] = &[
         title: ui_text("Reader: sources, posts, post"),
         caption: ui_text(
             "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All, Shelf, and Background, where set-aside and withdrawn posts go), Your blyg \
+                  the Feed, Saved, Background, where set-aside and withdrawn posts go, and Raw), Your blyg \
                   (your own posts, never unread or counted), your hoppers, your folders, which \
                   stay on this Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
                   Stream again.",
@@ -1326,6 +1371,88 @@ pub const STEPS: &[Step] = &[
         button: None,
         setup: Setup::Stream,
         pause_ms: 3000,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.28.0 --- studio 0.68's reading tabs: the pace-layered Feed, Raw.
+    Step {
+        id: "feed-order",
+        since: "0.28.0",
+        title: ui_text("The Feed, pace-layered"),
+        caption: ui_text(
+            "Reading has blygger-studio 0.68's tabs in the sources: “Feed”, Mentions, \
+                  “Agentic feed”, “Saved” (the shelf, renamed), Background and “Raw”. The Feed \
+                  is pace-layered: new posts arrive on top and sink as others come, more slowly \
+                  the more their blyg pinned them, and a new version climbs one place. Click \
+                  “Chronological” for newest first; your blyg remembers the choice.",
+        ),
+        keys: &[Key::FeedOrder],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "raw-tab",
+        since: "0.28.0",
+        title: ui_text("Raw: what came in"),
+        caption: ui_text(
+            "“Raw” lists what came in from the blygs you read, newest first, as it arrived: \
+                  nothing moved to Background, nothing folded under a thread. Small edits, \
+                  refreshed quotes and posts their blyg followed within 15 minutes go to \
+                  Background now; Settings (⌘,) has a switch for each rule. Click Raw.",
+        ),
+        keys: &[Key::RawTab],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.28.0 --- studio 0.71: a card's date opens it; when an entry
+    // counts as read.
+    Step {
+        id: "count-read",
+        since: "0.28.0",
+        title: ui_text("Open a post from its date"),
+        caption: ui_text(
+            "Click the date on the highlighted card: its post opens in full beside the \
+                  Stream (in the Reader, a row's date opens it too). On a blyg with \
+                  blygger-studio 0.70 or later, Settings (⌘,) › READ MARKS has “Count an entry \
+                  as read”: when a card has been on screen for about a second, when you open \
+                  it, or only when you mark it.",
+        ),
+        keys: &[Key::StreamDate],
+        key_label: ui_text("click"),
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.28.0 --- studio 0.69: the Agentic feed's edition.
+    Step {
+        id: "agentic-edition",
+        since: "0.28.0",
+        title: ui_text("Your assistant's edition"),
+        caption: ui_text(
+            "On blygger-studio 0.69 an assistant can write you an edition: your reading as a \
+                  digest, in sections, each post with a headline, a short summary and why it's \
+                  there. The Agentic feed tab shows it, under the name your blyg gives it (here, \
+                  Morning paper). Click it; j/k step through its posts and ⏎ opens one.",
+        ),
+        keys: &[Key::AgenticTab],
+        key_label: ui_text("click"),
+        region: Region::Reader,
+        button: None,
+        setup: Setup::FeedOrder,
+        pause_ms: 1800,
         settle: false,
         stay: true,
     },
@@ -1374,10 +1501,10 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-add",
         since: "0.24.0",
-        title: ui_text("Anyone's post on your shelf"),
+        title: ui_text("Save anyone's post"),
         caption: ui_text(
-            "+ Add to shelf, in ⋯ More under the post, keeps it to hand: someone else's \
-                  post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
+            "“+ Save”, in ⋯ More under the post, keeps it to hand in Saved: someone else's \
+                  post or yours, up to 50, in your order. With blygger-studio 0.61 Saved \
                   syncs with your blyg, so the studio and your other computers share it.",
         ),
         keys: &[Key::ShelfReading],
@@ -1392,11 +1519,11 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-lens",
         since: "0.24.0",
-        title: ui_text("The Shelf lens"),
+        title: ui_text("Saved"),
         caption: ui_text(
-            "Shelf, in the sources, lists everything on your shelf in your order, as the \
-                  studio's Shelf lens does. A shelved post stays here even after it goes to \
-                  Background. Click Shelf.",
+            "“Saved”, in the sources, lists everything you saved in your order, as the \
+                  studio's Saved tab does (it was the Shelf). A saved post stays here even \
+                  after it goes to Background. Click Saved.",
         ),
         keys: &[Key::ShelfLens],
         key_label: ui_text("click"),
@@ -1686,6 +1813,27 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- auto cross-post (0.28.0) ---
+    Step {
+        id: "auto-crosspost",
+        since: "0.28.0",
+        title: ui_text("Cross-post a post each time you publish it"),
+        caption: ui_text(
+            "With cross-post on, the Publish sheet has “Then cross-post to”: tick a site (⌥ and \
+                  its number), and each time you publish that post Burrow starts its \
+                  cross-post by itself, one site after another. Press ⇧⌘P: this post has an \
+                  on/off row per site there too, Bluesky on. It only starts the run: you \
+                  still check the text and click Post. (A sample: nothing runs.)",
+        ),
+        keys: &[Key::Palette],
+        key_label: ui_text("⇧⌘P"),
+        region: Region::Whole,
+        button: None,
+        setup: Setup::AutoCrossPost,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "extensions",
         since: "0.10.0",
@@ -1826,7 +1974,7 @@ pub const STEPS: &[Step] = &[
         caption: ui_text(
             "Posted it somewhere else too? Post › Copies Elsewhere… keeps that list on \
                   your blyg, with no new version, and a cross-post adds its link for you; the \
-                  versions (⌘Y) show it, and readers see “Also posted at …”. (It shows once \
+                  versions (⌘Y) show it, and readers see “the author says it is also at …”. (It shows once \
                   your blyg's studio supports it.) Press ⌘Y.",
         ),
         keys: &[Key::ShowVersions],
@@ -1962,8 +2110,8 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "ai",
         title: "AI and TK",
-        blurb: "Fill a gap, shorten, a quote the AI added.",
-        steps: &["tk", "shorten", "echoed-quote"],
+        blurb: "Fill a gap, a link it can't read, shorten.",
+        steps: &["tk", "tk-checkpoint", "shorten", "echoed-quote"],
     },
     Tour {
         id: "publishing",
@@ -1982,7 +2130,7 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "reading",
         title: "Reading",
-        blurb: "Stream, catch up, Reader, Background, the shelf, Discover.",
+        blurb: "Stream, catch up, Reader, the Feed, Background, Saved, Discover.",
         steps: &[
             "stream",
             "compose",
@@ -1993,6 +2141,10 @@ pub const TOURS: &[Tour] = &[
             "author-site",
             "more-menu",
             "reader",
+            "feed-order",
+            "raw-tab",
+            "count-read",
+            "agentic-edition",
             "background",
             "parts",
             "shelf-add",
@@ -2038,7 +2190,13 @@ pub const TOURS: &[Tour] = &[
         id: "extensions",
         title: "Extensions and cross-post",
         blurb: "Cross-post, and what extensions may do.",
-        steps: &["cross-post", "extensions", "manage", "consent"],
+        steps: &[
+            "cross-post",
+            "auto-crosspost",
+            "extensions",
+            "manage",
+            "consent",
+        ],
     },
     Tour {
         id: "blyg",
@@ -2207,6 +2365,11 @@ mod tests {
             Key::ShelfLens,
             Key::Discover,
             Key::MentionsFeed,
+            Key::FeedOrder, // --- 0.28.0 ---
+            Key::RawTab,
+            Key::AgenticTab,
+            Key::StreamDate, // --- studio 0.71 ---
+            Key::TkCheckpoint,
             Key::MoreMenu, // --- 0.26.0 ---
             Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,

@@ -157,6 +157,8 @@ mod pane {
         /// The page has the keyboard (a field in it is focused).
         page_keyboard: bool,
         commands: Vec<String>,
+        /// `focus_parent` calls: the page handed the keyboard back.
+        parented: usize,
     }
 
     struct Stub(Rc<RefCell<Log>>);
@@ -187,7 +189,9 @@ mod pane {
             }
         }
         fn refresh_blocking(&mut self) {}
-        fn focus_parent(&mut self) {}
+        fn focus_parent(&mut self) {
+            self.0.borrow_mut().parented += 1;
+        }
         fn page_has_keyboard(&self) -> bool {
             self.0.borrow().page_keyboard
         }
@@ -296,6 +300,87 @@ mod pane {
         cx.run_until_parked();
         view.read_with(cx, |v, _| assert!(v.browser.open));
         assert_eq!(log.borrow().loads.len(), 2);
+    }
+
+    /// --- esc --- Windows: Esc pressed while the page had the keyboard
+    /// (WebView2 keeps keys from the app) gives the keyboard back to the
+    /// app. The page sees the key too (a site's own pop-up closes), so the
+    /// pane stays: one press must not also fold away a half-written post.
+    #[gpui_kit::test]
+    fn esc_in_the_page_takes_the_keyboard_back_and_keeps_the_pane(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.browser.open));
+        let before = log.borrow().parented;
+        view.update_in(cx, |v, window, cx| {
+            v.browser_event(super::surface::BrowserEvent::Escape, window, cx)
+        });
+        cx.run_until_parked();
+        assert!(log.borrow().parented > before, "the keyboard comes back");
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open, "the pane stays open");
+            assert_eq!(v.browser.page.url, "https://blyg.example.com/f/abc/");
+            // User testing, 0.28: the first Esc looked like it did nothing.
+            assert_eq!(
+                v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
+                Some(crate::app::esc::PANE_ESC_HINT.get()),
+                "a hint says what the second Esc does"
+            );
+        });
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Windows, || crate::app::esc::PANE_ESC_HINT.get()),
+            "Keyboard back in Burrow · Esc again closes the pane"
+        );
+    }
+
+    /// --- esc --- Windows: with the command palette open over the pane,
+    /// Esc from the page closes the palette, as Esc in the app does, and
+    /// leaves the pane open.
+    #[gpui_kit::test]
+    fn esc_in_the_page_closes_an_open_palette_not_the_pane(cx: &mut TestAppContext) {
+        let (view, cx, _log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |v, window, cx| v.toggle_palette(window, cx));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.cmd_palette.open.is_some()));
+        view.update_in(cx, |v, window, cx| {
+            v.browser_event(super::surface::BrowserEvent::Escape, window, cx)
+        });
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(v.cmd_palette.open.is_none(), "the palette closes");
+            assert!(v.browser.open, "the pane stays open");
+        });
+    }
+
+    /// --- esc --- Windows: a click in the app takes the keyboard back from
+    /// the page, except the one click "→ Notes" or "→ Draft" needs the
+    /// page's selection for.
+    #[gpui_kit::test]
+    fn a_click_in_the_app_takes_the_keyboard_back(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        let before = log.borrow().parented;
+        view.update(cx, |v, _| v.reclaim_keyboard_on_click());
+        assert_eq!(log.borrow().parented, before + 1);
+        view.update(cx, |v, _| {
+            v.browser.kept_click = true;
+            v.reclaim_keyboard_on_click();
+        });
+        assert_eq!(log.borrow().parented, before + 1, "the page keeps it");
+        view.read_with(cx, |v, _| assert!(!v.browser.kept_click, "once"));
+        view.update(cx, |v, _| v.reclaim_keyboard_on_click());
+        assert_eq!(log.borrow().parented, before + 2);
     }
 
     /// Whether the pane's address field has the keyboard.

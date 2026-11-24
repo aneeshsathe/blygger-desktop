@@ -393,7 +393,7 @@ pub(crate) fn transclusion_trigger(old: &str, new: &str, cursor: usize) -> Optio
     }
     let line_start = new[..cursor].rfind('\n').map_or(0, |i| i + 1);
     let prefix = &new[line_start..cursor];
-    if prefix.trim_start_matches([' ', '\t']) != "![[" {
+    if prefix.trim_start_matches([' ', '\t']) != "![[" || picker::written(new, cursor) {
         return None;
     }
     // Exactly one `[` was typed at the caret.

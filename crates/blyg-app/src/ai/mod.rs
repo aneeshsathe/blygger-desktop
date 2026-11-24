@@ -8,6 +8,7 @@
 
 pub mod generate;
 pub mod palette;
+pub mod read; // --- studio 0.71 --- what a generation read
 pub mod settings;
 
 use std::sync::Arc;

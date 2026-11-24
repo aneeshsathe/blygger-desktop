@@ -43,7 +43,7 @@ goes once its mistake is a compile error):
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
 | UI text tests hold on both platforms' spelling | `scripts/check.sh wording` (CI's macOS step "Test (Windows wording)"); `platform_text::spelled_as` for one test |
-| tests move the caret with keys both platforms read alike (no ⌘+arrow, ⌥+←/→) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
+| tests move the caret and edit with keys both platforms read alike (no ⌘+arrow, ⌥+←/→, no literal redo: `platform_text::redo_keys()`) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
 | Windows keys: no AltGr characters, no clashes, overrides name real keys | `keymap.rs` tests `no_windows_key_is_an_altgr_character`, `windows_overrides_are_real_and_clash_with_nothing` (run on every platform) |
 | tour steps quote real keys (bound to what the step waits for), menu items and “labels” | `onboarding/caption_tests.rs` (both platforms' wording) |
 | the reading list converges, prunes only after a whole walk, and stays cheap | `blyg-core/src/sync/walk_model_tests.rs` (proptest model driving `walk::Read`) |
@@ -64,4 +64,13 @@ goes once its mistake is a compile error):
 | e2e signs in only through `studio_login` and waits out a 429 only through `retry_429` | `crates/blyg-core/tests/it/e2e/sign_in_path.rs` (`one_sign_in_path`, runs in the normal `cargo test`) |
 | no entries are written into `CHANGELOG.md` between releases (a change adds a fragment in `changes/unreleased/`) | `scripts/changelog-stitch.py check`, run by `blyg-core/tests/it/changelog_stitch.rs` (`the_repos_fragments_pass_check`) |
 | tests assert time only through `wait::Budget`, in ignored `timing_…` reports run by CI's non-blocking `timing` job (macOS only; Windows timing isn't measured); tests guarding an algorithm count work | `blyg-core/tests/it/timing_scan.rs` |
+| a backend swap rebuilds the reading state only through `reading_for_new_backend` | `crates/blyg-app/src/reading/count_read_tests.rs` (`the_reading_state_is_rebuilt_in_one_place`; its self-test holds the old `finish_connect` shape) |
 | blyg-core's test-only hooks (`test-support`) are enabled only in `[dev-dependencies]` | `blyg-core/tests/it/crate_graph.rs` (`test_support_is_only_a_dev_dependency`) |
+| the contract Burrow targets is one its own guard accepts (widen `api::contract` in the change that vendors a new major) | `blyg-core/tests/it/contract_coverage.rs` (`burrow_accepts_the_vendored_contract`) |
+| no feature is gated on a parsed version (`contractVersion` or a studio version); the functions that may read one are one reviewed list | `blyg-core/tests/it/version_gates.rs` (scan of product code; `ALLOWED`) |
+| every capability gate is listed as guarding a read or a write and asks for a named `…OPERATION…` constant; a read or display gate names only operations the contract grants on the read scope | `blyg-core/tests/it/capability_gates.rs` (`GATES`, over `openapi-current.json`'s `security` scopes) |
+| a store function that deletes rows of a list table (subscriptions, hoppers, reading, items, versions, shelf) names the prune decision (`api::Prune`), is private, or is on the reviewed list | `blyg-core/tests/it/list_prune_scan.rs` + `tests/fixtures/list-prune-allow.txt` |
+| every e2e subscription is bound to a drop guard that names it (`Unsub`, `ApiUnsub`) | `blyg-core/tests/it/e2e/subscribe_guard.rs` (runs in the normal `cargo test`) |
+| a `BLYGGER_*` variable this build ignores is said at startup (a debug build refuses to start); every variable has a class | `crates/blyg-app/src/dev_flags.rs` (`ignored`, and the test `every_blygger_name_has_a_class`) |
+| a key or click modifier handled outside the keymap is on a reviewed list with its chord (checked against the Windows keymap), and none reads the platform key alone | `crates/blyg-app/src/key_handlers_tests.rs` + `crates/blyg-app/fixtures/key-handlers-allow.txt` |
+| tests hold cmd for a click through `Modifiers::secondary_key()` or a per-platform `match`, never the platform key bare (a deliberate use says `the platform key itself` in a comment) | `crates/blyg-app/src/key_handlers_tests.rs` (`tests_dont_hold_the_platform_key_bare`) |

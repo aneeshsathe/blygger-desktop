@@ -37,18 +37,30 @@ pub const OWN: &str = crate::model::OWN_SUBSCRIPTION;
 /// sends more.
 pub const SHELF_MAX: usize = 50;
 
-/// The capabilities' operation names that offer the synced shelf.
+/// The capabilities' operation names of the synced shelf: reading it
+/// (owner:read) and writing it (owner:manage). The studio lists only what
+/// a sign-in's scopes grant, so a read-only one lists `getShelf` alone.
 pub const GET_OPERATION: &str = "getShelf";
 pub const PUT_OPERATION: &str = "putShelf";
 
 /// `meta`: "1" while the blyg offers the synced shelf, "0" when it doesn't,
 /// absent until its capabilities were read.
 pub const SERVED_META: &str = "shelf_served";
+/// `meta`: "1" while this sign-in may also write it ([`PUT_OPERATION`]).
+pub const WRITES_META: &str = "shelf_writes";
 /// `meta`: the list as the blyg last agreed (JSON `[Entry]`): the common
 /// ancestor of a three-way merge. Absent until the first sync.
 pub const BASE_META: &str = "shelf_base";
 /// `meta`: the shelf's revision as last read or written.
 pub const REVISION_META: &str = "shelf_revision";
+/// `meta`: what this side took off since the blyg last agreed (JSON
+/// `[Entry]`, newest last, at most [`TAKEN_OFF_MAX`]). With no base yet (a
+/// fresh install on a newer contract, a sign-in read-only from the start)
+/// it's the only record of a removal made here; cleared once the blyg
+/// agrees a list.
+pub const TAKEN_OFF_META: &str = "shelf_taken_off";
+/// How many removals [`TAKEN_OFF_META`] keeps (the shelf holds 50).
+pub const TAKEN_OFF_MAX: usize = 200;
 
 /// One shelf entry, as the wire names it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -94,18 +106,24 @@ pub enum SyncState {
     Synced,
     /// Changed here; waiting to reach the blyg.
     Waiting,
+    /// Changed here, and kept here until Burrow is updated: the blyg's
+    /// contract is newer than this Burrow knows (`sync/newer.rs`).
+    HeldNewer,
+    /// Changed here, and kept here: this sign-in may read Saved but not
+    /// write it (no [`PUT_OPERATION`]).
+    HeldReadOnly,
 }
 
-/// Whether a `GET /api/capabilities` answer offers the synced shelf: its
-/// `operations` (an array of ids; a map is read by its keys) list both
-/// [`GET_OPERATION`] and [`PUT_OPERATION`].
+/// Whether a `GET /api/capabilities` answer offers the synced shelf to
+/// read: its `operations` (an array of ids; a map is read by its keys)
+/// list [`GET_OPERATION`].
 pub fn serves(capabilities: &Value) -> bool {
-    let has = |op: &str| match capabilities.get("operations") {
-        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(op)),
-        Some(Value::Object(m)) => m.contains_key(op),
-        _ => false,
-    };
-    has(GET_OPERATION) && has(PUT_OPERATION)
+    crate::api::offers(capabilities, GET_OPERATION)
+}
+
+/// Whether it may be written too: [`PUT_OPERATION`] is listed.
+pub fn takes(capabilities: &Value) -> bool {
+    crate::api::offers(capabilities, PUT_OPERATION)
 }
 
 /// A `Shelf` answer (`GET`, a `PUT`'s answer, or a 409's

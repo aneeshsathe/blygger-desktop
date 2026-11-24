@@ -29,6 +29,8 @@ pub(crate) enum RowAction {
     },
     /// The Manage extensions sheet.
     Manage,
+    /// --- auto cross-post --- turn a macro on or off for the open post.
+    AutoCrossPost { ext: String, id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +48,8 @@ pub(crate) enum Overlay {
         rows: Vec<Row>,
         selected: usize,
         focus: FocusHandle,
+        /// The list's scroll: ↑↓ keep the selected row in view.
+        scroll: ScrollHandle,
     },
     Consent {
         name: String,
@@ -61,6 +65,23 @@ pub(crate) enum Overlay {
 
 /// The palette's last row.
 pub const MANAGE: &str = "Manage extensions…";
+
+/// The row a digit key runs: 1–9 the first nine, 0 the tenth.
+fn row_for_digit(k: &str) -> Option<usize> {
+    match k.parse::<usize>().ok()? {
+        0 => Some(9),
+        d => Some(d - 1),
+    }
+}
+
+/// The digit shown on row `i` (none past the tenth).
+fn digit_for_row(i: usize) -> Option<usize> {
+    match i {
+        0..=8 => Some(i + 1),
+        9 => Some(0),
+        _ => None,
+    }
+}
 
 impl MainView {
     /// Hook: the extension actions on the root element.
@@ -88,6 +109,11 @@ impl MainView {
                 });
             }
             rows.extend(self.ext_macro_rows(screen));
+            // --- auto cross-post --- the open post's on/off rows.
+            if screen == blyg_ext::protocol::Screen::Posts {
+                let post = self.current.as_ref().map(|c| &c.local_id);
+                rows.extend(self.auto_crosspost_rows(post, cx));
+            }
             rows.extend(self.ext_site_rows());
             for l in host.libraries() {
                 rows.push(Row {
@@ -119,6 +145,7 @@ impl MainView {
         if self.sheet.is_open() || self.reading.sheet.is_some() || self.ai.has_overlay() {
             return;
         }
+        self.auto_crosspost_load(cx); // --- auto cross-post ---
         let rows = self.ext_palette_rows(window, cx);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -127,6 +154,7 @@ impl MainView {
             rows,
             selected: 0,
             focus,
+            scroll: ScrollHandle::new(),
         });
         cx.notify();
     }
@@ -155,23 +183,35 @@ impl MainView {
     }
 
     fn ext_palette_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(Overlay::Palette { rows, selected, .. }) = self.ext.overlay.as_mut() else {
+        let Some(Overlay::Palette {
+            rows,
+            selected,
+            scroll,
+            ..
+        }) = self.ext.overlay.as_mut()
+        else {
             return false;
         };
         let n = rows.len();
         match key {
-            "down" => *selected = (*selected + 1) % n,
-            "up" => *selected = (*selected + n - 1) % n,
+            "down" => {
+                *selected = (*selected + 1) % n;
+                scroll.scroll_to_item(*selected);
+            }
+            "up" => {
+                *selected = (*selected + n - 1) % n;
+                scroll.scroll_to_item(*selected);
+            }
             "enter" => {
                 let i = *selected;
                 self.ext_run_row(i, window, cx);
             }
             "escape" => self.ext_close(window, cx),
             k => {
-                let Some(i) = k.parse::<usize>().ok().filter(|i| (1..=n).contains(i)) else {
+                let Some(i) = row_for_digit(k).filter(|i| *i < n) else {
                     return false;
                 };
-                self.ext_run_row(i - 1, window, cx);
+                self.ext_run_row(i, window, cx);
             }
         }
         cx.notify();
@@ -210,6 +250,11 @@ impl MainView {
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
             RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
             RowAction::OpenSite { ext, site } => self.ext_open_site(&ext, &site, window, cx),
+            RowAction::AutoCrossPost { ext, id } => {
+                if let Some(post) = self.current.as_ref().map(|c| c.local_id.clone()) {
+                    self.toggle_auto_crosspost(&post, &ext, &id, cx);
+                }
+            }
         }
         cx.notify();
     }
@@ -469,7 +514,11 @@ impl MainView {
                 rows,
                 selected,
                 focus,
-            } => (440., self.render_ext_palette(rows, *selected, focus, cx)),
+                scroll,
+            } => (
+                440.,
+                self.render_ext_palette(rows, *selected, focus, scroll, cx),
+            ),
             Overlay::Consent {
                 name, caps, focus, ..
             } => (500., self.render_consent(name, caps, focus, cx)),
@@ -495,6 +544,10 @@ impl MainView {
                         .max_w(relative(0.92))
                         .max_h(relative(0.86))
                         .overflow_y_scroll()
+                        // A palette's list scrolls inside it, under its
+                        // heading and above its keys (`render_ext_palette`).
+                        .flex()
+                        .flex_col()
                         .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))
@@ -556,6 +609,7 @@ impl MainView {
         rows: &[Row],
         selected: usize,
         focus: &FocusHandle,
+        scroll: &ScrollHandle,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
@@ -579,8 +633,9 @@ impl MainView {
                 .child(
                     div()
                         .w(px(14.))
+                        .flex_none()
                         .text_color(p.muted)
-                        .child(format!("{}", i + 1)),
+                        .children(digit_for_row(i).map(|d| d.to_string())),
                 )
                 .child(
                     div()
@@ -605,14 +660,28 @@ impl MainView {
         });
         let empty = rows.len() == 1;
         div()
+            .flex()
+            .flex_col()
+            .min_h_0()
             .track_focus(focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
                 if this.ext_palette_key(ev.keystroke.key.as_str(), window, cx) {
                     cx.stop_propagation();
                 }
             }))
-            .child(Self::ext_heading("Extensions"))
-            .child(div().flex().flex_col().children(list))
+            .child(Self::ext_heading("Extensions").flex_none())
+            .child(
+                div()
+                    .id("ext-pal-list")
+                    .debug_selector(|| "ext-pal-list".into())
+                    .flex_shrink(1.)
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(scroll)
+                    .flex()
+                    .flex_col()
+                    .children(list),
+            )
             .when(empty, |d| {
                 d.child(
                     div()
@@ -626,11 +695,16 @@ impl MainView {
                         ),
                 )
             })
-            .child(self.ext_keys_row().children([
-                self.ext_key_hint("↑↓", "choose"),
-                self.ext_key_hint("⏎", "run"),
-                self.ext_key_hint("esc", "close"),
-            ]))
+            .child(
+                self.ext_keys_row()
+                    .flex_none()
+                    .debug_selector(|| "ext-pal-keys".into())
+                    .children([
+                        self.ext_key_hint("↑↓", "choose"),
+                        self.ext_key_hint("⏎", "run"),
+                        self.ext_key_hint("esc", "close"),
+                    ]),
+            )
             .into_any_element()
     }
 

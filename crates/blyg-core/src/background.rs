@@ -1,6 +1,8 @@
 //! --- background --- Background and Foreground in the reader (blygger-studio
 //! 0.61.0, contract 5.10.0; blygger-spec docs/background-plan.md, phase 1;
-//! the `burst`, `wordless` and `maintenance` rules from studio 0.64).
+//! the `burst`, `wordless` and `maintenance` rules from studio 0.64; phase
+//! 2's measured rules, `quotes-refreshed`, `quotes-material`, `near-same`
+//! and `superseded`, from studio 0.68, contract 6.1.0).
 //!
 //! An entry is in Background when the owner placed it there, or, with no
 //! choice on the entry, when its whole blyg is placed there or a reason that
@@ -31,25 +33,91 @@ use serde_json::{Value, json};
 
 use crate::model::{OWN_SUBSCRIPTION, ReadingItem, RemoteId, SubId};
 
-/// The capability that says a studio has Background (`PUT
-/// /api/reading/placement`); `GET /api/reading?background=true`, the
-/// `background` on subscriptions and `backgroundRules` in Settings came with it.
+/// The capability that lets this sign-in place posts and blygs in
+/// Background (`PUT /api/reading/placement`, owner:manage; the
+/// `background` on subscriptions and `backgroundRules` in Settings came
+/// with it). The studio lists only what a sign-in's scopes grant, so a
+/// read-only one doesn't list it, and still reads the lens.
 pub const OPERATION: &str = "setReadingPlacement";
+
+/// The read the Background lens comes from: `GET
+/// /api/reading?background=true` (owner:read). Every studio lists it; one
+/// before 0.61 refuses the filter, or answers rows without a `background`
+/// ([`is_lens`]), and so has no Background here.
+pub const LENS_OPERATION: &str = "listReading";
 
 /// Store meta: "1" when the blyg serves Background, "0" when it doesn't.
 pub const SERVED_META: &str = "background.served";
+/// Store meta: "1" when this sign-in may place posts ([`OPERATION`]).
+pub const PLACING_META: &str = "background.placing";
 /// Store meta: the last [`BackgroundSet`] read, as JSON.
 pub const SET_META: &str = "background.set";
+/// Store meta: the `contractVersion` of a studio whose lens read answered
+/// plain rows (a studio from 0.49.12 to 0.60 ignores the filter): not asked
+/// again until its contract changes.
+pub const NO_LENS_META: &str = "background.no_lens";
 
 /// What Burrow says when the blyg has no Background.
 pub const NOT_SERVED: &str = "Your blyg needs blygger-studio 0.61 or later for Background";
 
+/// What Burrow says when this sign-in may read Background but not change
+/// it (no `setReadingPlacement`).
+pub const NOT_PLACING: &str = "This sign-in can read Background on your blyg but not change it";
+
+/// Why a Background change can't be made: [`NOT_PLACING`] where the lens
+/// is `served`, else [`NOT_SERVED`].
+pub fn not_placing(served: bool) -> String {
+    if served { NOT_PLACING } else { NOT_SERVED }.to_string()
+}
+
 /// The rules an owner can turn off, in the order Settings lists them
-/// (studio `BACKGROUND_RULES`). Withdrawn isn't one: it's always on. A
-/// studio offers only some of them (0.61: `minor`); Settings shows the ones
-/// its `GET /api/settings` lists ([`BackgroundRules::from_settings`]),
+/// (studio `BACKGROUND_RULES`), which is also the order a card picks its
+/// reason in. Withdrawn isn't one: it's always on. A studio offers only
+/// some of them (0.61: `minor`; 0.64: four; 0.68: eight); Settings shows
+/// the ones its `GET /api/settings` lists ([`BackgroundRules::from_settings`]),
 /// because it refuses a rule it doesn't know with a 400.
-pub const RULES: [&str; 4] = [BURST, "wordless", "maintenance", "minor"];
+pub const RULES: [&str; 8] = [
+    BURST,
+    "wordless",
+    "maintenance",
+    QUOTES_REFRESHED,
+    QUOTES_MATERIAL,
+    "near-same",
+    "minor",
+    SUPERSEDED,
+];
+
+/// A new version with the same text whose quotes now show newer versions
+/// of what they quote (studio 0.68, plan §2.1).
+pub const QUOTES_REFRESHED: &str = "quotes-refreshed";
+
+/// A refresh that brought in a quote whose text was rewritten (beyond
+/// near-same). It counts only while [`QUOTES_REFRESHED`] does too
+/// ([`BackgroundRules::counts`]); off, such refreshes stay in the Feed.
+pub const QUOTES_MATERIAL: &str = "quotes-material";
+
+/// An item its blyg followed with a newer item within
+/// [`SUPERSEDED_WINDOW_MS`]; a later version of it brings it back.
+pub const SUPERSEDED: &str = "superseded";
+
+/// `superseded`'s window (studio `SUPERSEDED_WINDOW_MS`): reader-local, a
+/// constant for now.
+pub const SUPERSEDED_WINDOW_MS: i64 = 15 * 60 * 1000;
+
+/// Whether an item last active at `older_ms` is superseded by a newer item
+/// of its blyg first seen at `newer_ms` (studio `supersedes`).
+pub fn supersedes(newer_ms: i64, older_ms: i64) -> bool {
+    older_ms < newer_ms && newer_ms - older_ms <= SUPERSEDED_WINDOW_MS
+}
+
+/// The reasons that make a version maintenance for the pace-layered order
+/// (studio `MAINTENANCE_REASONS`, RFC-3 R2): it climbs no place.
+pub const MAINTENANCE_REASONS: [&str; 4] = [
+    "maintenance",
+    QUOTES_REFRESHED,
+    QUOTES_MATERIAL,
+    "near-same",
+];
 
 /// The reason a thread's part is in Background (studio 0.64); its
 /// `detail.thread` names the thread.
@@ -119,6 +187,10 @@ impl EntryBackground {
             Some(BURST) => Some(BURST_WHY.into()),
             Some("wordless") => Some("no words of its own".into()),
             Some("maintenance") => Some("republished unchanged".into()),
+            Some(QUOTES_REFRESHED) => Some("quotes refreshed".into()),
+            Some(QUOTES_MATERIAL) => Some("quotes refreshed (rewritten)".into()),
+            Some("near-same") => Some("small edit".into()),
+            Some(SUPERSEDED) => Some("followed within 15 min".into()),
             Some("minor") => Some(
                 match self
                     .detail
@@ -136,6 +208,16 @@ impl EntryBackground {
 }
 
 impl EntryBackground {
+    /// Its current version was maintenance, as the studio measured it: one
+    /// of [`MAINTENANCE_REASONS`] counts (the pace-layered order climbs it
+    /// no place). Only reasons whose rule is on are sent, so with
+    /// `near-same` off a small edit climbs.
+    pub fn maintenance(&self) -> bool {
+        self.reasons
+            .iter()
+            .any(|r| MAINTENANCE_REASONS.contains(&r.as_str()))
+    }
+
     /// The thread this entry is a part of: its `detail.thread`, when
     /// `burst` is among the reasons that count (so not while the rule is
     /// off). A remote id of the same blyg, or your own item's id.
@@ -469,7 +551,19 @@ impl BackgroundRules {
         self.rules.iter().any(|(r, _)| r == rule)
     }
 
-    /// Whether `rule` counts.
+    /// The rule `rule` counts only under (studio `enabledRules`):
+    /// `quotes-material` under `quotes-refreshed`. Settings greys it out
+    /// while that one is off.
+    pub fn needs(rule: &str) -> Option<&'static str> {
+        (rule == QUOTES_MATERIAL).then_some(QUOTES_REFRESHED)
+    }
+
+    /// Whether `rule` acts: it's on, and so is the rule it [`Self::needs`].
+    pub fn counts(&self, rule: &str) -> bool {
+        self.on(rule) && Self::needs(rule).is_none_or(|n| self.on(n))
+    }
+
+    /// Whether `rule`'s switch is on (it may still not act: [`Self::counts`]).
     pub fn on(&self, rule: &str) -> bool {
         self.rules
             .iter()
@@ -501,21 +595,56 @@ pub fn rule_label(rule: &str) -> (&'static str, &'static str) {
             "Republished unchanged",
             "A new version with the same text and the same quotes.",
         ),
+        QUOTES_REFRESHED => (
+            "Quotes refreshed",
+            "A new version with the same text whose quotes now show newer versions \
+             of what they quote.",
+        ),
+        QUOTES_MATERIAL => (
+            "Including rewritten quotes",
+            "A refresh that brings in a quote whose text was rewritten; off keeps \
+             those in the Feed.",
+        ),
+        "near-same" => (
+            "Small edits",
+            "A new version that changes at most 40 characters and 2% of the text.",
+        ),
         "minor" => (
             "Your own minor changes",
             "A version of yours the change classifier calls a typo, minor or refresh.",
+        ),
+        SUPERSEDED => (
+            "Followed within 15 minutes",
+            "An item its blyg followed with a newer item within 15 minutes; a later \
+             version of it comes back. Your own items too.",
         ),
         _ => ("", ""),
     }
 }
 
-/// Whether a `GET /api/capabilities` answer lists [`OPERATION`].
+/// Whether a `GET /api/capabilities` answer lists [`LENS_OPERATION`]: the
+/// lens may be read (and [`is_lens`] decides).
 pub fn serves(capabilities: &Value) -> bool {
-    match capabilities.get("operations") {
-        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(OPERATION)),
-        Some(Value::Object(m)) => m.contains_key(OPERATION),
-        _ => false,
-    }
+    crate::api::offers(capabilities, LENS_OPERATION)
+}
+
+/// Whether it lists [`OPERATION`]: this sign-in may place posts.
+pub fn places(capabilities: &Value) -> bool {
+    crate::api::offers(capabilities, OPERATION)
+}
+
+/// Whether a lens read answered the Background lens: every entry carries
+/// its `background`. A studio that ignores the filter answers plain rows.
+///
+/// An empty answer counts as a lens: on a studio with Background it's a
+/// lens with nothing in it yet (the usual case on a new blyg), and an
+/// older studio that ignored the filter answers empty only when it holds
+/// no reading posts, where nothing can be shown in the wrong place. The
+/// next read with rows in it judges again.
+pub fn is_lens(entries: &[Value]) -> bool {
+    entries
+        .iter()
+        .all(|e| e.get("background").is_some_and(Value::is_object))
 }
 
 /// `PUT /api/reading/placement`'s body for the row `key` (your own posts

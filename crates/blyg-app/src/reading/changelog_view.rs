@@ -412,6 +412,12 @@ impl MainView {
                 .child("Reading your blyg's settings…")
                 .into_any_element(),
         };
+        // --- reader order --- the Feed's order (studio 0.68's readerOrder).
+        let order = row(&p, "READER ORDER", self.render_reader_order_settings(cx));
+        // --- studio 0.71 --- "Count an entry as read", when offered.
+        let marks = self
+            .render_count_read_settings(cx)
+            .map(|el| row(&p, super::count_read::ROW_LABEL, el));
         // --- background --- the blyg's Background rules (studio 0.61).
         let background = self
             .render_background_settings(cx)
@@ -421,6 +427,8 @@ impl MainView {
             .flex_col()
             .child(site_row)
             .child(row(&p, "CHANGELOG", changelog))
+            .child(order)
+            .children(marks)
             .children(background)
             .into_any_element()
     }

@@ -101,7 +101,7 @@ pub fn publish_error(kind: crate::Kind, md: &str) -> Option<String> {
     Some(match first.reason {
         R::DirectiveInFragment => format!(
             "A fragment can't quote: {} is on its own line (line {}){more}. \
-             Quote it from a thread, or put the line in code to show it.",
+             Make this a thread, or link it with [[id]].",
             first.directive,
             first.line + 1
         ),
@@ -150,6 +150,11 @@ mod tests {
             e.starts_with(&format!(
                 "A fragment can't quote: ![[{ID}]] is on its own line (line 3)."
             )),
+            "{e}"
+        );
+        // Studio 0.67's advice (#161).
+        assert!(
+            e.ends_with("Make this a thread, or link it with [[id]]."),
             "{e}"
         );
         assert_eq!(publish_error(Kind::Thread, &md), None);

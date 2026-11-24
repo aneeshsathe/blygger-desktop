@@ -5,8 +5,8 @@
 # openapi.json over openapi-current.json, move this pair (and the docs that
 # name it), then write the tests the coverage check lists, then build.
 [target]
-studio = "0.65.0"
-contract = "5.14.0"
+studio = "0.71.0"
+contract = "6.3.0"
 
 # Items Burrow doesn't use, one reason each ("Burrow doesn't use X because …").
 # An entry fails once a test names the item.
@@ -27,6 +27,99 @@ reason = "Sent by api::read_batch for children with a kept ETag; e2e/conditional
 # [[pending]]
 # item = "header:*:ETag"
 # pending = "WP8 wp8-studio-065"
+# --- 0.28.0 wave A (sync, syndication, reader wire): add entries below this line only ---
+[[exempt]]
+item = "param:*/query:raw"
+reason = "Burrow doesn't send raw=true (GET /reading, /reading/summary) because it holds the whole imported list from GET /reading/imported, which is already raw (no Background rule, placement or fold, withdrawn rows included); its Raw tab is that list, newest first (reading/feed.rs raw_order)"
+
+[[exempt]]
+item = "enum:*/query:raw=true"
+reason = "The raw parameter's one value; Burrow doesn't send the parameter (see param:*/query:raw)"
+
+# --- 0.28.0 wave B (reading tabs, Background rules, readerOrder): add entries below this line only ---
+
+[[exempt]]
+item = "param:listReading/query:order"
+reason = "Burrow orders the Feed itself (blyg_core::pace, a port of the studio's paceLayeredOrder over the local reading list; reading/feed.rs), so it never asks /reading for an order: the list it syncs is the same whichever order the owner chose"
+
+# --- 0.28.0 wave C (rendering, mentions, picker): add entries below this line only ---
+
+# --- 0.28.0 wave E (studio 0.69) ---
+[[exempt]]
+item = "operation:catchUp"
+reason = "Burrow doesn't ask for catch-up's cards because its own Catch up (blyg_core::catchup, ⇧C) lays out more than the studio's from what it holds, offline: quotes, stubs and forks up the lineage, side branches with \"whole conversation\", and what a quoting post cited of a post not held. It asks only for the blyg's summary (summarizeCatchUp), which reads the same quotes"
+
+[[group]]
+reason = "catch-up's answer (operation catchUp), which Burrow doesn't ask for: its own Catch up lays out the conversation (blyg_core::catchup)"
+items = [
+  "property:CatchUp.cards",
+  "property:CatchUp.cards[].at",
+  "property:CatchUp.cards[].depth",
+  "property:CatchUp.cards[].html",
+  "property:CatchUp.cards[].id",
+  "property:CatchUp.cards[].label",
+  "property:CatchUp.cards[].origin",
+  "property:CatchUp.cards[].partial",
+  "property:CatchUp.cards[].source",
+  "property:CatchUp.cards[].sub",
+  "property:CatchUp.cards[].version",
+  "property:CatchUp.ordered",
+  "enum:CatchUp.ordered=depth",
+  "enum:CatchUp.ordered=time",
+]
+
+[[exempt]]
+item = "operation:listHelpers"
+reason = "Burrow doesn't read the helper catalogue because the capabilities' operation names already say which helpers this blyg runs (summarizeCatchUp is the one Burrow asks), and the catalogue's descriptions and `ui` are words for Studio's own screens"
+
+[[group]]
+reason = "the helper catalogue (operation listHelpers), which Burrow doesn't read: it gates on the capabilities' operation names"
+items = [
+  "property:listHelpers/200.helpers",
+  "property:listHelpers/200.helpers[].description",
+  "property:listHelpers/200.helpers[].kind",
+  "property:listHelpers/200.helpers[].operation",
+  "property:listHelpers/200.helpers[].ui",
+  "enum:listHelpers/200.helpers[].kind=mechanical",
+]
+
+[[exempt]]
+item = "property:AgenticEdition.edition"
+reason = "Burrow doesn't read an edition's `edition` (the assistant's AgenticEditionInput, echoed back for its next PUT) because it draws `layout`, the same edition with each reference resolved and the unresolvable ones left out (blyg_core::agentic::parse_edition), and never writes an edition (putAgentic is the assistant's); Studio's tab draws `layout` too"
+
+[[exempt]]
+item = "property:*.studioTheme"
+reason = "Burrow doesn't use studioTheme because it wears its own themes (the `theme` key of its config file, Settings › Appearance), on this computer; the setting is the web studio's palette and never changes public pages"
+
+[[exempt]]
+item = "operation:extSpellcheckGetWords"
+reason = "Burrow doesn't fetch the spellcheck extension's word list because its spellcheck is the system's (NSSpellChecker on macOS, composer/spell_mac.rs) with the user's languages and learned words; it adds the blyg's dictionary on top (getDictionary). The list is for a browser that has no checker of its own"
+
+[[group]]
+reason = "the spellcheck extension's word list (operation extSpellcheckGetWords), which Burrow doesn't fetch: its spellcheck is the system's plus the blyg's dictionary"
+items = [
+  "property:extSpellcheckGetWords/200.gz",
+  "property:extSpellcheckGetWords/200.lang",
+  "property:extSpellcheckGetWords/200.notice",
+  "property:extSpellcheckGetWords/200.words",
+  "enum:extSpellcheckGetWords/200.lang=en-US",
+]
+
+[[exempt]]
+item = "operation:extSpellcheckProofread"
+reason = "Burrow doesn't ask the spellcheck extension's proofread because its editor has its own Proofread (Burrow's AI, blyg_ai::prompts::proofread_prompt), which offers corrections only and puts accepted fixes in as the author's words, as spec §5.7 rule 10 asks; the extension's would need the draft pushed first and is off on a blyg by default"
+
+[[group]]
+reason = "the spellcheck extension's proofread answer (operation extSpellcheckProofread), which Burrow doesn't ask: its editor's Proofread is its own AI"
+items = [
+  "property:SpellcheckIssue.find",
+  "property:SpellcheckIssue.replace",
+  "property:SpellcheckIssue.why",
+  "property:extSpellcheckProofread/200.issues",
+  "property:extSpellcheckProofread/200.model",
+  "property:extSpellcheckProofread/200.truncated",
+]
+
 # BEGIN baseline (generated by contract_coverage::regenerate_baseline; don't edit)
 [[group]]
 baseline = true

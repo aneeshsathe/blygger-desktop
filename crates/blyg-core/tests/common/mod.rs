@@ -165,6 +165,10 @@ pub struct State {
     // fixture, so tests that use these mark the paths unchecked)
     /// What `GET /api/capabilities` says instead of `CONTRACT_VERSION`.
     pub contract_version: Option<String>,
+    /// Operations `GET /api/capabilities` lists beyond the 5.0.0 fixture's
+    /// (`listContacts`…): Burrow gates each feature on these, not on the
+    /// version.
+    pub operations: Vec<String>,
     /// `GET /api/contacts` (`None`: not served, 404).
     pub contacts: Option<Vec<Value>>,
     /// Handles a publish reports as `unresolvedHandles`.
@@ -172,6 +176,10 @@ pub struct State {
     /// `(sub, remote id)` of the rows `GET /api/reading?mentions=true`
     /// lists (`None`: the parameter isn't served, 400).
     pub mention_keys: Option<Vec<(String, String)>>,
+    /// --- background --- The entries `GET /api/reading?background=true`
+    /// answers (studio 0.61, contract 5.10.0; `None`: a studio before it,
+    /// 400).
+    pub background_lens: Option<Vec<Value>>,
     tick: u64,
     next_id: u64,
 }
@@ -452,6 +460,7 @@ fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
     if !req.path.starts_with("/api/")
         || status == 401
         || s.unchecked.iter().any(|p| req.path.starts_with(p.as_str()))
+        || background_lens_read(req)
     {
         return;
     }
@@ -1030,8 +1039,9 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
     // missing `expectedRevision`, ...): 400 before anything happens.
     let c = contract::contract();
     // --- contacts --- a 5.7.0 parameter the 5.0.0 fixture doesn't know.
-    let newer = req.query_param("mentions").is_some()
-        && s.unchecked.iter().any(|p| req.path.starts_with(p.as_str()));
+    let newer = (req.query_param("mentions").is_some()
+        && s.unchecked.iter().any(|p| req.path.starts_with(p.as_str())))
+        || background_lens_read(req);
     if c.knows(&req.method, &segs)
         && !newer
         && let Err(e) = c.check_request(
@@ -1060,6 +1070,7 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
                 .operation_ids()
                 .into_iter()
                 .filter(|id| !id.starts_with("ext"))
+                .chain(s.operations.iter().cloned())
                 .collect();
             (
                 200,
@@ -1573,6 +1584,13 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
             None => return Err(not_found()),
         },
         // ---- reading
+        ("GET", ["api", "reading"]) if background_lens_read(req) => match &s.background_lens {
+            Some(lens) => (
+                200,
+                json!({ "items": lens, "page": { "limit": 50, "nextCursor": null } }),
+            ),
+            None => return Err(invalid("unknown query parameter: background")),
+        },
         ("GET", ["api", "reading"]) => {
             // --- contacts --- `mentions=true` (contract 5.7.0).
             if req.query_param("mentions").as_deref() == Some("true") {
@@ -1827,4 +1845,13 @@ pub fn fast() -> SyncOptions {
 /// Poll `f` until it's true or `timeout` passes.
 pub fn wait_until(timeout: Duration, f: impl FnMut() -> bool) -> bool {
     blyg_core::wait::poll_until(timeout, Duration::from_millis(10), f)
+}
+
+/// --- background --- `GET /api/reading?background=true`: a 5.10.0
+/// parameter the 5.0.0 fixture doesn't know, answered from
+/// `State::background_lens`.
+fn background_lens_read(req: &Req) -> bool {
+    req.method == "GET"
+        && req.path.trim_end_matches('/') == "/api/reading"
+        && req.query_param("background").is_some()
 }

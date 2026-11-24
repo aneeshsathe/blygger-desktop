@@ -363,7 +363,7 @@ impl MainView {
         }
         self.fake = Some(fake);
         self.base_url = self.backend.base_url();
-        self.reading = super::reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.current = None;
         self.requery(window, cx);
         self.show_toast(

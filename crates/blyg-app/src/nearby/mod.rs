@@ -1224,26 +1224,11 @@ impl MainView {
         let size_mb = POTION_BASE_8M.total_size() as f64 / 1_000_000.0;
         let installed = POTION_BASE_8M.installed(&models_dir(cx));
         let local_label = if installed {
-            "This Mac's model".to_string()
+            crate::keymap::hint("This Mac's model").to_string()
         } else {
             format!("Download a model ({size_mb:.0} MB)")
         };
-        let note = match emb.as_str() {
-            "local" => format!(
-                "{} ({}, {}). Runs on this Mac; nothing leaves it. {}",
-                POTION_BASE_8M.name,
-                POTION_BASE_8M.licence,
-                POTION_BASE_8M.source.trim_start_matches("https://"),
-                self.nearby_status_words()
-            ),
-            "endpoint" => format!(
-                "Paragraphs and your posts go to nearby-endpoint (config file). {}",
-                self.nearby_status_words()
-            ),
-            _ => "Shared phrases, from the search index. A model on this Mac also finds \
-                  posts that say the same thing in other words."
-                .to_string(),
-        };
+        let note = embedder_note(&emb, &self.nearby_status_words());
         crate::app::settings_page::row(
             &p,
             "NEARBY",
@@ -1490,3 +1475,24 @@ impl MainView {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+/// --- studio 0.71 user testing --- Settings › NEARBY's note under the
+/// embedder chips, as this platform says it ("this Mac" is "this PC" on
+/// Windows). `status`: how the model stands (`nearby_status_words`).
+pub(crate) fn embedder_note(emb: &str, status: &str) -> String {
+    let note = match emb {
+        "local" => format!(
+            "{} ({}, {}). Runs on this Mac; nothing leaves it. {status}",
+            POTION_BASE_8M.name,
+            POTION_BASE_8M.licence,
+            POTION_BASE_8M.source.trim_start_matches("https://"),
+        ),
+        "endpoint" => {
+            format!("Paragraphs and your posts go to nearby-endpoint (config file). {status}")
+        }
+        _ => "Shared phrases, from the search index. A model on this Mac also finds posts \
+              that say the same thing in other words."
+            .to_string(),
+    };
+    crate::keymap::hint_owned(note)
+}

@@ -21,13 +21,16 @@
 //! contract's `details.issues`, `details.errors` and `details.tried`).
 
 pub mod access_ai; // --- access-ai --- (client access, AI on the blyg)
+pub mod agentic; // --- agentic feed --- (studio 0.69, contract 6.2.0)
 pub mod auth;
 pub mod background_api; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse --- (studio 0.49)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod conditional; // conditional reads (studio 0.65, contract 5.14.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
+pub mod dictionary; // --- dictionary --- (studio 0.69, contract 6.2.0)
 pub mod discover; // --- discover --- (studio 0.60, contract 5.9.0)
+pub mod helpers; // --- helpers --- (studio 0.69, contract 6.2.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
@@ -52,6 +55,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
+use crate::generate::GenerateOutcome;
 use crate::model::{
     Hopper, HopperEdit, Kind, Mention, RemoteId, RemoteRef, ResponsesMode, ScopeProvenance,
     Settings, SubId, SubscribePreview, Subscription, SubscriptionKind, Version,
@@ -66,9 +70,11 @@ use wire::*;
 /// tokens made for the old host-root `/api` of a mounted blyg working, up
 /// to studio 0.64; 0.65 refuses them, and Burrow asks for a new sign-in:
 /// `Api::audience_moved`). It is the oldest major Burrow speaks; the
-/// newest is [`CONTRACT_MAJOR_NEWEST`]. Anything else is refused before a
-/// list is read, because a page in another shape would read as the end of
-/// the list and rows would be pruned.
+/// newest is [`CONTRACT_MAJOR_NEWEST`]. An older one is refused before a
+/// list is read. A newer one ([`Contract::Newer`]) syncs on, gated on the
+/// capabilities it lists, but its lists never remove what's held here
+/// ([`Prune::Withheld`]): a page in another shape would read as the end of
+/// the list, and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
 
 /// The newest private API contract major this Burrow speaks. Contract 6
@@ -90,14 +96,47 @@ macro_rules! min_studio {
 /// The oldest blygger-studio Burrow syncs with, for messages.
 pub const MIN_STUDIO: &str = crate::min_studio!();
 
-/// Whether a studio's `contractVersion` takes `wholeBlyg` on `POST
-/// /api/subscriptions` (5.1.0, studio 0.50.0). Its body is strict, so a
-/// 5.0 studio answers 400 to the key.
+/// Whether a studio's capabilities (`GET /api/capabilities`) list the
+/// operation `op`, as an array of names or an object keyed by them. Every
+/// feature a studio may lack is gated on this, never on `contractVersion`
+/// (skill `capability-gating`): a version Burrow can't read ("next") still
+/// gets what it lists.
+pub fn offers(capabilities: &Value, op: &str) -> bool {
+    match capabilities.get("operations") {
+        Some(Value::Array(a)) => a.iter().any(|o| o.as_str() == Some(op)),
+        Some(Value::Object(m)) => m.contains_key(op),
+        _ => false,
+    }
+}
+
+/// Whether to send `wholeBlyg` on `POST /api/subscriptions` to a studio on
+/// `version`. The key (5.1.0, studio 0.50.0) has no operation of its own to
+/// look for, so this is the floor rule: only the floor contract, 5.0, is
+/// known to refuse it (its body is strict: 400). Anything else is sent it,
+/// and a 400 that names the key is asked again without it
+/// (`Api::post_subscription`, [`names_whole_blyg`]).
 pub fn takes_whole_blyg(version: &str) -> bool {
     let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(CONTRACT_MAJOR), Some(minor)) => minor >= 1,
-        (Some(major), _) => major > CONTRACT_MAJOR,
+    !matches!(
+        (parts.next().flatten(), parts.next().flatten()),
+        (Some(CONTRACT_MAJOR), Some(0))
+    )
+}
+
+/// Whether `e` is a 400 refusing `wholeBlyg` itself. A strict body (studio
+/// 0.49, contract 5.0) answers the unknown key through its `schemaError`:
+/// message `request: Unrecognized key: "wholeBlyg"`, the same text in
+/// `details.issues`. Any other 400 (a bad URL, say) is the answer, and
+/// asking again without the key would only hide it.
+pub fn names_whole_blyg(e: &CoreError) -> bool {
+    match e {
+        CoreError::Rejected {
+            status: 400,
+            message,
+            details,
+        } => std::iter::once(message)
+            .chain(details)
+            .any(|m| m.contains("wholeBlyg")),
         _ => false,
     }
 }
@@ -108,10 +147,44 @@ pub enum Contract {
     /// 5.x or 6.x: everything syncs.
     Supported,
     /// Older than 5 (or no contract at all: a studio before capability
-    /// discovery). The studio needs updating.
+    /// discovery). The studio needs updating; nothing syncs.
     TooOld,
-    /// Newer than this Burrow (or not a version): Burrow needs updating.
-    TooNew(String),
+    /// A major newer than this Burrow knows, or a version that isn't a
+    /// number. Sync goes on (each feature gated on the capabilities the
+    /// studio lists), your writes go through, and its lists remove nothing
+    /// held here until a Burrow that knows the contract
+    /// ([`Prune::Withheld`]). Burrow says so once (`CoreEvent::ServerNewer`).
+    ///
+    /// A version that isn't a number ("next", "v7") is judged the same: it
+    /// came from a studio that answers `/api/capabilities`, so it isn't one
+    /// from before contract 5, and it's most likely a pre-release. Refusing
+    /// it would stop all sync for nothing; taking it as Newer costs only
+    /// the prunes, and is the safe guess whatever it turns out to be.
+    Newer(String),
+}
+
+/// Whether a list read from a studio may remove what's held here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Prune {
+    /// A contract Burrow knows: a list read to its end is the truth, and
+    /// what it lacks goes (an item deleted, a post unsubscribed from…).
+    #[default]
+    Allowed,
+    /// A newer contract ([`Contract::Newer`]): a list adds and updates, and
+    /// removes nothing, whatever it lacks. A page in a shape Burrow doesn't
+    /// know would otherwise read as an empty or ended list.
+    Withheld,
+}
+
+impl Contract {
+    /// What this contract's lists may remove here (`None`: nothing is read).
+    pub fn prune(&self) -> Option<Prune> {
+        match self {
+            Contract::Supported => Some(Prune::Allowed),
+            Contract::TooOld => None,
+            Contract::Newer(_) => Some(Prune::Withheld),
+        }
+    }
 }
 
 /// Judge a studio's `contractVersion` (`None`: the studio has no
@@ -130,7 +203,7 @@ pub fn contract(version: Option<&str>) -> Contract {
             Contract::Supported
         }
         Some(major) if major < CONTRACT_MAJOR => Contract::TooOld,
-        _ => Contract::TooNew(v.trim().to_string()),
+        _ => Contract::Newer(v.trim().to_string()),
     }
 }
 
@@ -143,9 +216,12 @@ pub struct Api {
     session: Mutex<Option<String>>,
     /// What items resolve against, from settings as last read or written.
     site: Mutex<Option<Site>>,
-    /// Whether `POST /api/subscriptions` takes `wholeBlyg` (contract 5.1+),
-    /// once the capabilities were read.
+    /// Whether `POST /api/subscriptions` takes `wholeBlyg`, once known: from
+    /// the floor rule (`takes_whole_blyg`), or from a 400 to the key.
     whole_blyg: Mutex<Option<bool>>,
+    /// Whether the blyg has changelog display, read once a pull
+    /// (`serves_changelog`; forgotten by `new_pull`).
+    pub(super) changelog_served: Mutex<Option<bool>>,
     /// Each `GET` URL's last body and its `ETag` (`conditional`).
     validators: Mutex<Validators>,
     /// Send `If-None-Match` with a kept ETag (on unless turned off to
@@ -214,10 +290,19 @@ impl Api {
             session: Mutex::new(None),
             site: Mutex::new(None),
             whole_blyg: Mutex::new(None),
+            changelog_served: Mutex::new(None),
             validators: Mutex::new(Validators::default()),
             conditional: AtomicBool::new(true),
             counters: Counters::default(),
         }
+    }
+
+    /// A new pull: what's read once a pull is read again.
+    pub fn new_pull(&self) {
+        *self
+            .changelog_served
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// Ask `GET`s conditionally (`If-None-Match` with the ETag of the body
@@ -594,6 +679,17 @@ impl Api {
     /// has none there). `Ok(None)`: not served (404), or not readable as
     /// one. Refused credentials (401 after a refresh, 403), offline,
     /// rate-limited or 5xx: an error, so nothing passes on a failed read.
+    /// Whether the studio's capabilities list every one of `ops`
+    /// ([`offers`]). A studio without capabilities offers nothing; a failed
+    /// read (offline, a 5xx, a refused credential) decides nothing.
+    pub fn offers_all(&self, ops: &[&str]) -> Result<bool> {
+        match self.call("GET", "/api/capabilities", None) {
+            Ok(v) => Ok(ops.iter().all(|op| offers(&v, op))),
+            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+            Err(_) => Ok(false),
+        }
+    }
+
     pub fn contract_version(&self) -> Result<Option<String>> {
         match self.call("GET", "/api/capabilities", None) {
             Ok(v) => Ok(v
@@ -808,33 +904,27 @@ impl Api {
     /// fills that TK scope with its own model, records the provenance and
     /// stores the spliced text. `revision`: `None` reads the item first and
     /// uses its current revision (for a caller that holds none).
-    pub fn generate(&self, id: &str, scope: u32, revision: Option<u64>) -> Result<Generated> {
+    ///
+    /// Studio 0.70+ reads the draft's links first and may answer a
+    /// checkpoint instead, saving nothing; `proceed` generates past one
+    /// (`crate::generate`).
+    pub fn generate(
+        &self,
+        id: &str,
+        scope: u32,
+        revision: Option<u64>,
+        proceed: bool,
+    ) -> Result<GenerateOutcome> {
         let revision = match revision {
             Some(r) => r,
             None => self.get_item(id)?.revision,
         };
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct R {
-            text: String,
-            #[serde(default)]
-            model: Option<String>,
-            #[serde(default)]
-            content_md: Option<String>,
-            #[serde(default)]
-            revision: u64,
-        }
-        let r: R = self.call_as(
+        let v: Value = self.call_as(
             "POST",
             &format!("/api/items/{}/generate", enc(id)),
-            Some(json!({ "scope": scope, "expectedRevision": revision })),
+            Some(crate::generate::request_body(scope, revision, proceed)),
         )?;
-        Ok(Generated {
-            text: r.text,
-            model: r.model.unwrap_or_else(|| "unknown".into()),
-            content_md: r.content_md,
-            revision: r.revision,
-        })
+        GenerateOutcome::from_value(v)
     }
 
     /// `GET /api/changes`: the blyg's change epoch and one revision counter
@@ -947,37 +1037,50 @@ impl Api {
         Ok(subs.into_iter().map(Subscription::from).collect())
     }
 
-    /// Whether this studio takes `wholeBlyg`, read once from its
-    /// capabilities. A failed read answers false and is tried again next time.
+    /// Whether to send this studio `wholeBlyg`: what it answered before,
+    /// else the floor rule on its contract. A failed read sends it (a 400
+    /// is asked again without it).
     fn whole_blyg(&self) -> bool {
         if let Some(w) = *self.whole_blyg.lock().unwrap() {
             return w;
         }
         match self.contract_version() {
             Ok(v) => {
-                let w = v.as_deref().is_some_and(takes_whole_blyg);
+                let w = v.as_deref().is_none_or(takes_whole_blyg);
                 *self.whole_blyg.lock().unwrap() = Some(w);
                 w
             }
-            Err(_) => false,
+            Err(_) => true,
         }
     }
 
-    /// `{url}` for `POST /api/subscriptions`, with `wholeBlyg: true` where
-    /// the studio takes it. A URL that names one of a blyg's public hoppers
+    /// `POST /api/subscriptions` with `body` plus `wholeBlyg: true` where the
+    /// studio takes it. A URL that names one of a blyg's public hoppers
     /// otherwise proposes (and confirms) a hopper subscription, which Burrow
     /// doesn't model: it follows the whole blyg instead (spec 0.4 §16.12
-    /// rule 4). The key changes nothing for any other URL.
-    fn subscribe_body(&self, url: &str) -> Value {
-        let mut body = json!({ "url": url });
-        if self.whole_blyg() {
-            body["wholeBlyg"] = json!(true);
+    /// rule 4). The key changes nothing for any other URL. A 400 naming the
+    /// key ([`names_whole_blyg`]) is asked again without it; when that
+    /// works, the key isn't sent again.
+    fn post_subscription(&self, body: Value) -> Result<Value> {
+        if !self.whole_blyg() {
+            return self.call("POST", "/api/subscriptions", Some(body));
         }
-        body
+        let mut with = body.clone();
+        with["wholeBlyg"] = json!(true);
+        match self.call("POST", "/api/subscriptions", Some(with)) {
+            Err(e) if names_whole_blyg(&e) => {
+                let r = self.call("POST", "/api/subscriptions", Some(body));
+                if r.is_ok() {
+                    *self.whole_blyg.lock().unwrap() = Some(false);
+                }
+                r
+            }
+            r => r,
+        }
     }
 
     pub fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
-        let v = self.call("POST", "/api/subscriptions", Some(self.subscribe_body(url)))?;
+        let v = self.post_subscription(json!({ "url": url }))?;
         let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
         let kind = if s("kind").as_deref() == Some("rss") {
             SubscriptionKind::Rss
@@ -1000,15 +1103,14 @@ impl Api {
 
     /// `POST /api/subscriptions {url, confirm:true, title?}` → new subscription id.
     pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<SubId> {
-        let mut body = self.subscribe_body(url);
-        body["confirm"] = json!(true);
+        let mut body = json!({ "url": url, "confirm": true });
         if let Some(t) = title {
             body["title"] = json!(crate::text::for_save(t));
         }
-        Ok(self
-            .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
-            .id
-            .into())
+        let v = self.post_subscription(body)?;
+        let created: Created = serde_json::from_value(v)
+            .map_err(|e| CoreError::Other(format!("unexpected subscription answer: {e}")))?;
+        Ok(created.id.into())
     }
 
     /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
@@ -1599,8 +1701,6 @@ pub enum ConnectError {
     /// The studio is older than [`MIN_STUDIO`] (its private API contract
     /// isn't 5.x, or it has none).
     Outdated,
-    /// The studio speaks a newer contract than this Burrow.
-    TooNew(String),
     /// Anything else (a 5xx, or a page that isn't a blyg's JSON).
     Other(String),
 }
@@ -1626,10 +1726,6 @@ impl std::fmt::Display for ConnectError {
             ConnectError::Outdated => write!(
                 f,
                 "Your blyg needs updating: Burrow needs blygger-studio {MIN_STUDIO} or later. Update the studio, then connect again."
-            ),
-            ConnectError::TooNew(c) => write!(
-                f,
-                "This blyg runs studio API contract {c}, which this version of Burrow doesn't speak yet. Update Burrow (Burrow › Check for Updates…), then connect again."
             ),
             ConnectError::Other(m) => f.write_str(m),
         }
@@ -1668,10 +1764,9 @@ pub fn verify_connection(
         ),
         e => ConnectError::Other(e.to_string()),
     };
-    match contract(api.contract_version().map_err(fail)?.as_deref()) {
-        Contract::Supported => {}
-        Contract::TooOld => return Err(ConnectError::Outdated),
-        Contract::TooNew(c) => return Err(ConnectError::TooNew(c)),
+    // A newer contract connects: sync says so once, and keeps what's held.
+    if contract(api.contract_version().map_err(fail)?.as_deref()) == Contract::TooOld {
+        return Err(ConnectError::Outdated);
     }
     api.count_items().map(|n| n as usize).map_err(fail)
 }
@@ -1893,25 +1988,16 @@ pub fn is_transient(e: &CoreError) -> bool {
     ) || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
 }
 
-/// Upstream's `GenerationProvenance` array: `{sources: [{id, version}],
-/// model?, at?}` or `null` per scope.
+/// Upstream's `GenerationProvenance` array: `{sources, model?, at?}` or
+/// `null` per scope, its sources posts (`{id, version, origin?, cited?}`)
+/// and web pages (`{url, cited}`, studio 0.70) as the blyg recorded them.
 fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
-    Value::Array(
-        scopes
-            .iter()
-            .map(|p| match p {
-                None => Value::Null,
-                Some(p) => {
-                    let mut e = json!({ "model": p.model, "sources": p.sources });
-                    if let Some(at) = &p.at {
-                        e["at"] = json!(at);
-                    }
-                    e
-                }
-            })
-            .collect(),
-    )
+    serde_json::to_value(scopes).unwrap_or_else(|_| Value::Array(vec![]))
 }
+
+#[cfg(test)]
+#[path = "contract_tests.rs"]
+mod contract_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1953,23 +2039,10 @@ mod tests {
         assert_eq!(contract(Some("4.0.0")), Contract::TooOld);
         assert_eq!(contract(Some("1.0.0")), Contract::TooOld);
         assert_eq!(contract(None), Contract::TooOld, "no capabilities: too old");
-        assert!(
-            !takes_whole_blyg("5.0.0"),
-            "studio 0.49: strict body, no key"
-        );
-        assert!(takes_whole_blyg("5.1.0"));
-        assert!(takes_whole_blyg(" 5.2.0 "));
-        assert!(takes_whole_blyg("6.0.0"));
-        assert!(!takes_whole_blyg("5"));
-        assert!(!takes_whole_blyg("4.9.0"));
-        assert!(!takes_whole_blyg("next"));
         // Contract 6 (studio 0.67) only drops `GET /changes`, which sync
         // already does without: a studio on 0.67+ must still sync.
         assert_eq!(contract(Some("6.0.0")), Contract::Supported);
         assert_eq!(contract(Some("6.1.0")), Contract::Supported);
-        assert_eq!(contract(Some("7.0.0")), Contract::TooNew("7.0.0".into()));
-        // Not a version: not something this Burrow knows how to speak.
-        assert_eq!(contract(Some("next")), Contract::TooNew("next".into()));
     }
 
     #[test]

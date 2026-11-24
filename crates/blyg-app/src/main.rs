@@ -28,6 +28,8 @@ mod dev_flags;
 mod fake;
 mod fonts;
 mod images;
+#[cfg(test)]
+mod key_handlers_tests;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;
@@ -45,6 +47,8 @@ mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
+#[cfg(test)]
+mod windows_keys_tests;
 // The WebView2 hosting shared by the preview and the browser pane.
 #[cfg(all(target_os = "windows", not(test)))]
 mod webview2_host;
@@ -79,6 +83,12 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = cli::run(&args) {
         return code;
+    }
+    // Past `--version`, `--help` and every `+action`: this is an app start.
+    // Before any window, config or backend work.
+    if let Err(e) = dev_flags::refuse_ignored() {
+        eprintln!("blygger: {e}");
+        return ExitCode::from(2);
     }
     let launched = Instant::now();
 
@@ -188,6 +198,7 @@ fn main() -> ExitCode {
     app.run(move |cx: &mut App| {
         gpui_kit::init(cx);
         platform::set_dock_icon_unless_bundled();
+        platform::init(cx); // Windows: Esc closes the Menu panel
         settings::init(store, tokens, notice, cx);
         cx.set_global(themes); // --- themes ---
         ai::init(cx);
@@ -461,8 +472,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::contacts::AddAuthorToContacts,
                 ),
                 // --- shelf ---
-                MenuItem::action("Shelf…", app::shelf::ShowShelf),
-                MenuItem::action("Add to Shelf / Remove from Shelf", app::shelf::ToggleShelf),
+                MenuItem::action("Saved…", app::shelf::ShowShelf),
+                MenuItem::action("Save / Remove from Saved", app::shelf::ToggleShelf),
                 // --- tangles --- the quote tray, split view
                 MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
                 MenuItem::action("Open Beside", app::split::OpenBeside),
@@ -532,6 +543,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),
                 MenuItem::action("AI on Your Blyg…", app::server_ai::ShowServerAi),
+                // --- dictionary ---
+                MenuItem::action("Dictionary…", app::server_ai::dictionary::ShowDictionary),
                 MenuItem::action("Site…", app::site::ShowSite), // --- site ---
                 // --- upkeep ---
                 MenuItem::action("Stale Quotes…", app::upkeep::ShowStaleQuotes),

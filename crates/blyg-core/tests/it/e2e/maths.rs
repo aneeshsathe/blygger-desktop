@@ -103,6 +103,7 @@ fn a_formula_in_someone_elses_post_is_redrawn_for_the_reader() {
         None,
     );
     let sub = me.subscribe(&src_url, Some("Maths")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("held");
     // The reader's maths step (`blyg_render::math::hole_math`, which the

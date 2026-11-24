@@ -66,6 +66,10 @@ pub struct Doc {
     pub base: Option<String>,
     pub media: Vec<RemoteMedia>,
     pub scope: Scope,
+    /// --- studio 0.71 --- what its generated text read, as the publisher
+    /// disclosed it: one slot per gap (`None`: that gap disclosed nothing),
+    /// listed under the post.
+    pub generation: Vec<Option<blyg_core::ScopeProvenance>>,
 }
 
 /// What the loaded page was made from (a new page when this changes).
@@ -95,6 +99,11 @@ pub struct Reader {
 }
 
 impl Reader {
+    /// --- esc --- See `Studio::hand_back_keyboard`.
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.focus_parent());
+    }
+
     pub(super) fn reclaim_keyboard(&self) {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
     }
@@ -300,6 +309,10 @@ article.thread > .item-content > p:first-child {{
   margin-top: 1.6em; color: var(--muted, #888);
   font: 11.5px Inter, -apple-system, system-ui, sans-serif;
 }}
+.blyg-gen-read {{ color: var(--muted, #888); font: 11.5px Inter, -apple-system, system-ui, sans-serif; }}
+.blyg-gen-read-h {{ margin: 0.4em 0 0.2em; }}
+.blyg-gen-read ul {{ margin: 0; padding-left: 1.2em; }}
+.blyg-gen-read a {{ color: inherit; word-break: break-all; }}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
 blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 .blyg-qfoot {{
@@ -321,7 +334,7 @@ blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 /// reader CSP with `<base href>` at the author's origin.
 #[cfg(test)]
 pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
-    reader_page_named(content, doc, font_px, &|_| None)
+    reader_page_named(content, doc, font_px, &|_| None, &|_| None)
 }
 
 /// [`reader_page`], naming quote origins with `name_of` (a subscription's
@@ -331,6 +344,7 @@ pub fn reader_page_named(
     doc: &Doc,
     font_px: f32,
     name_of: &dyn Fn(&str) -> Option<String>,
+    post_name: &dyn Fn(&blyg_core::ProvenanceSource) -> Option<crate::ai::read::Named>,
 ) -> String {
     let clean = sanitize(&format!("{content}\n{}", attachments_html(&doc.media)));
     let post_origin = match &doc.scope {
@@ -342,6 +356,14 @@ pub fn reader_page_named(
         None => clean,
     };
     let clean = generated_note(&clean);
+    let clean = format!(
+        "{clean}{}",
+        generation_read(
+            &doc.generation,
+            post_name,
+            matches!(doc.scope, Scope::Own(_)),
+        )
+    );
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
     // --- themes --- the theme's colours over the fallback stylesheet, and
     // its quote-box shape last, so it wins over the reader's defaults.
@@ -379,6 +401,94 @@ pub fn generated_note(html: &str) -> String {
     let titled = html.replace(MARK, &format!("{MARK} title=\"{GENERATED_NOTE}\""));
     format!("{titled}<p class=\"blyg-gen-note\">{GENERATED_NOTE}</p>\n")
 }
+
+/// --- studio 0.71 --- Under a post whose generated text the publisher
+/// disclosed: what each scope read. The posts it drew on (a post on another
+/// blyg was told, by a mention), by title when held here (`name_of`),
+/// else by their blyg, never by id; and the web pages its model read, by
+/// address (and site, when that isn't the host). Each gap by its number
+/// among all of the post's (`generation` holds one slot per gap). The
+/// page's own HTML is already sanitized; this is built here, every value
+/// escaped, and a link only for an http(s) address. Empty when nothing was
+/// read. `yours`: the post is your own.
+pub fn generation_read(
+    generation: &[Option<blyg_core::ScopeProvenance>],
+    name_of: &dyn Fn(&blyg_core::ProvenanceSource) -> Option<crate::ai::read::Named>,
+    yours: bool,
+) -> String {
+    use crate::ai::read::{self, Open};
+    use blyg_render::escape_html as esc;
+    let web = |u: &str| match url::Url::parse(u) {
+        Ok(p) if matches!(p.scheme(), "http" | "https") => Some(p.to_string()),
+        _ => None,
+    };
+    let a = |href: &str, text: &str| format!("<a href=\"{}\">{}</a>", esc(href), esc(text));
+    // Another blyg decides how long this is: the first `read::SHOWN`
+    // entries, then how many more.
+    let (scopes, more) = read::capped(read::scopes(generation, name_of, yours));
+    if scopes.is_empty() {
+        return String::new();
+    }
+    let many = generation.len() > 1;
+    let mut out = format!(
+        "<div class=\"blyg-gen-read\"><p class=\"blyg-gen-read-h\">{}</p>\
+         <p class=\"blyg-gen-read-n\">{}</p><ul>",
+        esc(GENERATION_READ),
+        esc(GENERATION_TOLD_NO_ONE)
+    );
+    for (n, entries) in scopes {
+        let tk = if many {
+            format!("{} · ", read::scope_label(n))
+        } else {
+            String::new()
+        };
+        for e in entries {
+            // The words, the post's title (or "a post") as its link.
+            let what = match (
+                &e.link,
+                e.link.as_ref().and_then(|(_, o)| match o {
+                    Open::Web(u) => web(u),
+                    Open::Own(_) => None,
+                }),
+            ) {
+                (Some((label, _)), Some(href)) if e.what.contains(label.as_str()) => {
+                    let (before, after) = e.what.split_once(label.as_str()).unwrap_or_default();
+                    format!("{}{}{}", esc(before), a(&href, label), esc(after))
+                }
+                _ => esc(&e.what),
+            };
+            let url = e.url.as_deref().map(|u| match web(u) {
+                Some(href) => format!(" · {}", a(&href, u)),
+                None => format!(" · {}", esc(u)),
+            });
+            let mark = if e.tells {
+                format!(
+                    " <span class=\"blyg-gen-mark\">· {}</span>",
+                    esc(GENERATION_TOLD)
+                )
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "<li>{}{what}{}{mark}</li>",
+                esc(&tk),
+                url.unwrap_or_default()
+            ));
+        }
+    }
+    if more > 0 {
+        out.push_str(&format!("<li>{}</li>", esc(&read::more(more))));
+    }
+    out.push_str("</ul></div>\n");
+    out
+}
+
+/// The heading over [`generation_read`].
+pub const GENERATION_READ: &str = "What its generated text read, as the publisher disclosed it:";
+/// Under the heading: what the entries without a mark did.
+pub const GENERATION_TOLD_NO_ONE: &str = "Web pages and the blyg's own posts tell no one.";
+/// A source on another blyg: its author was told (a mention).
+pub const GENERATION_TOLD: &str = "its author was told";
 
 // --- quote targets ---
 
@@ -557,6 +667,7 @@ impl MainView {
                         base,
                         media: Vec::new(), // a pin document has no media[]
                         scope,
+                        generation: Vec::new(), // disclosed for the current version
                     });
                 }
                 let tombstone = item.state == "tombstone";
@@ -578,6 +689,15 @@ impl MainView {
                     base,
                     media,
                     scope,
+                    generation: if tombstone {
+                        Vec::new()
+                    } else {
+                        item.generated
+                            .iter()
+                            .flatten()
+                            .map(blyg_core::ScopeProvenance::from_served)
+                            .collect()
+                    },
                 })
             }
             View::Posts => {
@@ -591,6 +711,14 @@ impl MainView {
                     kind: render_kind(item.kind),
                     base: self.backend.base_url().as_deref().and_then(origin_base),
                     media: Vec::new(),
+                    // Your own: what Burrow and your blyg recorded for
+                    // this text.
+                    generation: self
+                        .backend
+                        .tracked_tk_provenance(&item.local_id)
+                        .filter(|(keyed, _)| *keyed == item.content_md)
+                        .map(|(_, s)| s)
+                        .unwrap_or_default(),
                     scope: Scope::Own(item.local_id.clone()),
                 })
             }
@@ -666,7 +794,31 @@ impl MainView {
                         .map(|s| s.title.clone())
                         .filter(|t| !t.trim().is_empty())
                 };
-                let page = reader_page_named(&content, &shown.doc, shown.font_px as f32, &name_of);
+                // --- studio 0.71 --- the posts its generated text read,
+                // by title when held here; one of yours by its page.
+                let home = match &shown.doc.scope {
+                    Scope::Remote { origin, .. } => Some(origin.as_str()),
+                    Scope::Own(_) => None,
+                };
+                let names = crate::ai::read::Names::new(&*self.backend, home);
+                let backend = self.backend.clone();
+                let post_name = |s: &blyg_core::ProvenanceSource| {
+                    let mut n = names.get(s)?;
+                    if let Some(crate::ai::read::Open::Own(id)) = &n.open {
+                        n.open = backend
+                            .item(id)
+                            .and_then(|i| i.permalink)
+                            .map(crate::ai::read::Open::Web);
+                    }
+                    Some(n)
+                };
+                let page = reader_page_named(
+                    &content,
+                    &shown.doc,
+                    shown.font_px as f32,
+                    &name_of,
+                    &post_name,
+                );
                 self.studio.reader.slot.borrow_mut().with(|s| s.load(&page));
                 self.studio.reader.selected = false; // --- selection ---
                 #[cfg(test)]
@@ -763,6 +915,7 @@ impl MainView {
             SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
             // --- stub quotes --- the editor preview's alone.
             SurfaceEvent::StubSelection(_) => {}
+            SurfaceEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
         }
     }
 
@@ -903,6 +1056,7 @@ mod tests {
                 origin: "https://ada.blyg.example.com/".into(),
                 id: "01k2x".into(),
             },
+            generation: Vec::new(),
         }
     }
 

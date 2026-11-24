@@ -3,8 +3,8 @@
 #
 #   scripts/test-first.sh <base> <branch>         every commit that changes product
 #                                                 code has a test commit at or before it
-#   scripts/test-first.sh --run <base> <branch>   also runs the first test commit's
-#                                                 new tests without the feature: one must fail
+#   scripts/test-first.sh --run <base> <branch>   also runs the new tests of the
+#                                                 first test commit adding any, without the feature: one must fail
 #   scripts/test-first.sh --pr <base> <head>      CI's whole-PR check: product code
 #                                                 changed means test files changed too
 #
@@ -17,17 +17,27 @@
 # trailer `No-test: <reason>` (a refactor the existing tests cover, a comment,
 # a version bump) is allowed through. Merge commits are skipped.
 #
-# --run wants the first test commit to hold tests only (no product code), checks
-# it out in a temporary worktree, runs the tests it added with
+# --run takes the first test commit that adds a test function (earlier test
+# commits that only touch fixtures or vendored files are named and skipped; none
+# adding one, or product code before it, exits 1). It wants that commit to hold
+# tests only (no product code), checks it out in a temporary worktree, runs the tests it added with
 # `cargo test -p <crate> -- <names>`, and wants at least one FAILURE (or a
 # build failure: the code they call doesn't exist yet). New e2e tests
 # (`#[ignore]`d, in blyg-core) run through `scripts/e2e-local.sh` when
 # BLYG_WORKER_DIR is set, and are listed as not run otherwise. It never
-# touches your working tree and removes the worktree when done. Set
-# CARGO_TARGET_DIR (and CARGO_BUILD_JOBS) as for any build.
+# touches your working tree and removes the worktree when done.
+#
+# Those old sources never build into the target directory your working tree
+# uses (a test binary an older commit leaves there is one the next run can
+# take for its own): every cargo run in the worktree, the e2e script's too,
+# gets `${CARGO_TARGET_DIR:-<repo>/target}/test-first`, which is kept between
+# runs. So set CARGO_TARGET_DIR (and CARGO_BUILD_JOBS) as for any build: the
+# script builds under it, apart from your build, and leaves your environment
+# alone.
 #
 # Exit status: 0 when the order holds (and, with --run, a new test failed
-# before the feature), 1 when not, 2 on bad usage.
+# before the feature), 1 when not (with --run also: no test to run, or none that
+# can be red), 2 on bad usage.
 set -euo pipefail
 
 die() { printf 'test-first: %s\n' "$*" >&2; exit 2; }
@@ -128,6 +138,8 @@ fi
 
 seen_tests=""
 first_test=""
+test_cands=""   # one "commit|product commits since the first test commit" line per test commit
+prod_since=""
 bad=0
 for c in $(git rev-list --reverse --no-merges "$base..$branch"); do
   files=$(commit_files "$c")
@@ -140,6 +152,8 @@ for c in $(git rev-list --reverse --no-merges "$base..$branch"); do
     seen_tests=$c
     first_test=$c
   fi
+  [ "$has_tests" = 0 ] || test_cands="$test_cands$c|$prod_since"$'\n'
+  if [ "$has_product" != 0 ] && [ -n "$seen_tests" ]; then prod_since="$prod_since $c"; fi
   tag="     "
   code="code      "
   if [ "$has_tests" != 0 ]; then tag="tests"; code="tests+code"; fi
@@ -169,9 +183,53 @@ echo "test-first: order holds; first test commit $(git log -1 --format=%h "$firs
 [ "$mode" = run ] || exit 0
 
 
-# ---- --run: the first test commit's tests, before the feature ----
+# ---- --run: the first test commit that adds a test function, before the feature ----
+
+# "crate-dir test-name ignored(0/1)" for each test function a commit adds.
+new_tests_of() {
+  git show --format= -U0 "$1" -- '*.rs' | awk '
+    /^\+\+\+ b\// { split(substr($0, 7), p, "/"); dir = p[2]; armed = 0; next }
+    /^\+/ {
+      line = substr($0, 2)
+      if (line ~ /^[[:space:]]*#\[(test|gpui_kit::test|gpui::test|tokio::test)/) { armed = 1; ign = 0; next }
+      if (armed && line ~ /^[[:space:]]*#\[ignore/) { ign = 1; next }
+      if (armed && match(line, /fn [A-Za-z0-9_]+/)) {
+        print dir, substr(line, RSTART + 3, RLENGTH - 3), ign; armed = 0
+      }
+      next
+    }
+    { armed = 0 }'
+}
+
+# A fixture or a vendored file under tests/ makes a test commit with no test
+# function: skip those and take the first test commit that adds one.
+first_test=""
+new_tests=""
+chosen_prods=""
+while IFS='|' read -r c prods; do
+  [ -n "$c" ] || continue
+  nt=$(new_tests_of "$c")
+  if [ -n "$nt" ]; then
+    first_test=$c
+    new_tests=$nt
+    chosen_prods=$prods
+    break
+  fi
+  echo "test-first: $(git log -1 --format=%h "$c") changes test files but adds no #[test]; skipped"
+done <<<"$test_cands"
+if [ -z "$first_test" ]; then
+  echo "test-first: no test commit on $branch adds a #[test] function, so there is nothing to run and red before green isn't shown"
+  exit 1
+fi
 
 at=$(git log -1 --format=%h "$first_test")
+if [ -n "$chosen_prods" ]; then
+  first_prod=${chosen_prods# }
+  first_prod=${first_prod%% *}
+  echo "test-first: the first commit that adds tests ($at) comes after product code at $(short "$first_prod"),"
+  echo "so they can't be red before the feature. Add the tests before that code."
+  exit 1
+fi
 product=$(commit_files "$first_test" | sed -n 's/^P //p')
 if [ -n "$product" ]; then
   echo "test-first: $at adds tests together with product code, so they can't be"
@@ -179,21 +237,6 @@ if [ -n "$product" ]; then
   printf '%s\n' "$product" | sed 's/^/  /'
   exit 1
 fi
-
-# "crate-dir test-name ignored(0/1)" for each test function the commit adds.
-new_tests=$(git show --format= -U0 "$first_test" -- '*.rs' | awk '
-  /^\+\+\+ b\// { split(substr($0, 7), p, "/"); dir = p[2]; armed = 0; next }
-  /^\+/ {
-    line = substr($0, 2)
-    if (line ~ /^[[:space:]]*#\[(test|gpui_kit::test|gpui::test|tokio::test)/) { armed = 1; ign = 0; next }
-    if (armed && line ~ /^[[:space:]]*#\[ignore/) { ign = 1; next }
-    if (armed && match(line, /fn [A-Za-z0-9_]+/)) {
-      print dir, substr(line, RSTART + 3, RLENGTH - 3), ign; armed = 0
-    }
-    next
-  }
-  { armed = 0 }')
-[ -n "$new_tests" ] || die "$at adds no #[test] functions to run"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/test-first.XXXXXX")
 # shellcheck disable=SC2329 # run by the trap
@@ -204,6 +247,14 @@ cleanup() {
 }
 trap cleanup EXIT
 git worktree add --detach -q "$tmp/wt" "$first_test"
+
+# The worktree's own target directory (see the header): under the caller's,
+# never the caller's. Absolute, since cargo runs from inside the worktree.
+wt_target=${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}/test-first
+case "$wt_target" in
+  /*) ;;
+  *) wt_target=$PWD/$wt_target ;;
+esac
 
 red=0
 ran=0
@@ -230,7 +281,7 @@ for dir in $(printf '%s\n' "$new_tests" | awk '$3 == 0 { print $1 }' | sort -u);
   names=$(printf '%s\n' "$new_tests" | awk -v d="$dir" '$1 == d && $3 == 0 { print $2 }' | sort -u | tr '\n' ' ')
   echo "test-first: $pkg at $at: $names"
   # shellcheck disable=SC2086
-  (cd "$tmp/wt" && cargo test -p "$pkg" -- $names) >"$tmp/$dir.log" 2>&1 || true
+  (cd "$tmp/wt" && CARGO_TARGET_DIR="$wt_target" cargo test -p "$pkg" -- $names) >"$tmp/$dir.log" 2>&1 || true
   judge "$tmp/$dir.log"
 done
 
@@ -239,7 +290,7 @@ if [ -n "$e2e" ]; then
   if [ -n "${BLYG_WORKER_DIR:-}" ]; then
     echo "test-first: e2e at $at against $BLYG_WORKER_DIR: $e2e"
     # shellcheck disable=SC2086
-    (cd "$tmp/wt" && BLYG_E2E_SKIP_NOTES=1 BLYG_E2E_SKIP_SWITCHER=1 scripts/e2e-local.sh $e2e) >"$tmp/e2e.log" 2>&1 || true
+    (cd "$tmp/wt" && CARGO_TARGET_DIR="$wt_target" BLYG_E2E_SKIP_NOTES=1 BLYG_E2E_SKIP_SWITCHER=1 scripts/e2e-local.sh $e2e) >"$tmp/e2e.log" 2>&1 || true
     judge "$tmp/e2e.log"
   else
     echo "test-first: not run (set BLYG_WORKER_DIR to a studio build to run them): e2e $e2e"

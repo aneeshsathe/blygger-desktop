@@ -632,8 +632,11 @@ fn background_rule_chips_take_tab_space_and_enter(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     open_settings_page(cx);
     assert!(rule_on(&view, cx, BURST));
-    // WRITING FONT, INTERFACE FONT, SIZE, THEME, then BACKGROUND.
-    for _ in 0..5 {
+    crate::test_wait::until(cx, "Settings to read READ MARKS", |cx| {
+        view.read_with(cx, |v, _| v.reading.count_read.setting.is_some())
+    });
+    // WRITING FONT, INTERFACE FONT, SIZE, THEME, READ MARKS, then BACKGROUND.
+    for _ in 0..6 {
         keys(cx, "tab");
     }
     frame(cx);
@@ -649,12 +652,12 @@ fn background_rule_chips_take_tab_space_and_enter(cx: &mut TestAppContext) {
     keys(cx, "space");
     assert!(!rule_on(&view, cx, "wordless"), "→ moves to the next rule");
     assert!(rule_on(&view, cx, BURST));
-    // ⇧⇥ goes back to THEME.
+    // ⇧⇥ goes back to READ MARKS.
     keys(cx, "shift-tab");
     view.read_with(cx, |v, _| {
         assert_eq!(
             v.preview.cursor.as_ref().map(|c| c.0),
-            Some(crate::app::pref_preview::Row::Theme)
+            Some(crate::app::pref_preview::Row::CountRead)
         )
     });
 }
@@ -686,6 +689,28 @@ fn background_rules_show_their_state_and_say_what_changed(cx: &mut TestAppContex
     assert_eq!(
         toast_text(&view, cx),
         "Parts published with a thread go to Background again"
+    );
+}
+
+/// A sign-in that can read Background but not change it (no
+/// `setReadingPlacement`): the rules show, greyed, say why, and don't turn.
+#[gpui_kit::test]
+fn background_rules_are_locked_for_a_sign_in_that_cant_place(cx: &mut TestAppContext) {
+    use blyg_core::background::BURST;
+    let (view, _, cx) = setup(cx);
+    open_settings_page(cx);
+    view.update(cx, |v, cx| {
+        v.reading.background.placing = false;
+        v.save_background_rule(BURST, false, cx);
+        v.toggle_background_rule(BURST, cx);
+    });
+    cx.run_until_parked();
+    assert!(rule_on(&view, cx, BURST), "not turned");
+    view.update(cx, |v, _| v.reading.background.placing = false);
+    frame(cx);
+    assert!(
+        cx.debug_bounds("bg-rules-locked").is_some(),
+        "says why they're greyed"
     );
 }
 

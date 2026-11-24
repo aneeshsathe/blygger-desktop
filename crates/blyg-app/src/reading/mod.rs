@@ -18,6 +18,10 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+// --- agentic feed --- studio 0.69's edition in the Agentic feed tab.
+pub(crate) mod agentic;
+#[cfg(test)]
+mod agentic_tests;
 pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
 #[cfg(test)]
 mod background_tests;
@@ -30,6 +34,7 @@ pub(crate) mod site_view;
 mod site_view_tests;
 // --- reading compose --- the compose box along the reading screen's foot.
 pub(crate) mod compose;
+pub(crate) mod count_read; // --- studio 0.71 --- when an entry counts as read
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
 #[cfg(test)]
@@ -39,7 +44,8 @@ pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
-pub(crate) mod marks; // --- read/unread --- (and Mark All Read…)
+pub(crate) mod marks;
+pub(crate) mod maths_text; // --- ux 0.28 --- formulas in cards, as text // --- read/unread --- (and Mark All Read…)
 // --- catch up --- the conversation leading to a post, oldest first (⇧C).
 pub(crate) mod catchup;
 mod mentions;
@@ -52,6 +58,10 @@ pub(crate) mod mentions_vm; // --- contacts --- why a post is in it (the web com
 pub(crate) mod contacts;
 // --- end contacts ---
 pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
+// --- reader order --- studio 0.68's tabs: the Feed's order and controls, Raw.
+pub(crate) mod feed;
+#[cfg(test)]
+mod feed_tests;
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -90,9 +100,15 @@ pub(crate) mod vm;
 #[cfg(test)]
 mod compose_tests; // --- reading compose ---
 #[cfg(test)]
+mod count_read_tests; // --- studio 0.71 --- when an entry counts as read
+#[cfg(test)]
+mod link_click_keys_tests;
+#[cfg(test)]
 mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod perf_tests; // the reading screens at scale
+#[cfg(test)]
+mod pick_all_keys_tests;
 mod read_mark; // opening a post marks its row, in place
 #[cfg(test)]
 mod read_mark_tests;
@@ -101,7 +117,11 @@ mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
 #[cfg(test)]
+mod studio069_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ux_reading_tests; // --- ux 0.28 ---
 
 use std::collections::{HashMap, HashSet};
 
@@ -229,6 +249,14 @@ impl Opened {
         let shown = self.shown.ready()?;
         let v = shown.get(self.ix?)?;
         (!v.current).then_some(v)
+    }
+
+    /// The current version is pinned too (one entry in the pill, marked
+    /// current): Fork forks it without stepping anywhere.
+    pub fn current_is_pinned(&self) -> bool {
+        self.shown
+            .ready()
+            .is_some_and(|s| s.iter().any(|v| v.current && v.pinned))
     }
 }
 
@@ -450,6 +478,8 @@ pub struct State {
     pub trails: crate::app::trails::Trails,
     /// --- shelf sync --- the shelf's posts, in its order (the Shelf lens).
     pub shelved: Vec<Key>,
+    /// --- agentic feed --- the edition and the tab's name (studio 0.69).
+    pub agentic: agentic::Agentic,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -461,6 +491,10 @@ pub struct State {
     /// --- background --- whether the blyg has Background (studio 0.61), and
     /// its rules for Settings.
     pub background: background::Background,
+    /// --- reader order --- the Feed's order and each row's place in it.
+    pub feed: feed::Feed,
+    /// --- studio 0.71 --- when an entry counts as read (`readerMarkRead`).
+    pub count_read: count_read::CountRead,
 }
 
 impl State {
@@ -468,10 +502,14 @@ impl State {
         let data_dir = cx
             .try_global::<crate::connection::Connection>()
             .map(|c| c.data_dir.clone());
+        // --- reader order --- the Feed's order; its places are worked
+        // out off the UI thread when Reading opens (`feed_rebuild`).
+        let rows = vm::order(backend.reading());
+        let feed = feed::Feed::new(backend.reader_order());
         Self {
             view: View::Posts,
             focus: cx.focus_handle(),
-            rows: vm::order(backend.reading()),
+            rows,
             sel: None,
             opened: None,
             list_scroll: UniformListScrollHandle::new(),
@@ -529,11 +567,14 @@ impl State {
             ),
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
             shelved: shelf_lens::keys(backend),                // --- shelf sync ---
+            agentic: Default::default(),                       // --- agentic feed ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
             changelogs: Default::default(),
             background: Default::default(),
+            feed,
+            count_read: count_read::CountRead::new(backend.reader_mark_read()), // --- studio 0.71 ---
         }
         .refiltered()
     }
@@ -578,6 +619,18 @@ impl State {
         if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
             hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
         }
+        // --- reader order --- the Feed's order (pace-layered or not), or Raw's;
+        // held (nothing listed) until its first places arrive.
+        feed::arrange(
+            &self.rows,
+            &mut self.shown,
+            self.mode,
+            &self.source,
+            &self.feed,
+        );
+        if self.feed_waiting() {
+            self.shown.clear();
+        }
         // --- trails --- a trail lists its held stops, in its order.
         if let (stream_vm::ReadMode::Reader, sources_vm::Source::Trail(t)) =
             (&self.mode, &self.source)
@@ -590,6 +643,13 @@ impl State {
             && self.source == sources_vm::Source::Smart(sources_vm::Smart::Shelf)
         {
             self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &self.shelved);
+        }
+        // --- agentic feed --- the edition's held posts, in its order.
+        if self.mode == stream_vm::ReadMode::Reader
+            && self.source == sources_vm::Source::Smart(sources_vm::Smart::Agentic)
+        {
+            let keys = self.agentic.keys().to_vec();
+            self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &keys);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -632,6 +692,12 @@ impl State {
     /// haven't changed since the last one).
     pub fn narrow_next(&mut self) {
         self.narrow = true;
+    }
+
+    /// --- reader order --- What's on screen follows the Feed, which waits
+    /// for its first places: the list is held, with no "nothing here" note.
+    pub fn feed_waiting(&self) -> bool {
+        self.feed.held() && feed::follows_feed(self.mode, &self.source)
     }
 
     /// The rows the list shows (all of them without a search).
@@ -745,6 +811,7 @@ impl MainView {
         let fresh = self.reading_with_own();
         let r = &mut self.reading;
         r.background.served = self.backend.background_served(); // --- background ---
+        r.background.placing = self.backend.background_placing();
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
         // --- reader folders ---
@@ -778,6 +845,9 @@ impl MainView {
         r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.background.set_rows(&r.rows); // --- background --- "+N parts"
+        r.agentic.refresh_cards(&r.rows); // --- agentic feed --- built once per change
+        self.feed_rebuild(cx); // --- reader order ---
+        let r = &mut self.reading;
         r.refilter();
         self.refresh_lineage_counts(cx); // --- lineage counts ---
         let r = &mut self.reading;
@@ -819,7 +889,10 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
+                let r = &mut self.reading;
+                r.agentic.refresh_cards(&r.rows); // --- agentic feed ---
                 self.reading.background.served = self.backend.background_served(); // --- background ---
+                self.reading.background.placing = self.backend.background_placing();
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
@@ -828,10 +901,15 @@ impl MainView {
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 self.reading.hopper_order = self.backend.hopper_order();
                 self.reload_reading_shelf(); // --- shelf sync ---
+                self.agentic_refresh(false, cx); // --- agentic feed ---
+                self.dictionary_refresh(false, cx); // --- dictionary ---
                 self.load_kept_reading_mentions(); // --- contacts ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 let r = &mut self.reading;
                 r.background.set_rows(&r.rows); // --- background --- "+N parts"
+                self.feed_rebuild(cx); // --- reader order ---
+                self.reader_order_refresh(false, cx);
+                self.count_read_refresh(false, cx); // --- studio 0.71 ---
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);
@@ -967,6 +1045,7 @@ impl MainView {
                 .id("reading-body")
                 .key_context(CONTEXT)
                 .track_focus(&self.reading.focus)
+                .on_action(cx.listener(Self::on_pick_all)) // --- read/unread ---
                 .on_key_down(cx.listener(Self::reading_key_down))
                 .flex_1()
                 .min_h_0()
@@ -1000,42 +1079,20 @@ impl MainView {
         // ⌘F searches the reading list. Handled here, not in the keymap
         // table: gpui-base's inputs bind ⌘F themselves, and this is the
         // reading list's own key like `/`, ↑/↓ and ←/→.
-        // `secondary` is ⌘ on macOS and Ctrl on Windows; nothing else held.
+        // `secondary` is ⌘ on macOS and Ctrl elsewhere, and nothing else
+        // held: of Ctrl and the platform key, only the one `secondary`
+        // reads (exactly one of the two is down).
         let m = &k.modifiers;
-        let other = if cfg!(target_os = "macos") {
-            m.control
-        } else {
-            m.platform
-        };
-        if self.reading.view == View::Reading
-            && m.secondary()
-            && !(other || m.alt || m.shift)
-            && k.key == "f"
-        {
+        let secondary_alone = m.secondary() && m.control != m.platform && !(m.alt || m.shift);
+        if self.reading.view == View::Reading && secondary_alone && k.key == "f" {
             self.focus_reading_search(window, cx);
             cx.stop_propagation();
             return;
         }
         // --- browse --- ⌘[ goes back along the walk (the reading screen's
         // own key, as ⌘F: gpui-base's inputs bind ⌘[ too).
-        if self.reading.view == View::Reading
-            && m.secondary()
-            && !(other || m.alt || m.shift)
-            && k.key == "["
-        {
+        if self.reading.view == View::Reading && secondary_alone && k.key == "[" {
             self.reader_back(window, cx);
-            cx.stop_propagation();
-            return;
-        }
-        // --- read/unread --- ⌘A picks every post the Reader's list shows
-        // (the search field's own ⌘A is the field's).
-        if self.reading.view == View::Reading
-            && self.reading.mode == stream_vm::ReadMode::Reader
-            && k.modifiers.platform
-            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
-            && k.key == "a"
-        {
-            self.pick_all(cx);
             cx.stop_propagation();
             return;
         }
@@ -1106,6 +1163,19 @@ impl MainView {
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);
+                true
+            }
+            // --- ux 0.28 --- esc on the Agentic feed closes the post: the
+            // edition takes the reading pane again.
+            (View::Reading, "escape")
+                if !stream
+                    && self.reading.opened.is_some()
+                    && self.reading.source
+                        == sources_vm::Source::Smart(sources_vm::Smart::Agentic) =>
+            {
+                self.reading.opened = None;
+                self.set_pane(sources_vm::Pane::List, cx);
+                cx.notify();
                 true
             }
             (View::Reading, "/") => {

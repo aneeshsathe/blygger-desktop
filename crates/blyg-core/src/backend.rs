@@ -624,6 +624,41 @@ pub trait Backend: Send + Sync {
     fn tracked_tk_provenance(&self, id: &LocalId)
     -> Option<(String, Vec<Option<ScopeProvenance>>)>;
 
+    /// --- studio 0.71 --- Fill `[TK]` scope `scope` (0-based) of a synced
+    /// item with the blyg's own model (`POST /api/items/:id/generate`). The
+    /// blyg records the provenance and stores the spliced text; on
+    /// `Generated` this copy is brought up to it (text, revision), so the
+    /// caller needn't pull. Studio 0.70+ reads the draft's links first: if
+    /// any can't be read it answers `Checkpoint` and saves nothing, and the
+    /// author may send again with `proceed` to generate without them (an
+    /// older studio ignores `proceed`). `NotSynced` before the item has
+    /// reached the blyg; `RevisionConflict` when its text moved there.
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<crate::generate::GenerateOutcome>;
+
+    /// --- studio 0.71 --- A keystroke landed while `generate_on_blyg` ran,
+    /// and the writer merged it with the generated text: keep `merged` as
+    /// the edit to push, over the blyg's `generated` text at the
+    /// `revision` the generate answered with, so it goes through with no
+    /// conflict. Without this call that edit is pushed at the revision
+    /// before the generate, refused, and read again as a conflict. False
+    /// (nothing changed) when the item is in conflict already, or the
+    /// backend doesn't take it.
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let _ = (id, generated, revision, merged);
+        Ok(false)
+    }
+
     /// False when the server can't record the AI provenance of text
     /// generated in the app (it would then publish without disclosure).
     /// Every studio Burrow supports takes it with the text; a backend that
@@ -1008,6 +1043,13 @@ pub trait Backend: Send + Sync {
         false
     }
 
+    /// Whether this sign-in may place posts and blygs in Background (and
+    /// change its rules). False with a read-only sign-in: the lens shows,
+    /// the actions don't.
+    fn background_placing(&self) -> bool {
+        false
+    }
+
     /// The studio's Background lens as last read (`None`: not served, or
     /// not read yet). Put it on rows with `BackgroundSet::annotate`. Local.
     fn background_set(&self) -> Option<crate::background::BackgroundSet>;
@@ -1044,6 +1086,69 @@ pub trait Backend: Send + Sync {
     ) -> Result<crate::background::BackgroundRules> {
         let _ = (rule, on);
         Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
+    // --- reader order --- the Feed's order (`Settings.readerOrder`,
+    // studio 0.68). Burrow orders locally (`crate::order`); the choice is
+    // the blyg's setting when it has one, else kept here.
+
+    /// The Feed's order as last read or chosen. Local; pace-layered until
+    /// told otherwise.
+    fn reader_order(&self) -> crate::order::ReaderOrder {
+        crate::order::ReaderOrder::default()
+    }
+
+    /// Read the blyg's `readerOrder` (and keep it). `Ok(None)`: the blyg
+    /// doesn't have the setting; the local choice stands.
+    fn load_reader_order(&self) -> Result<Option<crate::order::ReaderOrder>> {
+        Ok(None)
+    }
+
+    /// Choose the Feed's order: kept here, and written to the blyg (that
+    /// key alone) when it has the setting. The order kept back.
+    fn save_reader_order(
+        &self,
+        order: crate::order::ReaderOrder,
+    ) -> Result<crate::order::ReaderOrder> {
+        let _ = order;
+        Err(CoreError::Other("the reader order isn't kept here".into()))
+    }
+
+    // --- studio 0.71 --- when a reader entry counts as read
+    // (`Settings.readerMarkRead`, studio 0.70; `crate::mark_read`). The
+    // blyg's setting only: `None` means not offered (an older studio, or
+    // not read yet), and the app shows no choice.
+
+    /// The value as last read from or written to the blyg; `None` while
+    /// the blyg isn't known to have the setting. Local.
+    fn reader_mark_read(&self) -> Option<crate::mark_read::MarkRead> {
+        None
+    }
+
+    /// Read the blyg's `readerMarkRead` (and keep it). `Ok(None)`: the blyg
+    /// doesn't have the setting.
+    fn load_reader_mark_read(&self) -> Result<Option<crate::mark_read::MarkRead>> {
+        Ok(None)
+    }
+
+    /// Write `readerMarkRead` alone (`PATCH /api/settings`); the value the
+    /// blyg kept. Refused, sending nothing, unless the blyg was read with
+    /// the setting (`load_reader_mark_read` said `Some`).
+    fn save_reader_mark_read(
+        &self,
+        m: crate::mark_read::MarkRead,
+    ) -> Result<crate::mark_read::MarkRead> {
+        let _ = m;
+        Err(CoreError::Other(
+            "your blyg doesn't have this setting".into(),
+        ))
+    }
+
+    /// Every cached changelog of someone else's post, by `(origin, remote
+    /// id)`: their pins slow a post's sinking in the pace-layered Feed.
+    /// Local.
+    fn cached_changelogs(&self) -> std::collections::HashMap<(String, String), Vec<RemoteVersion>> {
+        std::collections::HashMap::new()
     }
 
     // --- hoppers ---
@@ -1144,6 +1249,13 @@ pub trait Backend: Send + Sync {
     /// until read, when not served, or with update alerts off.
     fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
         None
+    }
+
+    /// The studio version (`blyg.json`'s generator) last seen, from the
+    /// update state or the contacts refresh, kept across launches: local,
+    /// instant. `None`: never known.
+    fn studio_version(&self) -> Option<String> {
+        self.studio_update().and_then(|u| u.current)
     }
 
     /// Read the update state again if it's older than six hours (`force`:
@@ -1422,4 +1534,70 @@ pub trait Backend: Send + Sync {
         ))
     }
     // --- end changelog display ---
+    // --- studio 0.69 --- (contract 6.2.0) the Agentic feed's editions
+    // (`crate::agentic`), the shared dictionary (`crate::dictionary`) and
+    // Catch up's summary on the blyg (`crate::helpers`). Each `Ok(None)`
+    // is "not offered here" (the capabilities don't list it): a genuine
+    // answer, so these have defaults.
+
+    /// Remote: the agentic feeds and their names (`GET /api/agentic`).
+    fn agentic_feeds(&self) -> Result<Option<Vec<crate::agentic::Feed>>> {
+        Ok(None)
+    }
+
+    /// Remote: a feed's edition, each reference resolved (`GET
+    /// /api/agentic/{feed}`). Burrow never writes one.
+    fn agentic_edition(&self, feed: &str) -> Result<Option<crate::agentic::Edition>> {
+        let _ = feed;
+        Ok(None)
+    }
+
+    /// Remote: the blyg's dictionary (`GET /api/dictionary`).
+    fn dictionary(&self) -> Result<Option<crate::dictionary::Dictionary>> {
+        Ok(None)
+    }
+
+    /// Remote: add a word to the owner's words, or take one out: read,
+    /// change, write back from that revision, and on a conflict merge onto
+    /// what's there now. The dictionary as stored back.
+    fn edit_dictionary(
+        &self,
+        edit: &crate::dictionary::Edit,
+    ) -> Result<crate::dictionary::Dictionary> {
+        let _ = edit;
+        Err(CoreError::Other(
+            "your blyg doesn't keep a dictionary".into(),
+        ))
+    }
+
+    /// Local: the words Burrow's Learn Spelling taught this computer's
+    /// spelling list for this blyg (`crate::dictionary::Taught`): the only
+    /// words Burrow ever unlearns there.
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    /// Local: this blyg's dictionary edits waiting to be sent
+    /// (`crate::dictionary::Pending`).
+    fn dictionary_pending(&self) -> Result<crate::dictionary::Pending> {
+        Ok(crate::dictionary::Pending::default())
+    }
+
+    /// Local: record `word` as taught (`true`) or forget it.
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let _ = (word, taught);
+        Ok(())
+    }
+
+    /// Remote: the blyg's summary of the conversation `entry` quotes
+    /// (`POST /api/helpers/catch-up-summary`), written by its text helpers
+    /// model once per set of versions.
+    fn summarize_catch_up(
+        &self,
+        entry: &crate::shelf::Entry,
+    ) -> Result<Option<crate::helpers::CatchUpSummary>> {
+        let _ = entry;
+        Ok(None)
+    }
+    // --- end studio 0.69 ---
 }

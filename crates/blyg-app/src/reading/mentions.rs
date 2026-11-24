@@ -91,7 +91,11 @@ impl MainView {
     }
 
     fn mentions_hint(&self) -> String {
-        format!("who responded to your posts · {MENTION_KEYS} · esc back")
+        // Spelled as this platform's keys are (`keymap::hint`).
+        format!(
+            "who responded to your posts · {} · esc back",
+            crate::keymap::hint(MENTION_KEYS)
+        )
     }
 
     /// The rows in the order they're drawn (each post's responses, then
@@ -104,7 +108,9 @@ impl MainView {
     }
 
     /// Responses' keys (the Received side): j/k or ↓/↑ move the row cursor,
-    /// h hides or unhides, r replies, o or ⏎ opens the response (↗).
+    /// h hides or unhides, r replies, ⏎ opens the response's post in the
+    /// reader (as a click on who responded does), o its page in the
+    /// default browser.
     /// Returns whether the key was taken.
     pub(super) fn mentions_key(
         &mut self,
@@ -172,12 +178,43 @@ impl MainView {
                             ),
                         }
                     }
+                    "enter" => {
+                        let (source, post) = (row.source.clone(), row.post.clone());
+                        self.open_mention(source, post, window, cx);
+                    }
                     _ => cx.open_url(&row.source),
                 }
                 true
             }
             _ => false,
         }
+    }
+
+    /// A mention was clicked: the post that mentioned yours opens in the
+    /// reader, as a blyg link in a post does. Without its id, its page goes
+    /// where links go (the browser pane, or the default browser).
+    pub(crate) fn open_mention(
+        &mut self,
+        source: String,
+        post: Option<(String, String, Option<u32>)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match post {
+            Some((origin, id, version)) => self.open_original(origin, id, version, window, cx),
+            None => self.browse_link(source, false, false, window, cx),
+        }
+    }
+
+    /// "On “title”": your post, the one the mentions point at, in Posts.
+    pub(super) fn open_mentioned_post(
+        &mut self,
+        id: &blyg_core::LocalId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_view(super::View::Posts, window, cx);
+        self.open(id, window, cx);
     }
 
     fn hide_mention(&mut self, id: String, hidden: bool, cx: &mut Context<Self>) {
@@ -304,11 +341,29 @@ impl MainView {
                                             .gap(px(8.))
                                             .child(
                                                 div()
+                                                    .id(SharedString::from(format!(
+                                                        "mention-post-{gi}"
+                                                    )))
                                                     .flex_1()
                                                     .min_w_0()
                                                     .truncate()
                                                     .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(format!("On “{title}”")),
+                                                    .child(format!("On “{title}”"))
+                                                    // Your post, in Posts: a link,
+                                                    // and looks it on hover.
+                                                    .when_some(id.clone(), |d, id| {
+                                                        d.cursor_pointer()
+                                                            .hover(|s| {
+                                                                s.text_color(p.accent).underline()
+                                                            })
+                                                            .on_click(cx.listener(
+                                                                move |this, _, window, cx| {
+                                                                    this.open_mentioned_post(
+                                                                        &id, window, cx,
+                                                                    )
+                                                                },
+                                                            ))
+                                                    }),
                                             )
                                             .when_some(id, |d, id| {
                                                 d.child(
@@ -426,6 +481,7 @@ impl MainView {
         let (id, hidden, source) = (r.id.clone(), r.hidden, r.source.clone());
         let profile_of = r.source.clone(); // --- profiles ---
         let selected = self.reading.mention_sel.as_deref() == Some(r.id.as_str());
+        let (open_src, open_post) = (r.source.clone(), r.post.clone());
         div()
             .id(SharedString::from(format!("mention-{}", r.id)))
             .flex()
@@ -448,9 +504,22 @@ impl MainView {
                     .justify_center()
                     .when(r.new, |d| d.child(self.unread_marker(p.accent))),
             )
-            .child(div().font_weight(FontWeight::MEDIUM).child(r.who))
-            .child(div().text_color(p.muted).child(r.relation))
-            // --- profiles --- the origin opens its profile; ↗ opens the source.
+            // Who and how: the post that mentioned yours, in the reader.
+            .child(
+                div()
+                    .id(SharedString::from(format!("mention-post-open-{}", r.id)))
+                    .flex()
+                    .gap(px(8.))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(p.accent))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_mention(open_src.clone(), open_post.clone(), window, cx)
+                    }))
+                    .child(div().font_weight(FontWeight::MEDIUM).child(r.who))
+                    .child(div().text_color(p.muted).child(r.relation)),
+            )
+            // --- profiles --- the origin opens its profile; ↗ opens the source's
+            // page.
             .child(
                 div()
                     .flex_1()
@@ -480,7 +549,11 @@ impl MainView {
                             .text_color(p.muted)
                             .cursor_pointer()
                             .hover(|s| s.text_color(p.accent))
-                            .on_click(move |_, _, cx| cx.open_url(&source))
+                            // Its page, where links go (the browser pane,
+                            // or the default browser).
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_link(source.clone(), window, cx)
+                            }))
                             .child("↗"),
                     ),
             )
@@ -509,8 +582,9 @@ const LINKED_FROM: &str = "Linked from";
 const NOTICES: &str = "only you see these";
 
 /// The row keys, as the header shows them (the reading list's letters:
-/// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides).
-const MENTION_KEYS: &str = "j/k move · h hide · r reply · o open ↗";
+/// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides). ⏎ opens in Burrow,
+/// as a click on who responded does; o is the default browser.
+const MENTION_KEYS: &str = "j/k move · ⏎ open · o open in browser ↗ · h hide · r reply";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).

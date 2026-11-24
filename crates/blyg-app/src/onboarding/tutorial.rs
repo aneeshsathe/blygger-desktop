@@ -163,7 +163,7 @@ impl MainView {
             notes: Some(notes),
         };
         self.base_url = self.backend.base_url();
-        self.reading = crate::app::reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.current = None;
         self.onboarding.finished_tours = finished_tours(cx);
         self.onboarding.tutorial = Some(Tutorial {
@@ -344,7 +344,7 @@ impl MainView {
         }
         self.fake = p.fake;
         self.base_url = self.backend.base_url();
-        self.reading = crate::app::reading::State::new(&*self.backend, cx);
+        self.reading_for_new_backend(cx);
         self.studio_set_view(p.view, cx);
 
         self.current = None;
@@ -639,6 +639,36 @@ impl MainView {
             (
                 Key::MentionsFeed,
                 reader && self.reading.source == crate::app::reading::sources_vm::Source::Mentions,
+            ),
+            // --- 0.28.0 ---
+            (
+                Key::FeedOrder,
+                reading && self.reading.feed.order == blyg_core::order::ReaderOrder::Newest,
+            ),
+            (
+                Key::RawTab,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Raw,
+                        ),
+            ),
+            // --- studio 0.71 --- a card's date clicked: its post open
+            // beside the Stream.
+            (Key::StreamDate, opened.is_some() && !reader),
+            // --- studio 0.71 --- ⌘G on the blyg stopped at its checkpoint.
+            (
+                Key::TkCheckpoint,
+                self.sheet
+                    .is::<crate::app::ai_view::checkpoint::TkCheckpointSheet>(),
+            ),
+            (
+                Key::AgenticTab,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Agentic,
+                        ),
             ),
             (
                 Key::Discover,
@@ -941,7 +971,30 @@ impl MainView {
     }
 
     fn tutorial_setup(&mut self, setup: Setup, window: &mut Window, cx: &mut Context<Self>) {
+        // --- studio 0.71 --- ⌘G asks the tour's blyg in the checkpoint
+        // step only; every other step has the canned AI.
+        let provider: Arc<dyn Provider> = if setup == Setup::TkOnBlyg {
+            Arc::new(crate::app::ai_view::checkpoint::OnBlyg)
+        } else {
+            Arc::new(CannedAi)
+        };
+        if cx.has_global::<crate::ai::AiGlobal>() {
+            cx.global_mut::<crate::ai::AiGlobal>().test_provider = Some(provider);
+        }
         match setup {
+            Setup::TkOnBlyg => {
+                self.tutorial_tidy(window, cx);
+                self.studio_set_view(ViewMode::Split, cx);
+                self.tutorial_open(steps::DRAFT, window, cx);
+                let old = self.editor.read(cx).value().to_string();
+                let base = match old.find(" [TK]") {
+                    Some(i) => old[..i].to_string(),
+                    None => old.clone(),
+                };
+                let new = format!("{base} {}", crate::app::ai_view::checkpoint::DEMO_GAP);
+                let caret = new.len() - "[/TK]".len();
+                self.splice_editor(&old, &new, Some(caret), window, cx);
+            }
             Setup::Search => {
                 self.tutorial_tidy(window, cx);
                 self.studio_set_view(ViewMode::Write, cx);
@@ -1107,7 +1160,8 @@ impl MainView {
             }
             Setup::Stream => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
-                self.stream_move(1, window, cx);
+                // The newest, whatever an earlier step left selected.
+                self.stream_select(0, window, cx);
             }
             Setup::StreamLead => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
@@ -1263,6 +1317,11 @@ impl MainView {
                 self.tutorial_setup(Setup::Posts, window, cx);
                 self.ext_toggle_palette(window, cx);
             }
+            Setup::AutoCrossPost => {
+                self.tutorial_setup(Setup::Posts, window, cx);
+                self.tutorial_open(steps::VERSIONED, window, cx);
+                self.ext_tour_auto_sample(cx);
+            }
             Setup::Consent => {
                 self.tutorial_setup(Setup::Posts, window, cx);
                 self.ext_tour_consent(window, cx);
@@ -1300,6 +1359,13 @@ impl MainView {
                     f.add_mentions_sample();
                 }
                 self.tutorial_reading(ReadMode::Reader, window, cx);
+                cx.notify();
+            }
+            // --- 0.28.0 --- Reader on the Feed, pace-layered again (so a
+            // second walk finds the click working).
+            Setup::FeedOrder => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                self.set_reader_order(blyg_core::order::ReaderOrder::PaceLayered, cx);
                 cx.notify();
             }
             // --- 0.26.0 --- Settings over the published post, at the row.
@@ -1423,6 +1489,26 @@ impl MainView {
             "mentions-feed" => {
                 self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
             }
+            // --- 0.28.0 ---
+            "feed-order" => self.set_reader_order(blyg_core::order::ReaderOrder::Newest, cx),
+            "raw-tab" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Raw,
+                ),
+                cx,
+            ),
+            "count-read" => {
+                let k = self.reading.sel.clone();
+                if let Some(k) = k {
+                    self.stream_read_more(k, window, cx);
+                }
+            }
+            "agentic-edition" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Agentic,
+                ),
+                cx,
+            ),
             "discover" => self.open_discover(window, cx),
             "quiet-writing" => {
                 self.set_quiet_writing(true, cx);
@@ -1438,6 +1524,9 @@ impl MainView {
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
+            // --- ux 0.28 --- ⇧⌘P, the auto cross-post step's key; the Post
+            // menu's Extensions palette for the extensions step.
+            "auto-crosspost" => self.toggle_palette(window, cx),
             "extensions" => self.ext_toggle_palette(window, cx),
             // --- flow ---
             "palette" => self.toggle_palette(window, cx),
@@ -2085,6 +2174,17 @@ impl MainView {
             );
 
         let rect = self.tutorial_ring(step.region, window, cx);
+        // A step entered before the Stream's list filled (the window just
+        // opened) selected nothing: select the newest card once it's there,
+        // so the ring has a card to go round.
+        if rect.is_none()
+            && step.region == Region::StreamPost
+            && step.setup == Setup::Stream
+            && self.reading.sel.is_none()
+            && self.reading.shown_rows().next().is_some()
+        {
+            self.stream_select(0, window, cx);
+        }
         // The stream's post has bounds only once the list has laid it out:
         // ask for a few more frames.
         if rect.is_none()

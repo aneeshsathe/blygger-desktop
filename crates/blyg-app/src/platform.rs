@@ -63,6 +63,15 @@ pub fn menu_button(p: crate::theme::Palette, cx: &gpui_kit::App) -> Option<gpui_
     }
 }
 
+/// What the platform's own chrome needs at startup: on Windows, Esc for the
+/// Menu panel (`windows_menu::init`). Nothing elsewhere.
+pub fn init(cx: &mut gpui_kit::App) {
+    #[cfg(target_os = "windows")]
+    crate::windows_menu::init(cx);
+    #[cfg(not(target_os = "windows"))]
+    let _ = cx;
+}
+
 /// The open Windows menu, if any.
 pub fn menu_panel(
     p: crate::theme::Palette,
@@ -99,9 +108,10 @@ pub fn key_button(
 /// doesn't say which keys a click carried, and GPUI's own modifier state
 /// misses keys pressed while the page has the keyboard, so this reads the
 /// keyboard itself, as macOS reads `NSEvent.modifierFlags`. `None` on
-/// macOS, where the reader's navigation delegate records them.
+/// macOS, where the reader's navigation delegate records them, and in
+/// tests, which hold keys through GPUI's events, not the real keyboard.
 pub fn held_link_modifiers() -> Option<(bool, bool)> {
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(test)))]
     #[expect(unsafe_code, reason = "Win32 FFI: GetAsyncKeyState")]
     {
         #[link(name = "user32")]
@@ -114,7 +124,7 @@ pub fn held_link_modifiers() -> Option<(bool, bool)> {
         let down = |vk| unsafe { GetAsyncKeyState(vk) } < 0;
         Some((down(VK_CONTROL), down(VK_MENU)))
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), test))]
     None
 }
 

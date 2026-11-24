@@ -193,7 +193,8 @@ fn render(case: &Value) -> Value {
     ));
 
     let mount = s(me, "origin").trim_end_matches('/').to_string();
-    let resolver = StoreResolver::new(items.clone(), held.clone(), &[], &mount);
+    let resolver =
+        StoreResolver::new(items.clone(), held.clone(), &[], &mount).publishing(Some(self_id));
     let opts = RenderOpts {
         data_line: false,
         provenance: false,
@@ -255,7 +256,9 @@ fn render(case: &Value) -> Value {
         let p = ScopeProvenance {
             model: "conformance".into(),
             sources: job.sources,
+            pages: vec![],
             at: None,
+            ..Default::default()
         };
         let kept = generate::provenance_with(None, md, i, p).and_then(|v| v.get(i).cloned());
         let Some(Some(p)) = kept else { continue };

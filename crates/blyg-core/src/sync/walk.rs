@@ -16,7 +16,9 @@
 //!   change, or a move the head couldn't explain): pages from the first to
 //!   `nextCursor: null`, merged as they arrive, `reading_pages` of them per
 //!   pull, continued on the next pull from the cursor. Only a walk that
-//!   reached the end prunes, with the keys of that one coherent walk.
+//!   reached the end prunes, with the keys of that one coherent walk, and
+//!   only on a contract Burrow knows: a newer one's list never removes a
+//!   row here ([`Prune::Withheld`]).
 //!
 //! [`Read`] is one pull's read as a step machine; `walk_model_tests.rs`
 //! drives it against a model of the studio's list (property tests of
@@ -25,6 +27,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::api::Prune;
 use crate::api::wire::ChangeState;
 use crate::model::{RemoteId, SubId, Subscription};
 
@@ -244,9 +247,10 @@ pub enum Step {
     /// Done for this pull: keep [`Read::kept`] for the next one, accept
     /// nothing.
     Stop,
-    /// The read is done: prune to `walk.keys` first when `whole`, then
-    /// accept `walk.rev` and set the mark to [`Read::next_mark`].
-    Done { whole: bool },
+    /// The read is done: prune to `walk.keys` first when `prune` (a whole
+    /// walk, on a contract whose lists may remove rows), then accept
+    /// `walk.rev` and set the mark to [`Read::next_mark`].
+    Done { whole: bool, prune: bool },
 }
 
 /// One pull's read of the reading list: every decision of
@@ -267,20 +271,44 @@ pub struct Read {
     /// A whole walk is wanted later (`deep_pending`): a late row, or a head
     /// read that found nothing for a moved counter.
     pub deep: bool,
+    /// What the studio's contract lets a complete walk remove.
+    prune: Prune,
+}
+
+/// What one pull's read of the reading list starts from ([`Read::begin`]).
+#[derive(Debug)]
+pub struct Begin {
+    /// The read [`start`] asked for.
+    pub start: Start,
+    /// The walk an earlier pull left (for [`Start::Continue`]).
+    pub held: Option<Walk>,
+    /// The revisions captured for this pull.
+    pub rev: Option<ChangeState>,
+    /// Started only because the safety net was due.
+    pub forced: bool,
+    /// The head mark when the pull began (`HEAD_MARK`).
+    pub mark: Option<i64>,
+    /// Pages this pull may read (`reading_pages`).
+    pub budget: u32,
+    /// Read marks went from here since the last head read.
+    pub reads_sent: bool,
+    /// What the studio's contract lets a complete walk remove.
+    pub prune: Prune,
 }
 
 impl Read {
-    /// Start the read `start` asks for; `held` is the walk an earlier pull
-    /// left (for [`Start::Continue`]). `None`: nothing to read.
-    pub fn begin(
-        start: Start,
-        held: Option<Walk>,
-        rev: Option<ChangeState>,
-        forced: bool,
-        mark: Option<i64>,
-        budget: u32,
-        reads_sent: bool,
-    ) -> Option<Read> {
+    /// Start the read `b.start` asks for. `None`: nothing to read.
+    pub fn begin(b: Begin) -> Option<Read> {
+        let Begin {
+            start,
+            held,
+            rev,
+            forced,
+            mark,
+            budget,
+            reads_sent,
+            prune,
+        } = b;
         let walk = match start {
             Start::Nothing => return None,
             Start::Continue => held.unwrap_or_else(|| Walk::new(true, rev, false)),
@@ -298,6 +326,7 @@ impl Read {
             restarts: 0,
             reads_sent,
             deep: false,
+            prune,
         })
     }
 
@@ -336,11 +365,17 @@ impl Read {
                 if !self.walk.changed && !self.reads_sent {
                     self.deep = true;
                 }
-                Step::Done { whole: false }
+                Step::Done {
+                    whole: false,
+                    prune: false,
+                }
             }
             Next::Complete => {
                 self.deep = false;
-                Step::Done { whole: true }
+                Step::Done {
+                    whole: true,
+                    prune: self.prune == Prune::Allowed,
+                }
             }
         }
     }

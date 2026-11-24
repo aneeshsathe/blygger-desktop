@@ -25,6 +25,12 @@ pub struct SpellService {
     pub engine: Option<Arc<dyn SpellEngine>>,
     pub enabled: bool,
     pub cache: Cache,
+    /// --- dictionary --- the blyg's dictionary (studio 0.69): its words
+    /// are never underlined. Empty until read, or on a blyg without one.
+    pub accepted: blyg_core::dictionary::Accepted,
+    /// Where a learned word goes besides the system's list (the main
+    /// window sends it to the blyg's dictionary).
+    pub on_learn: Option<OnLearn>,
 }
 
 impl Global for SpellService {}
@@ -36,7 +42,54 @@ pub fn init(engine: Option<Arc<dyn SpellEngine>>, enabled: bool, cx: &mut App) {
         engine,
         enabled,
         cache: Cache::default(),
+        accepted: Default::default(),
+        on_learn: None,
     });
+}
+
+/// --- dictionary --- The blyg's dictionary as last read: every editor
+/// stops underlining its words at its next check.
+pub fn set_accepted(accepted: blyg_core::dictionary::Accepted, cx: &mut App) {
+    if !cx.has_global::<SpellService>() {
+        init(None, false, cx);
+    }
+    cx.global_mut::<SpellService>().accepted = accepted;
+}
+
+/// Where a learned word goes besides the system's list.
+/// Where a learned word goes besides the system's list (the main window's
+/// `dictionary_learn`, which says when the blyg refuses it).
+pub type OnLearn = Arc<dyn Fn(String, &mut App)>;
+
+pub fn set_on_learn(f: OnLearn, cx: &mut App) {
+    if !cx.has_global::<SpellService>() {
+        init(None, false, cx);
+    }
+    cx.global_mut::<SpellService>().on_learn = Some(f);
+}
+
+/// "Learn Spelling": accepted at once here, and sent on (to the blyg).
+fn learned(word: &str, cx: &mut App) {
+    let s = cx.global_mut::<SpellService>();
+    s.accepted.add(word);
+    if let Some(f) = s.on_learn.clone() {
+        f(word.to_string(), cx);
+    }
+}
+
+/// --- dictionary --- A word taken out of the blyg's dictionary: out of
+/// the system's learned list too, so it's flagged again.
+pub fn unlearned(word: &str, cx: &mut App) {
+    if let Some(engine) = cx
+        .try_global::<SpellService>()
+        .and_then(|s| s.engine.clone())
+    {
+        engine.unlearn(word);
+    }
+    if cx.has_global::<SpellService>() {
+        // Lines checked with it learned are checked again.
+        cx.global_mut::<SpellService>().cache = Cache::default();
+    }
 }
 
 /// The system engine for this platform.

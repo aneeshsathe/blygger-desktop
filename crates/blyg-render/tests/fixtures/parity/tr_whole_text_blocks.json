@@ -1,0 +1,17 @@
+{
+  "name": "tr_whole_text_blocks",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq4]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq4\" data-blyg-version=\"1\">\n<table>\n<thead>\n<tr>\n<th>name</th>\n<th>use</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>awl</td>\n<td>punching holes</td>\n</tr>\n</tbody>\n</table>\n<dl><dt>bodkin</dt><dd>a blunt needle</dd></dl><hr><details><summary>More</summary>Hidden text</details><figure>A drawing<figcaption>Fig. 1</figcaption></figure>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq4/\">fragment ↗</a> · snapshot of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq4",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

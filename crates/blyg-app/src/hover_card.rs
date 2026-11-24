@@ -693,7 +693,7 @@ impl MainView {
             }
         }))
         .capture_any_mouse_down(cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-            if ev.button != MouseButton::Left || !ev.modifiers.secondary() {
+            if ev.button != MouseButton::Left || !crate::keymap::secondary_held(&ev.modifiers) {
                 return;
             }
             if let Some(d) = this.hover_hit(ev.position, cx) {

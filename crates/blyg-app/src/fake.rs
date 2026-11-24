@@ -24,6 +24,12 @@ pub mod profile_seed;
 // --- access-ai ---
 #[path = "fake_access_ai.rs"]
 pub mod access_ai_seed;
+// --- studio 0.69 --- the Agentic feed's edition, the dictionary, Catch up's summary
+#[path = "fake_studio069.rs"]
+pub mod studio069;
+// --- studio 0.71 --- generate on the blyg, its checkpoint
+#[path = "fake_studio071.rs"]
+pub mod studio071;
 // --- contacts ---
 #[path = "fake_contacts.rs"]
 pub mod contacts_seed;
@@ -157,6 +163,18 @@ impl Timing {
     }
 }
 
+/// --- reader order --- the sample blyg's `readerOrder` and this
+/// computer's copy, as `LiveBackend` keeps them (`reader.order` and
+/// `reader.order.served` in the store's meta), and how a save answers.
+#[derive(Default)]
+struct FakeReaderOrder {
+    blyg: blyg_core::order::ReaderOrder,
+    local: Option<blyg_core::order::ReaderOrder>,
+    served: bool,
+    keeps: Option<blyg_core::order::ReaderOrder>,
+    fails: bool,
+}
+
 struct State {
     items: Vec<Item>,
     versions: HashMap<LocalId, Vec<Version>>,
@@ -172,6 +190,9 @@ struct State {
     prov: HashMap<LocalId, (String, Vec<Option<ScopeProvenance>>)>,
     /// Every `save_with_provenance`: the item and its scope count (tests).
     prov_saves: Vec<(LocalId, usize)>,
+    /// --- syndication --- copies elsewhere, by local id: this fake's own
+    /// (a process-wide list leaked between parallel tests' fakes).
+    syndication: HashMap<LocalId, Vec<blyg_core::syndication::SyndicationEntry>>,
     /// Simulate a Worker without the provenance extension (404).
     prov_unavailable: bool,
     /// Reading, subscriptions, mentions, site settings (see `fake_reading.rs`).
@@ -215,11 +236,23 @@ struct State {
     )>,
     bg_blygs: Vec<SubId>,
     bg_rules: Vec<(String, bool)>,
+    /// --- reader order --- the Feed's order (`Settings.readerOrder`).
+    reader_order: FakeReaderOrder,
+    /// --- studio 0.71 --- `readerMarkRead` as the blyg holds it, and
+    /// whether this computer has read it (until then, not offered).
+    mark_read: blyg_core::mark_read::MarkRead,
+    mark_read_served: bool,
+    /// False: the blyg predates the setting (studio before 0.70).
+    mark_read_offered: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
     // --- access-ai --- client access and the blyg's AI settings.
     access_ai: access_ai_seed::Seed,
+    // --- dictionary --- the blyg's dictionary (studio 0.69), and the words
+    // Learn Spelling taught this computer.
+    dictionary: blyg_core::dictionary::Dictionary,
+    dictionary_taught: Vec<String>,
     // --- site --- the public site's settings (`blyg_core::site`).
     site: blyg_core::site::SiteConfig,
     // --- contacts --- the address book and what the blyg sent.
@@ -396,6 +429,7 @@ impl FakeBackend {
                 offline: false,
                 sink: None,
                 next_id: 1,
+                syndication: HashMap::new(),
                 prov: HashMap::new(),
                 prov_saves: Vec::new(),
                 prov_unavailable: false,
@@ -417,9 +451,15 @@ impl FakeBackend {
                 bg_choices: Vec::new(), // --- background ---
                 bg_blygs: Vec::new(),
                 bg_rules: background_seed::rules(),
+                reader_order: FakeReaderOrder::default(), // --- reader order ---
+                mark_read: blyg_core::mark_read::MarkRead::Seen, // --- studio 0.71 ---
+                mark_read_served: false,
+                mark_read_offered: true,
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
+                dictionary: studio069::dictionary(),        // --- dictionary ---
+                dictionary_taught: Vec::new(),              // --- dictionary ---
                 site: fake_site(),                          // --- site ---
                 book: Default::default(),                   // --- contacts ---
                 upkeep: Default::default(),                 // --- upkeep ---
@@ -440,6 +480,94 @@ impl FakeBackend {
         if let Some(it) = st.items.iter_mut().find(|i| &i.local_id == id) {
             it.server_id = Some(ServerId(server.into()));
         }
+    }
+
+    /// Tests written to the chronological list (newest first, edited since
+    /// read on top): the Feed set to Chronological, as a user can. The
+    /// pace-layered Feed has its own tests (`reading/feed_tests.rs`).
+    #[cfg(test)]
+    pub fn chronological(self) -> Self {
+        let mut s = self.lock();
+        s.reader_order.blyg = blyg_core::order::ReaderOrder::Newest;
+        s.reader_order.local = None;
+        drop(s);
+        self
+    }
+
+    /// Tests: the blyg's reader order, the one kept on this computer, and
+    /// whether the blyg was seen to keep it (as `LiveBackend`'s meta).
+    #[cfg(test)]
+    pub fn set_reader_order_state(
+        &self,
+        blyg: blyg_core::order::ReaderOrder,
+        local: Option<blyg_core::order::ReaderOrder>,
+        served: bool,
+    ) {
+        let mut s = self.lock();
+        s.reader_order.blyg = blyg;
+        s.reader_order.local = local;
+        s.reader_order.served = served;
+    }
+
+    /// Tests: how a save answers: the blyg keeps `keeps` instead of what
+    /// was asked, or the save `fails`.
+    #[cfg(test)]
+    pub fn reader_order_answers(&self, keeps: Option<blyg_core::order::ReaderOrder>, fails: bool) {
+        let mut s = self.lock();
+        s.reader_order.keeps = keeps;
+        s.reader_order.fails = fails;
+    }
+
+    /// Tests: the order the blyg holds.
+    #[cfg(test)]
+    pub fn blyg_reader_order(&self) -> blyg_core::order::ReaderOrder {
+        self.lock().reader_order.blyg
+    }
+
+    /// Tests: the author pins the post's current version (the changelog
+    /// marks it, and its text becomes a pin others may fork).
+    #[cfg(test)]
+    pub fn pin_current(&self, sub_id: &str, remote_id: &str) {
+        let mut st = self.lock();
+        let Some(it) = st
+            .rd
+            .reading
+            .iter()
+            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+            .cloned()
+        else {
+            return;
+        };
+        let key: (SubId, RemoteId) = (sub_id.to_string().into(), remote_id.to_string().into());
+        if let Some(log) = st.rd.changelogs.get_mut(&key) {
+            for v in log.iter_mut().filter(|v| v.current) {
+                v.pinned = true;
+            }
+        }
+        st.rd.pins.insert(
+            (key.0, key.1, it.version),
+            PinnedVersion {
+                version: it.version,
+                at: it.updated.clone().unwrap_or_default(),
+                note: None,
+                content_hash: blyg_core::content_hash(&it.content_md),
+                content_md: it.content_md.clone(),
+                content_html: it.content_html.clone(),
+                origin: it.origin.clone(),
+                id: it.remote_id.to_string(),
+                author: None,
+                hash_mismatch: false,
+            },
+        );
+    }
+
+    /// --- studio 0.71 --- Tests: a blyg without "Count an entry as read"
+    /// (`readerMarkRead`, before studio 0.70), so Burrow's earlier read
+    /// marks hold.
+    #[cfg(test)]
+    pub fn without_reader_mark_read(self) -> Self {
+        self.lock().mark_read_offered = false;
+        self
     }
 
     /// Tests: keep uploads in memory only (don't touch the data dir).
@@ -671,6 +799,14 @@ impl FakeBackend {
         self.lock().offline
     }
 
+    /// --- dictionary --- A sign-in that may read the dictionary but not
+    /// change it (`false`: the capabilities don't list
+    /// `putDictionarySource`).
+    #[cfg(test)]
+    pub fn set_dictionary_writable(&self, writable: bool) {
+        self.lock().dictionary.writable = writable;
+    }
+
     /// Simulate the network dropping / coming back. Coming back flushes.
     pub fn set_offline(&self, offline: bool) {
         let fire = {
@@ -764,6 +900,16 @@ impl FakeBackend {
     #[cfg(test)]
     pub fn set_rewrites_handles(&self, on: bool) {
         self.lock().book.rewrites = on;
+    }
+    /// The studio version `blyg.json` names (`None`: unknown), which decides
+    /// whether handles read in natural grammar (studio 0.66).
+    #[cfg(test)]
+    pub fn set_studio_version(&self, version: Option<&str>) {
+        self.lock().site.update = version.map(|v| blyg_core::site::StudioUpdate {
+            current: Some(v.into()),
+            latest: v.into(),
+            checked_at: String::new(),
+        });
     }
     /// Serve the blyg's Mentions lens (`None`: not served).
     #[cfg(test)]
@@ -993,12 +1139,7 @@ impl Backend for FakeBackend {
     // --- syndication --- for looking (BLYGGER_FAKE=1): kept in memory, and
     // one sample post you read lists a copy elsewhere.
     fn syndication(&self, id: &LocalId) -> Vec<blyg_core::syndication::SyndicationEntry> {
-        fake_syndication()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&id.0)
-            .cloned()
-            .unwrap_or_default()
+        self.lock().syndication.get(id).cloned().unwrap_or_default()
     }
     fn set_syndication(
         &self,
@@ -1009,10 +1150,7 @@ impl Backend for FakeBackend {
             return Err(CoreError::Other("Publish the post first".into()));
         }
         let kept = blyg_core::syndication::normalize(entries);
-        fake_syndication()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id.0.clone(), kept.clone());
+        self.lock().syndication.insert(id.clone(), kept.clone());
         Ok(kept)
     }
     fn syndication_served(&self) -> bool {
@@ -1391,6 +1529,88 @@ impl Backend for FakeBackend {
 
     fn provenance_available(&self) -> bool {
         !self.lock().prov_unavailable
+    }
+
+    // --- studio 0.71 --- generate on the fake blyg (`studio071::generate`).
+    fn generate_on_blyg(
+        &self,
+        id: &LocalId,
+        scope: u32,
+        proceed: bool,
+    ) -> Result<blyg_core::generate::GenerateOutcome> {
+        self.remote_guard()?;
+        let sink = {
+            let mut st = self.lock();
+            let it = st
+                .items
+                .iter_mut()
+                .find(|i| &i.local_id == id)
+                .ok_or(CoreError::NotFound)?;
+            if it.server_id.is_none() || it.pending_sync {
+                return Err(CoreError::NotSynced);
+            }
+            let now = Utc::now().to_rfc3339();
+            let old = it.content_md.clone();
+            let filled = studio071::generate(&old, scope as usize, proceed, 0, &now)?;
+            let Some((md, p)) = filled.spliced else {
+                return Ok(filled.outcome);
+            };
+            it.content_md = md.clone();
+            it.updated = now;
+            if it.status == Status::Public {
+                it.dirty = true;
+            }
+            let n = blyg_core::tk::scope_count(&md).unwrap_or(0);
+            let mut scopes = st
+                .prov
+                .get(id)
+                .and_then(|(k, v)| blyg_core::tk::remap(k, v, &md))
+                .unwrap_or_else(|| vec![None; n]);
+            if let Some(slot) = scopes.get_mut(scope as usize) {
+                *slot = Some(p);
+            }
+            st.prov.insert(id.clone(), (md.clone(), scopes));
+            st.synced.insert(id.clone(), md);
+            (st.sink.clone(), filled.outcome)
+        };
+        Self::emit(&sink.0, CoreEvent::ItemsChanged);
+        Ok(sink.1)
+    }
+
+    /// Like blyg-core: the blyg's text becomes what was synced, and the
+    /// merged text the edit that waits to go.
+    fn keep_generated(
+        &self,
+        id: &LocalId,
+        generated: &str,
+        _revision: u64,
+        merged: &str,
+    ) -> Result<bool> {
+        let push = {
+            let mut st = self.lock();
+            let it = st
+                .items
+                .iter_mut()
+                .find(|i| &i.local_id == id)
+                .ok_or(CoreError::NotFound)?;
+            if it.conflict {
+                return Ok(false);
+            }
+            it.content_md = merged.to_string();
+            it.pending_sync = merged != generated;
+            let push = it.pending_sync;
+            st.synced.insert(id.clone(), generated.to_string());
+            if let Some((old_md, old)) = st.prov.get(id).cloned()
+                && let Some(new) = blyg_core::tk::remap(&old_md, &old, merged)
+            {
+                st.prov.insert(id.clone(), (merged.to_string(), new));
+            }
+            push
+        };
+        if push {
+            self.touched();
+        }
+        Ok(true)
     }
 
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>) {
@@ -2179,7 +2399,7 @@ impl Backend for FakeBackend {
             (true, None) if st.shelf.len() >= 50 => {
                 return Err(CoreError::Rejected {
                     status: 400,
-                    message: "Your shelf holds at most 50 posts. Take one off first.".into(),
+                    message: "Saved holds at most 50 posts. Remove one first.".into(),
                     details: vec![],
                 });
             }
@@ -2717,6 +2937,10 @@ impl Backend for FakeBackend {
         self.lock().read_ext
     }
 
+    fn background_placing(&self) -> bool {
+        self.background_served()
+    }
+
     fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
         use blyg_core::background::{BackgroundSet, EntryBackground};
         if !self.background_served() {
@@ -2820,6 +3044,75 @@ impl Backend for FakeBackend {
         Ok(self.background_rules()?.unwrap_or_default())
     }
     // --- end background ---
+
+    // --- reader order --- the blyg's setting and this computer's copy, in
+    // memory, gated as LiveBackend's: sent only once the blyg was seen to
+    // keep it.
+    fn reader_order(&self) -> blyg_core::order::ReaderOrder {
+        let s = self.lock();
+        s.reader_order.local.unwrap_or(s.reader_order.blyg)
+    }
+
+    fn load_reader_order(&self) -> Result<Option<blyg_core::order::ReaderOrder>> {
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        o.served = true;
+        o.local = Some(o.blyg);
+        Ok(Some(o.blyg))
+    }
+
+    fn save_reader_order(
+        &self,
+        order: blyg_core::order::ReaderOrder,
+    ) -> Result<blyg_core::order::ReaderOrder> {
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        if !o.served {
+            o.local = Some(order);
+            return Ok(order);
+        }
+        drop(s);
+        self.remote_guard()?;
+        let mut s = self.lock();
+        let o = &mut s.reader_order;
+        if o.fails {
+            return Err(blyg_core::CoreError::Other("the blyg didn't answer".into()));
+        }
+        o.blyg = o.keeps.unwrap_or(order);
+        o.local = Some(o.blyg);
+        Ok(o.blyg)
+    }
+
+    // --- studio 0.71 --- readerMarkRead, gated as LiveBackend's: offered
+    // once read from the blyg.
+    fn reader_mark_read(&self) -> Option<blyg_core::mark_read::MarkRead> {
+        let s = self.lock();
+        s.mark_read_served.then_some(s.mark_read)
+    }
+
+    fn load_reader_mark_read(&self) -> Result<Option<blyg_core::mark_read::MarkRead>> {
+        self.remote_guard()?;
+        let mut s = self.lock();
+        if !s.mark_read_offered {
+            return Ok(None);
+        }
+        s.mark_read_served = true;
+        Ok(Some(s.mark_read))
+    }
+
+    fn save_reader_mark_read(
+        &self,
+        m: blyg_core::mark_read::MarkRead,
+    ) -> Result<blyg_core::mark_read::MarkRead> {
+        if !self.lock().mark_read_served {
+            return Err(CoreError::Other(
+                "your blyg doesn't have this setting".into(),
+            ));
+        }
+        self.remote_guard()?;
+        self.lock().mark_read = m;
+        Ok(m)
+    }
 
     // --- hoppers --- the store's rules: membership is local and instant;
     // a hopper's own fields go to the "server" (refused offline).
@@ -3088,6 +3381,85 @@ impl Backend for FakeBackend {
         Ok(self.lock().access_ai.models.clone())
     }
 
+    // --- studio 0.69 ---
+    fn agentic_feeds(&self) -> Result<Option<Vec<blyg_core::agentic::Feed>>> {
+        self.remote_guard()?;
+        let title = self.lock().access_ai.ai.agentic_title.clone();
+        Ok(Some(vec![blyg_core::agentic::Feed {
+            id: blyg_core::agentic::DEFAULT_FEED.into(),
+            title: blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default()),
+            revision: 7,
+            updated_at: Some("2026-11-21T07:30:00Z".into()),
+        }]))
+    }
+
+    fn agentic_edition(&self, feed: &str) -> Result<Option<blyg_core::agentic::Edition>> {
+        self.remote_guard()?;
+        if feed != blyg_core::agentic::DEFAULT_FEED {
+            return Ok(None);
+        }
+        let title = self.lock().access_ai.ai.agentic_title.clone();
+        let title = blyg_core::agentic::title_or_default(title.as_deref().unwrap_or_default());
+        Ok(Some(studio069::edition(&self.reading(), &title)))
+    }
+
+    fn dictionary(&self) -> Result<Option<blyg_core::dictionary::Dictionary>> {
+        self.remote_guard()?;
+        Ok(Some(self.lock().dictionary.clone()))
+    }
+
+    fn edit_dictionary(
+        &self,
+        edit: &blyg_core::dictionary::Edit,
+    ) -> Result<blyg_core::dictionary::Dictionary> {
+        simulate_latency(self.timing.publish);
+        self.remote_guard()?;
+        // The blyg's own rules: it refuses a word that breaks them.
+        if let Some(p) = blyg_core::dictionary::word_problem(&edit.word()) {
+            return Err(CoreError::Other(format!("“{}” {p}", edit.word())));
+        }
+        let mut st = self.lock();
+        let d = &mut st.dictionary;
+        if !d.writable {
+            // A read-only sign-in: nothing sent.
+            return Ok(d.clone());
+        }
+        let mine = blyg_core::dictionary::apply(d.owner_words(), edit);
+        d.sources
+            .retain(|s| s.source != blyg_core::dictionary::OWNER);
+        d.sources.insert(
+            0,
+            blyg_core::dictionary::Source {
+                source: blyg_core::dictionary::OWNER.into(),
+                words: mine,
+            },
+        );
+        d.revision += 1;
+        Ok(d.clone())
+    }
+
+    fn dictionary_taught(&self) -> Result<Vec<String>> {
+        Ok(self.lock().dictionary_taught.clone())
+    }
+
+    fn dictionary_teach(&self, word: &str, taught: bool) -> Result<()> {
+        let mut st = self.lock();
+        st.dictionary_taught.retain(|w| w != word);
+        if taught {
+            st.dictionary_taught.push(word.to_string());
+        }
+        Ok(())
+    }
+
+    fn summarize_catch_up(
+        &self,
+        _entry: &blyg_core::shelf::Entry,
+    ) -> Result<Option<blyg_core::helpers::CatchUpSummary>> {
+        simulate_latency(self.timing.publish);
+        self.remote_guard()?;
+        Ok(Some(studio069::catch_up_summary()))
+    }
+
     fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
         self.remote_guard()?;
         Ok(self.lock().access_ai.ai.clone())
@@ -3111,6 +3483,15 @@ impl Backend for FakeBackend {
         };
         keep(&mut ai.style_prompt, &s.style_prompt);
         keep(&mut ai.feed_prompt, &s.feed_prompt);
+        // --- studio 0.69 ---
+        keep(&mut ai.agentic_title, &s.agentic_title);
+        keep(&mut ai.bg_instruction, &s.bg_instruction);
+        if s.bg_model_imported.is_some() {
+            ai.bg_model_imported = s.bg_model_imported;
+        }
+        if s.bg_flag_disagreement.is_some() {
+            ai.bg_flag_disagreement = s.bg_flag_disagreement;
+        }
         if s.auto_change_notes.is_some() {
             ai.auto_change_notes = s.auto_change_notes;
         }
@@ -3403,15 +3784,6 @@ fn fake_withdrawn(st: &State, s: &blyg_core::TrailStop) -> bool {
     }
 }
 
-/// --- syndication --- the fake's copies-elsewhere lists, by local id.
-fn fake_syndication()
--> &'static Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>> {
-    static M: std::sync::OnceLock<
-        Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>>,
-    > = std::sync::OnceLock::new();
-    M.get_or_init(Default::default)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3438,6 +3810,29 @@ mod tests {
             }
         }
         false
+    }
+
+    /// --- syndication --- Copies elsewhere belong to one fake blyg: fakes
+    /// in parallel tests never see each other's, even under the same local
+    /// id (`local-<n>-<ms>` repeats across tests started in the same
+    /// millisecond). A shared list once made the auto cross-post test skip
+    /// a site another test had recorded a copy on.
+    #[test]
+    fn copies_elsewhere_belong_to_one_fake() {
+        let (a, _) = fake();
+        let (b, _) = fake();
+        let id = a.create_draft(Kind::Fragment, "Low water.").unwrap();
+        a.publish(&id, None).unwrap();
+        let copy = blyg_core::syndication::SyndicationEntry::new(
+            "https://substack.com/@tidepools/note/c-7",
+            1,
+        );
+        a.set_syndication(&id, &[copy]).unwrap();
+        assert_eq!(a.syndication(&id).len(), 1);
+        assert!(
+            b.syndication(&id).is_empty(),
+            "another fake's copies leaked"
+        );
     }
 
     #[test]

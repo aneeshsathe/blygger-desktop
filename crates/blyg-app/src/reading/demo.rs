@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_FORK, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
 use crate::scenes::Scene;
 
 impl MainView {
@@ -189,6 +189,27 @@ impl MainView {
             (Scene::RdStreamLineageRing, 2) => {
                 self.lineage_open_ring(cx);
                 self.lineage_preview(super::lineage_vm::Act::Reply, cx);
+            }
+            // --- studio 0.71 --- the first card's date clicked: its post in
+            // the side pane.
+            (Scene::RdStreamDate | Scene::RdGenRead, 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            (Scene::RdStreamDate, 1) => {
+                let first = self.reading.shown_rows().next().map(super::vm::key);
+                if let Some(k) = first {
+                    self.stream_read_more(k, window, cx);
+                }
+            }
+            // Lin's post in the Reader, scrolled to its end: what its
+            // generated sentence read (the reader is a web view, so a window
+            // capture shows it; the in-app snapshot can't).
+            (Scene::RdGenRead, 1) => {
+                self.set_read_mode(super::stream_vm::ReadMode::Reader, window, cx);
+                open(self, LIN_FORK, window, cx);
+            }
+            (Scene::RdGenRead, 2) => {
+                self.reader_eval("window.scrollTo(0, document.body.scrollHeight)");
             }
             // --- reader folders --- the three panes: a folder picked, a post open.
             (Scene::RdThreePane, 0) => self.show_view(View::Reading, window, cx),
@@ -583,6 +604,46 @@ impl MainView {
             }
             // --- background --- the Background feed, Rue's withdrawn post
             // open; and the stream at Ada's tide tables, "V2: one word".
+            // --- reader order ---
+            (Scene::RdFeed | Scene::RdRaw, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdFeed, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::All), cx);
+                self.move_reading(1, window, cx);
+            }
+            (Scene::RdRaw, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Raw), cx);
+                self.move_reading(1, window, cx);
+            }
+            // --- ux 0.28 --- the Agentic feed (the fake's edition) and Saved.
+            (Scene::RdAgentic | Scene::RdSaved, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdAgentic, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Agentic), cx);
+            }
+            (Scene::RdSaved, 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Shelf), cx);
+                self.move_reading(1, window, cx);
+            }
+            // --- ux 0.28 --- Catch up on Rue's thread, then s: the blyg's
+            // summary first.
+            (Scene::RdStreamCatchupSummary, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamCatchupSummary, 1) => {
+                if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
+                    let (o, i) = (r.origin.clone(), r.remote_id.to_string());
+                    self.open_catch_up(o, i, window, cx);
+                }
+            }
+            (Scene::RdStreamCatchupSummary, 2) => self.catch_up_summarize(window, cx),
+            // --- ux 0.28 --- Kit's tides opened from the stream (no
+            // followed sample post lists a copy; Kit's, fetched, does).
+            (Scene::RdStreamCopies, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamCopies, 1) => {
+                use crate::fake::reading_seed::{KIT, KIT_TIDES};
+                self.open_original(KIT.into(), KIT_TIDES.into(), None, window, cx)
+            }
             (Scene::RdBackground, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdBackground, 1) => {
                 use super::sources_vm::{Smart, Source};

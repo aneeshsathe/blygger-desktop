@@ -8,6 +8,8 @@
 //! saves stay instant while a push is in flight.
 
 mod background; // --- background --- the studio's Background lens and choices
+mod churn; // a list that changes under every walk sits pulls out
+pub(crate) mod newer; // --- newer contract --- syncing on, removing nothing
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
@@ -19,7 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::api::wire::ChangeState;
-use crate::api::{Api, Contract, is_transient};
+use crate::api::{Api, Contract, Prune, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
@@ -232,8 +234,12 @@ struct NetState {
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
-    /// The server proved to speak contract 5 this session.
+    /// The server's contract was checked this session: one Burrow speaks,
+    /// or a newer one (`Store::lists_prune` says which).
     compatible: bool,
+    /// --- newer contract --- The app was told the blyg runs a newer
+    /// studio (`CoreEvent::ServerNewer`), once a session.
+    newer_told: bool,
     /// The server proved older than Burrow's minimum, studio 0.49.12 (its
     /// contract isn't 5.x); cleared once it isn't.
     outdated: bool,
@@ -287,6 +293,9 @@ struct NetState {
     /// The blyg refused the stored credential (401): nothing is sent or
     /// pulled on its own until a new sign-in, or a manual sync.
     signed_out: bool,
+    /// Each list's run of reads that changed under every walk
+    /// (`churn::Churn`), by the name its revisions are kept under.
+    churn: HashMap<&'static str, churn::Churn>,
 }
 
 /// What to say when the blyg refused a sign-in made for its old API
@@ -400,6 +409,7 @@ impl Engine {
                 reading_unavailable: false,
                 pushing: false,
                 compatible: false,
+                newer_told: false,
                 outdated: false,
                 reading_served: false,
                 changes: None,
@@ -420,6 +430,7 @@ impl Engine {
                 hopper_denied: false,
                 read_flags: None,
                 signed_out: false,
+                churn: HashMap::new(),
             }),
             opts,
             scratch_dir: None,
@@ -485,6 +496,45 @@ impl Engine {
 
     fn state(&self) -> MutexGuard<'_, NetState> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Whether this pull may read `list`: not while it sits out pulls after
+    /// changing under walk after walk (`churn`). Ask only when the list
+    /// would otherwise be read. `asked`: a pull the user asked for.
+    fn churn_due(&self, list: &'static str, asked: bool) -> bool {
+        self.state().churn.entry(list).or_default().due(asked)
+    }
+
+    /// `list` was read to its end.
+    fn churn_read(&self, list: &'static str) {
+        if let Some(c) = self.state().churn.get_mut(list) {
+            c.read();
+        }
+    }
+
+    /// A read of `list` that failed, as a pull takes it. The list is left
+    /// as held, and not accepted, so a later pull asks it again:
+    /// - when it changed under every walk (`CursorExpired`; a studio
+    ///   expires a reading cursor on every post a subscription's backfill
+    ///   imports). After a few in a row it sits out pulls (`churn`), said
+    ///   once a session;
+    /// - in the catch-all arm, as before: a refusal (a 4xx other than 401)
+    ///   and an answer Burrow couldn't read (`Other`, a parse error).
+    ///
+    /// What stops the whole pull comes back: offline, rate-limited, a 5xx
+    /// (`is_transient`) and signed out.
+    fn left_as_held(&self, list: &'static str, e: CoreError) -> Result<()> {
+        match e {
+            CoreError::CursorExpired => {
+                let first = self.state().churn.entry(list).or_default().expired();
+                if first {
+                    self.emit(CoreEvent::Error(churn::message(list)));
+                }
+                Ok(())
+            }
+            e if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+            _ => Ok(()),
+        }
     }
 
     // ------------------------------------------------------------ events
@@ -737,7 +787,7 @@ impl Engine {
     pub fn earliest_due(&self) -> Option<i64> {
         let held = {
             let st = self.state();
-            st.read_denied || st.hopper_denied
+            st.read_denied || st.hopper_denied || self.shelf_held().is_some()
         };
         if !held {
             return self.store.earliest_due();
@@ -759,38 +809,42 @@ impl Engine {
     }
 
     /// Make sure the server speaks what Burrow sends: its private API
-    /// contract (`GET {blyg}/api/capabilities`) is 5.x, blygger-studio
-    /// 0.49.12 or later. Checked once per session (one small read), and
-    /// again while it fails, before anything is pushed or pulled: a list
-    /// in another shape would read as empty or ended, and what's held here
-    /// would be pruned. An older studio is `ServerOutdated` (said once, as
-    /// `CoreEvent::ServerOutdated`); a newer contract asks for a newer
-    /// Burrow. Nothing is sent either way, and the local copy stays.
+    /// contract (`GET {blyg}/api/capabilities`) is 5.x or later,
+    /// blygger-studio 0.49.12 or later. Checked once per session (one small
+    /// read), and again while it fails, before anything is pushed or
+    /// pulled. An older studio is `ServerOutdated` (said once, as
+    /// `CoreEvent::ServerOutdated`): nothing is sent, and the local copy
+    /// stays. A newer contract syncs on, but its lists remove nothing held
+    /// here (`sync/newer.rs`; said once, as `CoreEvent::ServerNewer`).
     fn check_server(&self, push: bool) -> Result<()> {
         let _ = push;
         if self.state().compatible {
             return Ok(());
         }
-        match crate::api::contract(self.api.contract_version()?.as_deref()) {
-            Contract::Supported => {
-                self.note_syndication_served(); // --- syndication ---
-                self.note_background_served(); // --- background ---
-                self.note_shelf_served(); // --- shelf sync ---
-                let mut st = self.state();
-                st.compatible = true;
-                st.outdated = false;
-                Ok(())
-            }
-            Contract::TooOld => {
-                self.mark_outdated();
-                Err(CoreError::ServerOutdated)
-            }
-            Contract::TooNew(c) => Err(CoreError::Other(format!(
-                "This blyg runs studio API contract {c}, which this version of Burrow \
-                 doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
-                 was synced, and your local copy is safe."
-            ))),
+        let contract = crate::api::contract(self.api.contract_version()?.as_deref());
+        let Some(prune) = contract.prune() else {
+            self.mark_outdated();
+            return Err(CoreError::ServerOutdated);
+        };
+        self.store.set_lists_prune(prune);
+        self.note_syndication_served(); // --- syndication ---
+        self.note_background_served(); // --- background ---
+        self.note_shelf_served(); // --- shelf sync ---
+        {
+            let mut st = self.state();
+            st.compatible = true;
+            st.outdated = false;
         }
+        if let Contract::Newer(version) = contract {
+            self.tell_newer(version); // --- newer contract ---
+        }
+        Ok(())
+    }
+
+    /// The blyg's contract, checked (once a session) before a read outside
+    /// a pull replaces something held here (`LiveBackend`'s refreshes).
+    pub(crate) fn check_contract(&self) -> Result<()> {
+        self.check_server(false)
     }
 
     /// The server is too old: say so once (until it isn't).
@@ -1160,10 +1214,12 @@ impl Engine {
     }
 
     /// Write `content` and `scopes` together at revision `rev`. A refusal
-    /// of the provenance itself (e.g. a cited source that no longer
-    /// resolves) retries without the citations, then saves the text with no
-    /// disclosure and says so. A refused write changes nothing, so each
-    /// retry goes at the same revision.
+    /// of the provenance itself (e.g. a cited post that no longer resolves)
+    /// retries without the posts, keeping the web pages (they cite nothing
+    /// that must resolve) and the sources Burrow doesn't read; then with the
+    /// pages alone; then without any source; then saves the text with no
+    /// disclosure and says so. A refused write changes nothing, so
+    /// each retry goes at the same revision.
     fn push_provenance(
         &self,
         id: &LocalId,
@@ -1185,39 +1241,41 @@ impl Engine {
             }) => message,
             Err(e) => return Err(e),
         };
-        let bare: Vec<Option<ScopeProvenance>> = scopes
-            .iter()
-            .map(|p| {
-                p.clone().map(|p| ScopeProvenance {
-                    sources: vec![],
-                    ..p
-                })
-            })
-            .collect();
-        match self.api.save_item_provenance(sid, rev, content, &bare) {
-            Ok(w) => {
-                self.store.prov_pushed(id, content, &bare)?;
-                Ok(w)
+        let mut tried = vec![scopes.to_vec()];
+        for strip in [
+            ScopeProvenance::without_posts,
+            ScopeProvenance::only_pages,
+            ScopeProvenance::bare,
+        ] {
+            let retry: Vec<Option<ScopeProvenance>> =
+                scopes.iter().map(|p| p.as_ref().map(strip)).collect();
+            if tried.contains(&retry) {
+                continue;
             }
-            Err(CoreError::Rejected { status: 400, .. }) => {
-                self.emit(CoreEvent::Error(format!(
-                    "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
-                )));
-                let none = vec![None; scopes.len()];
-                // Clear what the server held, so nothing stale stays keyed
-                // to the new text; failing that, the text alone.
-                let w = match self.api.save_item_provenance(sid, rev, content, &none) {
-                    Err(CoreError::Rejected { status: 400, .. }) => {
-                        self.api.save_item(sid, rev, content)?
-                    }
-                    r => r?,
-                };
-                // Don't retry (and re-warn) on every keystroke.
-                self.store.prov_pushed(id, content, &none)?;
-                Ok(w)
+            match self.api.save_item_provenance(sid, rev, content, &retry) {
+                Ok(w) => {
+                    self.store.prov_pushed(id, content, &retry)?;
+                    return Ok(w);
+                }
+                Err(CoreError::Rejected { status: 400, .. }) => tried.push(retry),
+                Err(e) => return Err(e),
             }
-            Err(e) => Err(e),
         }
+        self.emit(CoreEvent::Error(format!(
+            "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
+        )));
+        let none = vec![None; scopes.len()];
+        // Clear what the server held, so nothing stale stays keyed to the
+        // new text; failing that, the text alone.
+        let w = match self.api.save_item_provenance(sid, rev, content, &none) {
+            Err(CoreError::Rejected { status: 400, .. }) => {
+                self.api.save_item(sid, rev, content)?
+            }
+            r => r?,
+        };
+        // Don't retry (and re-warn) on every keystroke.
+        self.store.prov_pushed(id, content, &none)?;
+        Ok(w)
     }
 
     /// A push with provenance landed: clear an older Burrow's "the server
@@ -1331,17 +1389,28 @@ impl Engine {
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self, background: bool) -> Result<()> {
+        let net_due = {
+            let st = self.state();
+            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
+        };
+        let checked = self.state().compatible;
+        // --- newer contract --- A check from an earlier pull holds removals
+        // back until the contract is read again (`Engine::lay_list`).
+        self.store.contract_stale();
+        self.api.new_pull();
         self.check_server(false)?;
+        // --- newer contract --- The safety net checks the contract again
+        // (one conditional read): a studio upgraded mid-session is seen
+        // before its lists remove anything.
+        if net_due && checked {
+            self.recheck_contract();
+        }
         let rev = self.revisions()?;
         // No change counters (studio 0.67+), but the blyg answers reads
         // conditionally: every list is asked each pull, and one that hasn't
         // changed comes back 304, as held (`api::conditional`). The safety
         // net then paces only the whole walks of the reading list.
         let validating = self.validating(&rev);
-        let net_due = {
-            let st = self.state();
-            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
-        };
         let full = (rev.is_none() && !validating) || net_due;
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
         // Read only because the safety net is due: what such a read finds
@@ -1360,7 +1429,19 @@ impl Engine {
         if stale("items", ITEMS_DEPS) {
             let settings = full || !self.unchanged(&rev, "items", &["settings"]);
             if let Some(wires) = settled(self.api.list_items_with(settings))? {
-                let mut out = self.store.merge_all(&wires)?;
+                let mut out = self.lay_list(
+                    || self.store.merge_all(&wires),
+                    |mut a, b| {
+                        a.changed |= b.changed;
+                        // One Conflict event per item, though both lays saw it.
+                        for c in b.conflicts {
+                            if !a.conflicts.iter().any(|x| x.0 == c.0) {
+                                a.conflicts.push(c);
+                            }
+                        }
+                        a
+                    },
+                )?;
                 out.changed |= self.store.merge_wire_syndication(&wires)?; // --- syndication ---
                 for (local_id, mine, theirs) in out.conflicts {
                     self.emit(CoreEvent::Conflict {
@@ -1385,8 +1466,9 @@ impl Engine {
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
-                    subs_changed = walk::subscriptions_differ(&self.store.subscriptions(), &subs);
-                    let changed = self.store.replace_subscriptions(&subs)?;
+                    let held = self.hold_subscriptions(subs)?;
+                    subs_changed = held.differ;
+                    let changed = held.changed;
                     surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
                     reading_changed |= changed;
                     self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
@@ -1441,34 +1523,28 @@ impl Engine {
         // the whole reading list again (issue #71).
         if let Some(walked) = &read.walked_whole {
             self.accept(walked, "signals", SIGNALS_DEPS)?;
-        } else if stale("signals", SIGNALS_DEPS) {
+        } else if stale("signals", SIGNALS_DEPS) && self.churn_due("signals", !background) {
             match self.fetch_signals() {
                 Ok(changed) => {
                     surprise |= changed && forced("signals", SIGNALS_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("signals");
                     self.accept(&rev, "signals", SIGNALS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("signals", e)?,
             }
         }
         // --- hoppers --- the hoppers and every membership (yours too), for
         // the sources pane; the rows' `hoppers` follow what's held here.
-        if stale("hoppers", HOPPERS_DEPS) {
+        if stale("hoppers", HOPPERS_DEPS) && self.churn_due("hoppers", !background) {
             match self.fetch_hoppers() {
                 Ok(changed) => {
                     surprise |= changed && forced("hoppers", HOPPERS_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("hoppers");
                     self.accept(&rev, "hoppers", HOPPERS_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("hoppers", e)?,
             }
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
@@ -1479,23 +1555,24 @@ impl Engine {
         if self.background_due(
             stale("background", background::BACKGROUND_DEPS),
             full || gap_open,
-        ) {
+        ) && self.churn_due("background", !background)
+        {
             match self.fetch_background() {
                 Ok(changed) => {
                     surprise |= changed && forced("background", background::BACKGROUND_DEPS);
                     reading_changed |= changed;
+                    self.churn_read("background");
                     self.accept(&rev, "background", background::BACKGROUND_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                // A refused read leaves what's held; asked again next pull.
-                Err(_) => {}
+                Err(e) => self.left_as_held("background", e)?,
             }
         }
         // --- shelf sync --- read when its counter moved, sent when it
         // changed here (sync/shelf.rs). A blyg without it: nothing.
-        if self.shelf_served() && (stale("shelf", SHELF_DEPS) || self.shelf_unsent()) {
+        if self.shelf_served()
+            && ((stale("shelf", SHELF_DEPS) && self.churn_due("shelf", !background))
+                || self.shelf_unsent())
+        {
             match self.sync_shelf() {
                 Ok(changed) => {
                     surprise |= changed && forced("shelf", SHELF_DEPS);
@@ -1503,20 +1580,19 @@ impl Engine {
                         self.emit(CoreEvent::ItemsChanged);
                         reading_changed = true;
                     }
+                    self.churn_read("shelf");
                     self.accept(&rev, "shelf", SHELF_DEPS)?;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => self.left_as_held("shelf", e)?,
             }
         }
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
         // the blyg's database only), asked again when your items or your
         // reading moved. A refused or failed read leaves what's held.
-        if stale("freshness", upkeep::FRESHNESS_DEPS) {
+        if stale("freshness", upkeep::FRESHNESS_DEPS) && self.churn_due("freshness", !background) {
             match self.fetch_freshness() {
                 Ok(Some((_, changed))) => {
+                    self.churn_read("freshness");
                     if changed {
                         surprise |= forced("freshness", upkeep::FRESHNESS_DEPS);
                         self.emit(CoreEvent::ItemsChanged);
@@ -1524,10 +1600,7 @@ impl Engine {
                     self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?;
                 }
                 Ok(None) => self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?,
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
-                    return Err(e);
-                }
-                Err(_) => {}
+                Err(e) => self.left_as_held("freshness", e)?,
             }
         }
         // --- end upkeep ---
@@ -1654,7 +1727,7 @@ impl Engine {
     /// changed.
     fn fetch_signals(&self) -> Result<bool> {
         match self.api.signals()? {
-            Some(list) => self.store.replace_thumbs(&list),
+            Some(list) => self.lay_list(|| self.store.replace_thumbs(&list), |a, b| a || b),
             None => Ok(false),
         }
     }
@@ -1666,7 +1739,7 @@ impl Engine {
     /// none. True when anything shown changed.
     pub fn fetch_hoppers(&self) -> Result<bool> {
         let Some(details) = self.api.hopper_details()? else {
-            return self.store.replace_hoppers(&[]);
+            return self.lay_list(|| self.store.replace_hoppers(&[]), |a, b| a || b);
         };
         let subs: HashMap<SubId, (String, String)> = self
             .store
@@ -1694,7 +1767,7 @@ impl Engine {
                 hopper: d.hopper,
             })
             .collect();
-        self.store.replace_hoppers(&fetched)
+        self.lay_list(|| self.store.replace_hoppers(&fetched), |a, b| a || b)
     }
 
     /// Send a `hopper` op: `PUT` or `DELETE /api/hoppers/{id}/items/…`. A
@@ -1763,6 +1836,9 @@ impl Engine {
     fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
         (st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread))
             || (st.hopper_denied && op.kind == OpKind::Hopper) // --- hoppers ---
+            // --- newer contract --- the shelf isn't written to such a blyg,
+            // nor by a sign-in that may only read it.
+            || (op.kind == OpKind::Shelf && self.shelf_held().is_some())
     }
 
     /// A read-state write answered 403 (`e`, which names the missing scope,
@@ -1854,8 +1930,11 @@ impl Engine {
                 )
             })
             .collect();
-        let plan = self.store.reconcile_read_state(&server, clear)?;
-        Ok(plan.cleared > 0)
+        let cleared = self.lay_list(
+            || Ok(self.store.reconcile_read_state(&server, clear)?.cleared),
+            |a, b| a + b,
+        )?;
+        Ok(cleared > 0)
     }
 
     /// Run a `read` or `unread` op: with others of its kind that wait, as
@@ -2027,8 +2106,12 @@ impl Engine {
         if start == Start::Nothing {
             return Ok(out);
         }
-        // A failure here leaves a walk under way where it is.
-        let flags = self.read_flags()?;
+        // A failure here leaves a walk under way where it is; a flags read
+        // that kept changing leaves the list as held for this pull.
+        let flags = match self.read_flags() {
+            Err(CoreError::CursorExpired) => return Ok(out),
+            r => r?,
+        };
         self.set_read_sync(flags.read_sync())?;
         self.set_read_clear(flags.read_clear())?;
         // Read marks sent from here since the last head read explain a
@@ -2041,15 +2124,16 @@ impl Engine {
         let held = (start == Start::Continue)
             .then(|| self.state().walk.take())
             .flatten();
-        let Some(mut r) = Read::begin(
+        let Some(mut r) = Read::begin(walk::Begin {
             start,
             held,
-            rev.clone(),
+            rev: rev.clone(),
             forced,
             mark,
-            self.opts.reading_pages,
+            budget: self.opts.reading_pages,
             reads_sent,
-        ) else {
+            prune: self.store.lists_prune(),
+        }) else {
             return Ok(out);
         };
         let kinds: HashMap<SubId, SubscriptionKind> = self
@@ -2129,6 +2213,12 @@ impl Engine {
                     .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
             );
             let stamps = || items.iter().filter_map(|i| parse_ts_ms(&i.observed_at));
+            // --- newer contract --- A page may re-key a row (an RSS guid
+            // changed), which removes the old one: on a check from an
+            // earlier pull, the contract is read again first.
+            if !items.is_empty() && self.store.lists_prune_now() == crate::store::Removal::Recheck {
+                self.recheck_contract();
+            }
             let (mut changed, written) =
                 self.store
                     .merge_reading_page(&items, &r.walk.keys, &kinds)?;
@@ -2163,8 +2253,11 @@ impl Engine {
                     self.stop_read(r);
                     return Ok(out);
                 }
-                Step::Done { whole } => {
-                    if whole && self.store.prune_reading_except(&r.walk.keys)? {
+                Step::Done { whole, prune } => {
+                    // --- newer contract --- A walk may span pulls: the
+                    // contract is checked again before it prunes.
+                    let prune = prune && self.recheck_contract() == Prune::Allowed;
+                    if prune && self.store.prune_reading_except(&r.walk.keys)? {
                         out.changed = true;
                         out.surprise |= r.walk.forced;
                         self.emit(CoreEvent::ReadingChanged);
@@ -2340,3 +2433,5 @@ mod read_held_tests; // --- read/unread ---
 
 #[cfg(test)]
 mod cadence_tests; // issue #71
+#[cfg(test)]
+mod churn_tests;

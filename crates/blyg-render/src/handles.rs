@@ -7,7 +7,10 @@
 //! that link becomes the h-card after rendering, through the same token
 //! splice as `[[id]]` links (`withMentionCards`). A handle naming nobody
 //! stays literal prose. Handles inside code, quoted lines (`> …`), bracket
-//! directives, Markdown links and autolinks are left alone.
+//! directives, Markdown links and autolinks are left alone. Since studio
+//! 0.66 (#158) a handle reads in natural grammar: `@lin's` and
+//! `@lin-driven` both name Lin, through the longest prefix of the word
+//! that names a contact (`candidates`).
 
 use std::sync::OnceLock;
 
@@ -152,8 +155,31 @@ fn mention_card(card: &HandleCard) -> String {
     )
 }
 
-/// `consumeHandles`, with `contact` answering each handle (any case).
-pub(crate) fn consume(md: &str, contact: &dyn Fn(&str) -> Option<HandleCard>) -> Consumed {
+/// `handleCandidates` (studio 0.66, #158): the handles a token may be,
+/// longest first: itself, then each prefix ending before a `-` or `_`. So
+/// `@lin-driven` is read whole first and, when the book has no
+/// `lin-driven`, as `@lin` followed by the word's own `-driven`. A token
+/// is ASCII (`AT_HANDLE`), so every prefix is a handle too.
+fn candidates(token: &str) -> impl Iterator<Item = &str> {
+    let cuts = token
+        .bytes()
+        .enumerate()
+        .rev()
+        .filter(|&(i, b)| i > 0 && (b == b'-' || b == b'_'))
+        .map(move |(i, _)| &token[..i]);
+    std::iter::once(token).chain(cuts)
+}
+
+/// `consumeHandles`, with `contact` answering each handle (any case). Only
+/// `@` and the handle that names a contact become the link; the rest of the
+/// word stays the author's (`@lin's`, `@lin-driven`). With `natural` off
+/// (studio 0.56-0.65) only the whole token is looked up; it's asked only
+/// when the text has a handle.
+pub(crate) fn consume(
+    md: &str,
+    contact: &dyn Fn(&str) -> Option<HandleCard>,
+    natural: &dyn Fn() -> bool,
+) -> Consumed {
     let found = spots(md);
     if found.is_empty() {
         return Consumed {
@@ -161,23 +187,31 @@ pub(crate) fn consume(md: &str, contact: &dyn Fn(&str) -> Option<HandleCard>) ->
             cards: Vec::new(),
         };
     }
+    let tries = if natural() { usize::MAX } else { 1 };
     let mut known: std::collections::HashMap<String, Option<HandleCard>> = Default::default();
+    let mut lookup = |h: &str| {
+        known
+            .entry(h.to_ascii_lowercase())
+            .or_insert_with(|| contact(h))
+            .clone()
+    };
     let mut cards: Vec<(String, String)> = Vec::new();
     let mut text = String::with_capacity(md.len() + 64);
     let mut last = 0;
-    for (start, end, handle) in found {
-        let card = known
-            .entry(handle.to_ascii_lowercase())
-            .or_insert_with(|| contact(handle))
-            .clone();
-        let Some(card) = card else { continue };
+    for (start, _, token) in found {
+        let Some((handle, card)) = candidates(token)
+            .take(tries)
+            .find_map(|h| lookup(h).map(|c| (h, c)))
+        else {
+            continue;
+        };
         let link = mention_link(&card);
         if !cards.iter().any(|(l, _)| *l == link) {
             cards.push((link.clone(), mention_card(&card)));
         }
         text.push_str(&md[last..start]);
         text.push_str(&link);
-        last = end;
+        last = start + 1 + handle.len();
     }
     text.push_str(&md[last..]);
     Consumed { text, cards }
@@ -218,7 +252,7 @@ mod tests {
 
     #[test]
     fn known_handles_become_links_with_cards() {
-        let c = consume("Tea with @Lin and @sam, again @lin", &lin);
+        let c = consume("Tea with @Lin and @sam, again @lin", &lin, &|| true);
         assert_eq!(
             c.text,
             "Tea with [@Lin Okafor](https://lin.example.org/) and @sam, again [@Lin Okafor](https://lin.example.org/)"

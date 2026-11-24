@@ -1,0 +1,12 @@
+{
+  "name": "mention_longest_handle",
+  "kind": "fragment",
+  "md": "@lin-k-led and @lin-led, and @LIN-K.",
+  "html": "<p><span class=\"h-card\"><a class=\"u-url\" href=\"https://k.example.org/\">@<span class=\"p-name\">Lin K</span></a></span>-led and <span class=\"h-card\"><a class=\"u-url\" href=\"https://lin.example.org/\">@<span class=\"p-name\">Lin Okafor</span></a><data class=\"u-url\" value=\"https://social.example.net/@lin\"></data></span>-led, and <span class=\"h-card\"><a class=\"u-url\" href=\"https://k.example.org/\">@<span class=\"p-name\">Lin K</span></a></span>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

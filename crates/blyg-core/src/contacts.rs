@@ -43,15 +43,29 @@ pub struct ContactId {
     pub provenance: String,
 }
 
-/// Whether a studio's `contractVersion` serves contacts, the `@handle`
-/// rewrite and the mentions lens (5.7.0, studio 0.56).
-pub fn serves_contacts(version: &str) -> bool {
-    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
-    match (parts.next().flatten(), parts.next().flatten()) {
-        (Some(5), Some(minor)) => minor >= 7,
-        (Some(major), _) => major > 5,
-        _ => false,
-    }
+/// The operation whose listing in a studio's capabilities means it serves
+/// contacts, the `@handle` rewrite and the mentions lens (contract 5.7.0,
+/// studio 0.56).
+pub const CONTACTS_OPERATION: &str = "listContacts";
+
+/// The first studio that reads `@handle`s in natural grammar (0.66, #158):
+/// `@lin-driven` names Lin there, through the longest prefix before a `-`
+/// or `_` that names a contact. No capability says so; only the version.
+pub const NATURAL_GRAMMAR: (u64, u64, u64) = (0, 66, 0);
+
+/// Whether a studio running `version` (`blyg.json`'s generator) reads
+/// handles in natural grammar. Never known or unreadable: no, the
+/// whole-token reading, so a preview never links what publish won't.
+pub fn natural_grammar(version: Option<&str>) -> bool {
+    version
+        .and_then(crate::site::parse_version)
+        .is_some_and(|v| v >= NATURAL_GRAMMAR)
+}
+
+/// [`natural_grammar`] for the studio `backend` last saw
+/// (`Backend::studio_version`: local, instant, kept across launches).
+pub fn natural_grammar_at(backend: &dyn crate::Backend) -> bool {
+    natural_grammar(backend.studio_version().as_deref())
 }
 
 /// The contacts in a `GET /api/contacts` answer: `{items: […]}`,
@@ -338,16 +352,6 @@ impl ContactSeed {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn contracts_from_5_7_serve_contacts() {
-        assert!(serves_contacts("5.7.0"));
-        assert!(serves_contacts("5.12.1"));
-        assert!(serves_contacts("6.0.0"));
-        assert!(!serves_contacts("5.6.3"));
-        assert!(!serves_contacts("5.0.0"));
-        assert!(!serves_contacts("x"));
-    }
 
     #[test]
     fn contacts_parse_from_any_list_shape() {

@@ -108,7 +108,7 @@ fn setup<'a>(
     {
         let store = Store::open(&dir.join("blygger.db")).unwrap();
         store
-            .replace_subscriptions(&synth::subscriptions())
+            .take_served_subscriptions(&synth::subscriptions(), blyg_core::api::Prune::Allowed)
             .unwrap();
         store
             .merge_reading(&synth::reading(rows(), 3), true, &synth::kinds())
@@ -285,6 +285,34 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     let found = view.read_with(cx, |v, _| v.reading.shown.len());
     assert!(found > 0 && found < n, "{found} of {n}");
     view.update_in(cx, |v, window, cx| v.set_reading_query("", window, cx));
+
+    // --- studio 0.71 --- "Count an entry as read: when I see it" in the
+    // Stream. A tick measures only the cards from the first drawn down to
+    // the viewport's bottom, and the batch it sends costs the posts seen,
+    // not the list.
+    view.update_in(cx, |v, window, cx| {
+        v.set_read_mode(super::stream_vm::ReadMode::Stream, window, cx);
+        v.reading.count_read.setting = Some(blyg_core::mark_read::MarkRead::Seen);
+    });
+    crate::test_wait::settle_drawn(cx);
+    let unread = live.unread_count();
+    let t0 = Instant::now();
+    meter.step(
+        cx,
+        "stream ticks: seen marks sent in a batch",
+        cost(30.0, 0.25),
+        |cx| {
+            view.update(cx, |v, cx| {
+                v.stream_tick(t0, true, cx);
+                v.stream_tick(t0 + std::time::Duration::from_millis(1100), true, cx);
+                v.stream_tick(t0 + std::time::Duration::from_millis(4200), true, cx);
+            })
+        },
+    );
+    poll("the seen marks", || {
+        cx.run_until_parked();
+        live.unread_count() < unread
+    });
     meter.done();
 }
 

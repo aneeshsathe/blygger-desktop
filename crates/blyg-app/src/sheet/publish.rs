@@ -29,6 +29,7 @@ impl SheetView for PublishSheet {
     fn render(&self, v: &MainView, kit: &Kit, cx: &mut Context<MainView>) -> Shown {
         let p = kit.p;
         let PublishSheet {
+            id,
             title,
             next_version,
             note,
@@ -65,12 +66,19 @@ impl SheetView for PublishSheet {
                         .text_color(p.warn_text())
                         .child(w)
                 }))
+                // --- studio 0.71 --- what the generated text read, and
+                // which of it tells another blyg.
+                .children(v.render_tk_read(cx))
                 .child(kit.input_box(gpui_kit::base::input::Input::new(note).into_any_element()))
                 .children(v.render_note_ai(cx)) // --- access-ai ---
-                .child(kit.keys_row(vec![
-                    kit.key_hint("⏎", "publish"),
-                    kit.key_hint("esc", "cancel"),
-                ]))
+                .children(v.render_auto_crosspost(id, cx)) // --- auto cross-post ---
+                .child(
+                    kit.keys_row(vec![
+                        kit.key_hint("⏎", "publish"),
+                        kit.key_hint("esc", "cancel"),
+                    ])
+                    .debug_selector(|| "publish-keys".into()),
+                )
                 .into_any_element(),
         ))
     }

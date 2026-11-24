@@ -18,18 +18,14 @@ So a version check can say "yes" for a feature that isn't there.
 2. **Some endpoints aren't advertised** (e.g. a session-only route). For those,
    ask the endpoint and treat **404 as "not offered here"**, silently; remember
    it for a few hours, not forever.
-3. **Use contractVersion only as a floor** for the whole client ("speaks 5.x"),
-   never as a per-feature switch.
-4. **Hide, don't break.** An unoffered feature's UI is hidden or explains
+3. **Hide, don't break.** An unoffered feature's UI is hidden or explains
    itself; it never throws or shows a raw error.
-5. **Writes are partial.** `PATCH` only the keys you changed (settings above
+4. **Writes are partial.** `PATCH` only the keys you changed (settings above
    all). A client that writes a whole document back deletes fields added by
    newer servers (it has nearly happened with `Settings.discoverSeenAt`).
 
 ## Check
 
-- grep the client for `contractVersion` / `contract_version` comparisons that
-  guard a single feature; replace them with capability checks.
 - grep for full-document `PUT`s of settings or other server documents.
 
 ## In Burrow

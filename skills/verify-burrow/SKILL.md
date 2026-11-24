@@ -54,7 +54,9 @@ to its area's handler (`demo.rs`, `reading/demo.rs`, `notes/drawer.rs`,
 check a new behaviour, add a scene for it (a registry row, then an arm in its
 handler; steps 0, 1, 2 run at about 0.4, 1.3 and 2.5 s) rather than poking
 state from outside. Extra `BLYGGER_*` variables tune
-a scene (`BLYGGER_DEMO_SCROLL=bottom`, `BLYGGER_THEME=<name>`). A starting
+a scene (`BLYGGER_DEMO_SCROLL=bottom`, `BLYGGER_THEME=<name>`;
+`BLYGGER_TEST_SPELLING=windows` shows the app's text as Windows spells it,
+`Ctrl+B` for `⌘B`, in a debug build: the wording only, not the keys). A starting
 config goes in `BURROW_VERIFY_CONFIG=<file>` (only `*.example.com` and
 localhost URLs). The feature map below names the scenes per feature.
 

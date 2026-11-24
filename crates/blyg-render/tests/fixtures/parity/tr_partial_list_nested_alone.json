@@ -1,0 +1,21 @@
+{
+  "name": "tr_partial_list_nested_alone",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vq2]]\n> a pencil\n>\n> patience",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vq2\" data-blyg-version=\"1\">\n<ul>\n<li>a pencil</li>\n</ul>\n<ul>\n<li>patience</li>\n</ul>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vq2/\">fragment ↗</a> · excerpt of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vq2",
+      "version": 1,
+      "selector": {
+        "exact": "a pencil\npatience",
+        "prefix": "tools\n"
+      }
+    }
+  ],
+  "errors": []
+}

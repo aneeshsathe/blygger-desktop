@@ -10,18 +10,50 @@ use blyg_ai::AiError;
 use blyg_ai::prompts::{self, Prompt};
 use blyg_core::{Backend, Item, ProvenanceSource, ReadingItem, ScopeProvenance, tk};
 
-/// Studio 0.27.2: `POST /api/items/:id/generate` also returns `content_md`,
-/// the whole working copy with the scope's output spliced in, as the
-/// server saved it (`None` from an older server: then the item is pulled).
-pub fn server_content_md(r: &blyg_ai::GenResult) -> Option<String> {
-    r.content_md.clone()
-}
-
 /// The editor's text after a server generate: the server's `content_md`
-/// when it has one and the editor still holds `sent` (what the server
-/// spliced into), else `None` (pull instead).
+/// (`sent`, the text the server spliced into, with the generated words)
+/// merged with what was typed in the editor meanwhile (`editor_now`). The
+/// server's text alone when nothing was typed; both when the typing is
+/// apart from what the server changed; `None` when the two touch or
+/// overlap (a conflict, for the writer) or there's no `content_md` (pull
+/// instead).
 pub fn server_fill(sent: &str, editor_now: &str, content_md: Option<String>) -> Option<String> {
-    content_md.filter(|_| sent == editor_now)
+    let theirs = content_md?;
+    // Nothing typed, or the text read already is the server's (a post not
+    // open is read from the store, which the generate brought up to it).
+    if sent == editor_now || editor_now == theirs {
+        return Some(theirs);
+    }
+    let (mut g, mut g_text) = blyg_core::text::splice(sent, &theirs);
+    // What the server changed counts as its whole scope, so a keystroke in
+    // that scope's instruction (which the text answered) is a conflict too.
+    // Outside `g` the two texts are the same, shifted by `delta` after it.
+    let delta = theirs.len() as isize - sent.len() as isize;
+    if let Some(s) = tk::parse(sent)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|s| s.start <= g.start && g.end <= s.end)
+    {
+        g_text = theirs.get(s.start..(s.end as isize + delta) as usize)?;
+        g = s.start..s.end;
+    }
+    let (t, t_text) = blyg_core::text::splice(sent, editor_now);
+    // Each edit replaces one range of `sent`, apart from the other: the
+    // text between them, and around them, is `sent`'s.
+    let (first, first_text, last, last_text) = if t.end < g.start {
+        (t, t_text, g, g_text)
+    } else if g.end < t.start {
+        (g, g_text, t, t_text)
+    } else {
+        return None;
+    };
+    let mut out = String::with_capacity(sent.len() + first_text.len() + last_text.len());
+    out.push_str(&sent[..first.start]);
+    out.push_str(first_text);
+    out.push_str(&sent[first.end..last.start]);
+    out.push_str(last_text);
+    out.push_str(&sent[last.end..]);
+    Some(out)
 }
 
 /// What's under the caret.
@@ -125,6 +157,8 @@ pub fn prepare_fill(
             id: id.clone(),
             version: versions.iter().find(|(v, _)| v == id).and_then(|(_, v)| *v),
             origin: remote_origin(items, reading, id),
+            cited: None,
+            ..Default::default()
         })
         .collect();
     Ok(FillJob {
@@ -277,7 +311,9 @@ mod tests {
         ScopeProvenance {
             model: model.into(),
             sources: vec![],
+            pages: vec![],
             at: None,
+            ..Default::default()
         }
     }
 
@@ -349,11 +385,15 @@ mod tests {
                     id: ID.into(),
                     version: Some(2),
                     origin: None,
+                    cited: None,
+                    ..Default::default()
                 },
                 ProvenanceSource {
                     id: "zzzzzzzzzzzzzzzzzzzzzzzzzz".into(),
                     version: None,
                     origin: None,
+                    cited: None,
+                    ..Default::default()
                 },
             ],
             ..prov("m2")

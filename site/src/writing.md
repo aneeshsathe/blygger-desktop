@@ -46,21 +46,23 @@ starts with.
 
 ### The shelf
 
-Some posts you keep coming back to: a /now page, a reading log, a running
-list of links. Put them on your **shelf** so you never have to search for
-them. **⌥⌘B** (Post › Add to Shelf / Remove from Shelf) adds the open post to
-your shelf, or removes it. Shelved posts are marked 📚 and stay at the top of the list, in
-your order, above a thin rule. When you search, the shelved posts that match
-come first.
+The shelf is called **Saved** since 0.28.0, as blygger-studio 0.68 calls it;
+it works as before.
 
-**⌘B** (Post › Shelf…) opens the shelf: **1–9** or ⏎ opens a post on it,
-**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post off, and esc closes
-it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
+Some posts you keep coming back to: a /now page, a reading log, a running
+list of links. **Save** them so you never have to search for them. **⌥⌘B**
+(Post › Save / Remove from Saved) saves the open post, or removes it. Saved
+posts are marked 📚 and stay at the top of the list, in your order, above a
+thin rule. When you search, the saved posts that match come first.
+
+**⌘B** (Post › Saved…) opens Saved: **1–9** or ⏎ opens a post in it,
+**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post out, and esc closes
+it. Any post of yours can be saved: a thread, a fragment, a draft or a
 scratch note, up to 50 of them. A withdrawn post leaves it.
 
-Other people's posts go on the shelf too: **+ Add to shelf** under a post in
-Reading (or on its card), and the **Shelf** lens in Reading's sources lists
-everything on it, in your order.
+Other people's posts can be saved too: **+ Save** under a post in Reading
+(or on its card; **✓ Saved** takes it out), and **Saved** in Reading's
+sources lists everything in it, in your order.
 
 With a blyg on studio 0.61 or later, the shelf syncs with your blyg, so the
 studio and your other computers share it. Changes made in two
@@ -366,9 +368,14 @@ quote it. It's never put in for you.
   blyg's address book first (studio 0.56's contacts), then subscriptions,
   blogroll and authors you read. Where your blyg turns `@handle` into a link
   when it publishes (studio 0.56), picking a contact writes `@handle`, and
-  the popup shows the link it becomes; publish tells you about any handle it
-  couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
-  notifies no one.
+  the popup shows the link it becomes. On studio 0.66 or later the pick ends
+  in a space, and an apostrophe, hyphen or closing punctuation typed straight
+  after it takes the space's place, so `@lin's notes` and an `@lin-driven
+  agenda` both link Lin. A character typed with a dead key or an input
+  method (`'` on a US-International keyboard, say) doesn't close up: `@lin '`
+  keeps its space, so delete it by hand.
+  Publish tells you about any handle it couldn't find. Otherwise it inserts a
+  plain link to that blyg. Either way it notifies no one.
   The preview shows a contact's handle as the link it will become (the
   same h-card your blyg publishes). Manage the address book in Blyg ›
   Contacts… (see [Reading](reading.md#contacts)).
@@ -382,7 +389,10 @@ quote it. It's never put in for you.
   words: a red wavy underline, and right-click for suggestions, Learn Spelling
   and Ignore. Code, links, quotes and TK markers are skipped, and checking
   runs in the background after you pause, so typing stays instant.
-  `spellcheck = false` turns it off.
+  `spellcheck = false` turns it off. On blygger-studio 0.69 it also accepts
+  your blyg's dictionary, shared with Studio: Learn Spelling adds the word
+  there too, and **Blyg › Dictionary…** lists your words, adds and takes
+  them out.
 
 | | |
 |---|---|
@@ -445,8 +455,10 @@ searches every word of your published posts and the blyg posts you read, on
 your Mac, and filters by source (all, mine, imported) and blyg, newest or
 oldest first. Where you type the search is the blyg's **picker typing**
 setting: after the brackets in the editor (the default on a Mac), or in the
-picker's own box. Quotes only go
-in threads: in a fragment, Burrow says so and leaves the text alone.
+picker's own box. A reference you've already written is edited, not
+picked: retyping a bracket of a finished `![[id]]` or `[[id | label]]`
+opens nothing, and the picker closes once you type a label's `|`. Quotes
+only go in threads: in a fragment, Burrow says so and leaves the text alone.
 
 ### Partial quotes
 

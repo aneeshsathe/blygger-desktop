@@ -328,16 +328,24 @@ fn a_threads_parts_are_its_burst_entries() {
     assert!(burst_parts(&rows).is_empty());
 }
 
+/// The lens is read on `listReading` (owner:read); placing needs
+/// `setReadingPlacement` (owner:manage). The number alone never turns
+/// either on.
 #[test]
 fn served_only_when_the_capabilities_list_the_operation() {
-    assert!(serves(
-        &json!({"operations": ["getShelf", "setReadingPlacement"]})
+    assert!(serves(&json!({"operations": ["listReading"]})));
+    assert!(serves(&json!({"operations": {"listReading": {}}})));
+    assert!(!places(&json!({"operations": ["listReading"]})));
+    assert!(places(
+        &json!({"operations": ["listReading", "setReadingPlacement"]})
     ));
-    assert!(serves(&json!({"operations": {"setReadingPlacement": {}}})));
     assert!(!serves(
         &json!({"contractVersion": "5.10.0", "operations": ["getShelf"]})
     ));
     assert!(!serves(&json!({"contractVersion": "5.10.0"})));
+    // A lens answer carries each entry's `background`; plain rows don't.
+    assert!(is_lens(&[json!({"background": {"reasons": []}})]));
+    assert!(!is_lens(&[json!({"imported": {}})]));
 }
 
 #[test]
@@ -374,4 +382,155 @@ fn the_store_keeps_the_lens_only_while_served_and_counts_unread_by_it() {
     );
     s.set_background_served(false).unwrap();
     assert!(s.background_set().is_none() && s.meta(SET_META).is_none());
+}
+
+// ---- phase 2: the measured rules (studio 0.68, contract 6.1.0) ----
+
+/// Studio 0.68's `BACKGROUND_RULES`, in its order, each offered once its
+/// settings list it, with the label Settings › Background shows.
+#[test]
+fn studio_0_68_lists_eight_rules_in_its_order() {
+    let settings = json!({"readerOrder": "pace-layered", "backgroundRules": {
+        "burst": true, "wordless": true, "maintenance": true,
+        "quotes-refreshed": true, "quotes-material": true, "near-same": true,
+        "minor": true, "superseded": true,
+    }});
+    let rules = BackgroundRules::from_settings(&settings).unwrap();
+    let names: Vec<&str> = rules.rules.iter().map(|(r, _)| r.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "burst",
+            "wordless",
+            "maintenance",
+            "quotes-refreshed",
+            "quotes-material",
+            "near-same",
+            "minor",
+            "superseded"
+        ]
+    );
+    let labels: Vec<&str> = RULES.iter().map(|r| rule_label(r).0).collect();
+    assert_eq!(
+        labels,
+        [
+            "Parts published with a thread",
+            "Posts with no words of their own",
+            "Republished unchanged",
+            "Quotes refreshed",
+            "Including rewritten quotes",
+            "Small edits",
+            "Your own minor changes",
+            "Followed within 15 minutes",
+        ]
+    );
+    for rule in RULES {
+        assert!(!rule_label(rule).1.is_empty(), "{rule} has a hint");
+    }
+    // A 0.64 studio still gets only its four.
+    let old = BackgroundRules::from_settings(&json!({"backgroundRules": {
+        "burst": true, "wordless": true, "maintenance": true, "minor": true,
+    }}))
+    .unwrap();
+    assert!(!old.offers(QUOTES_REFRESHED) && !old.offers(SUPERSEDED));
+    assert_eq!(
+        BackgroundRules::patch("near-same", false),
+        json!({"backgroundRules": {"near-same": false}})
+    );
+}
+
+/// Studio `enabledRules`: "including rewritten quotes" acts only while
+/// "quotes refreshed" does.
+#[test]
+fn rewritten_quotes_count_only_under_quotes_refreshed() {
+    let rules = |refreshed: bool, material: bool| {
+        BackgroundRules::from_settings(&json!({"backgroundRules": {
+            "quotes-refreshed": refreshed, "quotes-material": material,
+        }}))
+        .unwrap()
+    };
+    assert_eq!(
+        BackgroundRules::needs(QUOTES_MATERIAL),
+        Some(QUOTES_REFRESHED)
+    );
+    assert_eq!(BackgroundRules::needs(QUOTES_REFRESHED), None);
+    assert!(rules(true, true).counts(QUOTES_MATERIAL));
+    assert!(!rules(true, false).counts(QUOTES_MATERIAL));
+    let off = rules(false, true);
+    assert!(off.on(QUOTES_MATERIAL), "its own switch stays as set");
+    assert!(!off.counts(QUOTES_MATERIAL), "but it doesn't act");
+    assert!(!off.counts(QUOTES_REFRESHED));
+    assert!(rules(true, true).counts("near-same"), "not sent: on");
+}
+
+/// Studio 0.68's chips (`backgroundLabel` in `src/ui/reading.tsx`).
+#[test]
+fn the_measured_reasons_say_why_as_the_studio_does() {
+    let why = |reasons: &[&str], detail: Value| {
+        let entry = imported(
+            "s",
+            "p",
+            json!({"reasons": reasons, "placement": null, "blyg": false, "detail": detail}),
+        );
+        BackgroundSet::from_entries(&[entry], None)
+            .of(&k("s", "p"))
+            .why()
+    };
+    assert_eq!(
+        why(&["quotes-refreshed"], Value::Null).as_deref(),
+        Some("quotes refreshed")
+    );
+    assert_eq!(
+        why(&["quotes-material"], Value::Null).as_deref(),
+        Some("quotes refreshed (rewritten)")
+    );
+    assert_eq!(
+        why(&["near-same"], Value::Null).as_deref(),
+        Some("small edit")
+    );
+    assert_eq!(
+        why(&["superseded"], json!({"by": "newer"})).as_deref(),
+        Some("followed within 15 min")
+    );
+    // The first reason picks the chip, in the studio's rule order.
+    assert_eq!(
+        why(&["near-same", "superseded"], Value::Null).as_deref(),
+        Some("small edit")
+    );
+}
+
+/// The maintenance reasons climb no place in the pace-layered order.
+#[test]
+fn maintenance_reasons_are_the_studios_four() {
+    assert_eq!(
+        MAINTENANCE_REASONS,
+        [
+            "maintenance",
+            "quotes-refreshed",
+            "quotes-material",
+            "near-same"
+        ]
+    );
+    let e = |reasons: &[&str]| EntryBackground {
+        on: true,
+        reasons: reasons.iter().map(|r| r.to_string()).collect(),
+        ..Default::default()
+    };
+    assert!(e(&["near-same"]).maintenance());
+    assert!(e(&["withdrawn", "quotes-material"]).maintenance());
+    assert!(!e(&["superseded", "wordless", "burst", "minor"]).maintenance());
+}
+
+/// Studio `supersedes`: a newer item within 15 minutes after, never at
+/// the same instant or before.
+#[test]
+fn superseded_is_within_15_minutes_after() {
+    let t = 1_800_000_000_000_i64;
+    let min = 60_000;
+    assert!(supersedes(t + min, t));
+    assert!(supersedes(t + 15 * min, t), "15 minutes exactly");
+    assert!(!supersedes(t + 15 * min + 1, t));
+    assert!(!supersedes(t, t), "the same instant");
+    assert!(!supersedes(t, t + min), "older can't supersede newer");
+    assert_eq!(SUPERSEDED_WINDOW_MS, 15 * min);
 }

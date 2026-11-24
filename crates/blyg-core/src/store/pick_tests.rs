@@ -8,7 +8,10 @@ use crate::model::*;
 use crate::pick::{PickQuery, PickSort, PickSource};
 
 fn store() -> Store {
-    Store::open_in_memory().unwrap()
+    let s = Store::open_in_memory().unwrap();
+    // A blyg whose contract a sync has checked: its lists prune.
+    s.set_lists_prune(crate::api::Prune::Allowed);
+    s
 }
 
 fn published(id: &str, updated: &str, md: &str) -> WireItem {
