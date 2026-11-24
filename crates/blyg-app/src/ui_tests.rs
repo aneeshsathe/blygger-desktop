@@ -71,7 +71,7 @@ fn typing_filters_and_enter_opens(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
         assert_eq!(v.list.results().len(), 1);
-        assert_eq!(v.list.hint(), "1 found · ⏎ open");
+        assert_eq!(v.list.hint(), crate::keymap::hint("1 found · ⏎ open"));
         assert_eq!(v.mode, Mode::Search);
     });
     assert!(

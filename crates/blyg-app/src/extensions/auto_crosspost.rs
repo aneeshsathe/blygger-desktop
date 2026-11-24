@@ -425,7 +425,7 @@ impl MainView {
                     .rounded(px(self.theme.chip_radius))
                     .border_1()
                     .border_color(if on { p.accent } else { p.line })
-                    .when(on, |d| d.text_color(p.accent))
+                    .when(on, |d| d.text_color(p.accent_text()))
                     .cursor_pointer()
                     .hover(|s| s.border_color(p.accent))
                     .child(chip_label(&m.site.title, on))

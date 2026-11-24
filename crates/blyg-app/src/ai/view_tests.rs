@@ -1070,7 +1070,7 @@ fn enter_while_another_ai_job_runs_keeps_the_checkpoint_and_says_why(cx: &mut Te
     assert!(e.checkpoint().is_some(), "the sheet stays");
     assert_eq!(
         e.toast(),
-        "Another AI job is still running | When it's done, press ⏎ again"
+        crate::keymap::hint("Another AI job is still running | When it's done, press ⏎ again")
     );
     e.view.update(e.cx, |v, _| v.ai.job = None);
 }

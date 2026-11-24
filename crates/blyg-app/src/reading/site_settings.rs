@@ -274,7 +274,7 @@ impl MainView {
                 div()
                     .id("site-settings-more")
                     .cursor_pointer()
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .hover(|d| d.underline())
                     .child("Theme, front page, menus, avatar and more: Blyg › Site…")
                     .on_click(cx.listener(|this, _, window, cx| {

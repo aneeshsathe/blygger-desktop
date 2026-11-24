@@ -15,7 +15,7 @@
 //! hooks.
 
 pub(crate) mod steps;
-mod tutorial;
+pub(crate) mod tutorial;
 pub(crate) mod whats_new;
 
 #[cfg(test)]
@@ -1084,6 +1084,13 @@ impl MainView {
                             self.tutorial_next(window, cx);
                         }
                     }
+                }
+            }
+            // The end card again, once what the walk's last steps opened late
+            // (the conflict sheet comes by an event) is there to tidy.
+            (Scene::TutTour { end: true, .. }, 1) => {
+                if let Some(pos) = self.onboarding.tutorial.as_ref().map(|t| t.pos) {
+                    self.tutorial_show(pos, window, cx);
                 }
             }
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.

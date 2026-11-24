@@ -65,11 +65,9 @@ fn shelved(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<Key> {
 }
 
 /// Keyboard-only: Reading (⌘R), the Reader (⌥⌘2), j opens a post, and
-/// "+ Save"'s own key (⋯ More lists ⌥⌘B beside it) saves that post.
-/// Today ⌥⌘B only acts on the Write side's open post: on the reading
-/// screen it saves your own draft (or says "Open a post to save it").
+/// "+ Save"'s own key (⋯ More lists ⌥⌘B beside it) saves that post, not
+/// the Write side's open post (ux 0.29 B3).
 #[gpui_kit::test]
-#[ignore = "ux 0.29 finding: ⌥⌘B on the reading screen doesn't save the open reading post"]
 fn the_save_key_saves_the_reading_post_that_is_open(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     let write_saved_before = fake.shelf();

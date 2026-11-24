@@ -135,6 +135,30 @@ impl MainView {
         }
     }
 
+    /// Settings scrolled to BACKGROUND, just above READ MARKS (scenes): the
+    /// end of the page, then back up past it (drawn first: a window that
+    /// isn't in front may not redraw).
+    pub(super) fn settings_show_background(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(SettingsSheet { scroll, .. }) = self.sheet.get() {
+            scroll.scroll_to_bottom();
+        }
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(300))
+                .await;
+            let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
+            let _ = this.update(cx, |v, cx| {
+                if let Some(SettingsSheet { scroll, .. }) = v.sheet.get() {
+                    let o = scroll.offset();
+                    scroll.set_offset(point(o.x, (o.y + px(640.)).min(px(0.))));
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// `BLYGGER_DEMO=settings-preview` (fake mode, screenshots): Settings
     /// open with the keyboard on the THEME row, trying
     /// `BLYGGER_DEMO_PREVIEW` (default `kumiko`; `font:<label>` tries a
@@ -382,10 +406,10 @@ impl MainView {
                             &p,
                             match hotkey_error {
                                 Some(e) => e.to_string(),
-                                None => format!(
+                                None => crate::keymap::hint_owned(format!(
                                     "Now {} · type e.g. ctrl+alt+b or cmd+shift+space, then ⏎",
                                     prefs::hotkey_glyphs(&self.prefs.hotkey)
-                                ),
+                                )),
                             },
                         )
                         .text_size(px(11.5))
@@ -435,20 +459,18 @@ impl MainView {
 }
 
 /// Under the specimen: how to try an option, as this platform names keys.
-pub(crate) const TRY_HINT: &str = if cfg!(target_os = "windows") {
-    "Rest the pointer on an option, or use Tab and the arrow keys, to try it on the whole \
-     window. A click or Enter keeps it; Esc, or moving away, puts yours back."
-} else {
+pub(crate) const TRY_HINT: crate::platform_text::Text = crate::platform_text::ui_text_per_platform(
     "Rest the pointer on an option, or use ⇥ and the arrow keys, to try it on the whole \
-     window. A click or ⏎ keeps it; esc, or moving away, puts yours back."
-};
+     window. A click or ⏎ keeps it; esc, or moving away, puts yours back.",
+    "Rest the pointer on an option, or use Tab and the arrow keys, to try it on the whole \
+     window. A click or Enter keeps it; Esc, or moving away, puts yours back.",
+);
 
 /// The specimen's caption while an option is being tried.
-const KEEP_HINT: &str = if cfg!(target_os = "windows") {
-    "Enter keeps · Esc goes back"
-} else {
-    "⏎ keeps · esc goes back"
-};
+const KEEP_HINT: crate::platform_text::Text = crate::platform_text::ui_text_per_platform(
+    "⏎ keeps · esc goes back",
+    "Enter keeps · Esc goes back",
+);
 
 /// The keyboard cursor's mark on a chip or the size: a ring in the accent
 /// just outside its edge, apart from the kept option's accent edge.
@@ -724,7 +746,7 @@ impl MainView {
             .child(note(&p, slot_note))
             .child(themes);
 
-        let keys = note(&p, TRY_HINT).debug_selector(|| "settings-try-hint".into());
+        let keys = note(&p, TRY_HINT.get()).debug_selector(|| "settings-try-hint".into());
 
         // The specimen leads, at the content column's width, so the chip
         // rows under it keep theirs (a column beside them squeezed every
@@ -982,7 +1004,7 @@ impl MainView {
             .child(match trying {
                 Some(s) => div()
                     .text_color(p.accent_text())
-                    .child(format!("{s} · {KEEP_HINT}"))
+                    .child(format!("{s} · {}", KEEP_HINT.get()))
                     .into_any_element(),
                 None => div()
                     .text_color(p.muted)

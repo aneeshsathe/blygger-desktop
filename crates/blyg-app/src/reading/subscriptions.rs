@@ -305,7 +305,7 @@ impl MainView {
                             "☐ blogroll"
                         },
                     )
-                    .when(blogroll, |d| d.text_color(p.accent))
+                    .when(blogroll, |d| d.text_color(p.accent_text()))
                     .tooltip(|_, cx| {
                         cx.new(|_| super::Tip("List it on your blyg's blogroll".into()))
                             .into()

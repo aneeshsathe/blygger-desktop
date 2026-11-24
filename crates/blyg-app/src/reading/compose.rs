@@ -764,7 +764,7 @@ impl MainView {
                 None if let Some(s) = holding => div()
                     .id("compose-hold")
                     .debug_selector(|| "compose-hold".into())
-                    .text_color(p.accent)
+                    .text_color(p.accent_text())
                     .font_weight(FontWeight::MEDIUM)
                     .child(crate::keymap::hint_owned(hold_line(s))),
                 Some(e) => div()

@@ -187,3 +187,18 @@ fn the_tab_lists_the_editions_posts_and_wears_its_name() {
         &Source::Smart(Smart::Agentic)
     ));
 }
+
+/// --- ux 0.29 --- An edition Burrow wrote names the provider, whose own
+/// name has brackets ("Codex (local)"): the model follows a dot, not a
+/// second pair of brackets.
+#[test]
+fn a_bracketed_agent_name_takes_its_model_after_a_dot() {
+    let e = edition_of(vec![]);
+    let mut l = e.layout.clone().unwrap();
+    l.agent.name = "Burrow · Codex (local)".into();
+    l.agent.model = Some("demo-model".into());
+    assert_eq!(
+        masthead_meta(&l, None),
+        format!("by Burrow · Codex (local) · demo-model · {ASSISTANT_BADGE}")
+    );
+}

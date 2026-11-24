@@ -325,8 +325,12 @@ impl MainView {
     /// Open the bar's field for `ask`.
     fn ask_trail(&mut self, ask: Ask, window: &mut Window, cx: &mut Context<Self>) {
         let placeholder = match &ask {
-            Ask::Why { .. } => "Why is it on the trail?  ⏎ keeps it · esc skips",
-            Ask::Name { .. } => "Name the new trail  ⏎ starts it · esc cancels",
+            Ask::Why { .. } => {
+                crate::keymap::hint("Why is it on the trail?  ⏎ keeps it · esc skips")
+            }
+            Ask::Name { .. } => {
+                crate::keymap::hint("Name the new trail  ⏎ starts it · esc cancels")
+            }
         };
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         if let Ask::Why { index } = &ask
@@ -816,7 +820,7 @@ impl MainView {
                         .flex_none()
                         .cursor_pointer()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .hover(|h| h.text_color(p.accent))
+                        .hover(|h| h.text_color(p.accent_text()))
                         .child(match t {
                             Some(t) => format!("{GLYPH} trail {}", t.name),
                             None => format!("{GLYPH} new trail"),
@@ -846,7 +850,7 @@ impl MainView {
                 )
                 .children(field)
                 .when_some(at, |d, at| {
-                    d.child(div().flex_none().text_color(p.accent).child(at))
+                    d.child(div().flex_none().text_color(p.accent_text()).child(at))
                 })
                 .child(div().flex_none().text_color(p.muted).child(hint))
                 .into_any_element(),

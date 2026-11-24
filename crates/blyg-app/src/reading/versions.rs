@@ -541,7 +541,7 @@ impl MainView {
                         .rounded_full()
                         .border_1()
                         .border_color(p.accent)
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .child(format!("current · v{sel}")),
                 )
             })
@@ -717,7 +717,7 @@ impl MainView {
                     d.child(div().mt(px(6.)).text_color(p.muted).child("Pinning…"))
                 })
                 .child(self.keys_row(vec![
-                    self.key_hint("pin ⏎", "type pin, then ⏎ to confirm"),
+                    self.key_hint(crate::keymap::hint("pin ⏎"), crate::keymap::hint("type pin, then ⏎ to confirm")),
                     self.key_hint("esc", "cancel"),
                 ]))
                 .into_any_element(),

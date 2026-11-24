@@ -177,6 +177,16 @@ pub fn title(md: &str) -> String {
     blyg_core::plain_title(md).unwrap_or_else(|| "…".into())
 }
 
+/// --- ux 0.29 --- A reading row's title as shown: [`post_title`] with each
+/// formula as the text it says (`e^(iπ)`), as the Stream's cards show it.
+/// [`post_title`] stays the post's own words (a quote's label, a drag).
+pub fn row_title(r: &ReadingItem) -> String {
+    match blyg_core::model::plain_title_read(&r.content_md) {
+        Some(t) => t,
+        None => post_title(r),
+    }
+}
+
 /// A post's title in the reading list and stream: its own first line (never
 /// quoted text, see [`blyg_core::plain_title`]). A stub that only quotes
 /// names what it answers rather than borrowing the quoted sentence (studio

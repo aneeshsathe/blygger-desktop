@@ -658,6 +658,7 @@ impl FakeBackend {
 
     /// Whether the Agentic feed has an edition (`false`: a blyg whose
     /// assistant hasn't written one yet; the feed is still offered).
+    #[cfg(test)]
     pub fn set_agentic_edition(&self, written: bool) {
         self.lock().no_edition = !written;
     }

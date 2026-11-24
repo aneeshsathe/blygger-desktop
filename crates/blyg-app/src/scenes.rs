@@ -321,14 +321,11 @@ scenes! {
         RdResponsesKeys = "rd-responses-keys",
     }
     /// reading/demo.rs (--- ux 0.28 ---): the user-testing pass's steps:
-    /// the Agentic feed's edition (and the tab on a blyg with no edition
-    /// yet: the fake's `set_agentic_edition(false)`; `-narrow` in an 800 px
-    /// window), Saved, Kit's tides (a copy
+    /// the Agentic feed's edition (with none yet: `rd-agentic-unwritten`),
+    /// Saved, Kit's tides (a copy
     /// elsewhere) opened from the stream
     Reading {
         RdAgentic = "rd-agentic",
-        RdAgenticEmpty = "rd-agentic-empty",
-        RdAgenticEmptyNarrow = "rd-agentic-empty-narrow",
         RdSaved = "rd-saved",
         RdStreamCopies = "rd-stream-copies",
         RdStreamCatchupSummary = "rd-stream-catchup-summary",
@@ -378,7 +375,8 @@ impl Scene {
                 Some(id) => (id, true),
                 None => (rest, false),
             };
-            if let Some(st) = steps::STEPS.iter().find(|st| st.id == id) {
+            let acts = !after_key || crate::app::onboarding::tutorial::DEMO_ACTS.contains(&id);
+            if let Some(st) = steps::STEPS.iter().find(|st| st.id == id).filter(|_| acts) {
                 return Ok(Scene::TutStep {
                     id: st.id,
                     after_key,
@@ -405,7 +403,10 @@ impl Scene {
         let mut all: Vec<String> = FIXED.iter().map(|(_, n, _)| n.to_string()).collect();
         for st in steps::STEPS {
             all.push(format!("tut-{}", st.id));
-            all.push(format!("tut-{}+", st.id));
+            // `+` only where the scene can do the step's key.
+            if crate::app::onboarding::tutorial::DEMO_ACTS.contains(&st.id) {
+                all.push(format!("tut-{}+", st.id));
+            }
         }
         for t in tour_ids() {
             all.push(format!("tut-tour-{t}"));
@@ -500,12 +501,14 @@ mod tests {
     fn families_parse() {
         assert_eq!(Scene::parse("rd-stream"), Ok(Scene::RdStream));
         assert_eq!(
-            Scene::parse("tut-search+"),
+            Scene::parse("tut-catch-up+"),
             Ok(Scene::TutStep {
-                id: "search",
+                id: "catch-up",
                 after_key: true
             })
         );
+        // A step whose key no scene does has no `+` scene.
+        assert!(Scene::parse("tut-search+").is_err());
         assert_eq!(
             Scene::parse("tut-tour-quick-end"),
             Ok(Scene::TutTour {

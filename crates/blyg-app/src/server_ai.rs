@@ -646,7 +646,9 @@ impl MainView {
         };
         let model_value = |f: AiFunction| match s.settings.model(f) {
             None => "not on this studio".to_string(),
-            Some(_) if s.other_for == Some(f) => "other… (type the id below, ⏎)".to_string(),
+            Some(_) if s.other_for == Some(f) => {
+                crate::keymap::hint("other… (type the id below, ⏎)").to_string()
+            }
             Some(id) => model_words(&s.models, id),
         };
         let switch = |on: Option<bool>| match on {

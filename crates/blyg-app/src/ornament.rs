@@ -612,7 +612,6 @@ pub fn sidebar_ground(t: &Theme) -> Option<AnyElement> {
         Kind::Contours => {
             let o = ground.clone();
             let (g0, g1) = (solid(&o, 1, p.side), solid(&o, 2, solid(&o, 1, p.side)));
-            let label = solid(&o, 0, p.side_muted).opacity(0.45);
             Some(
                 div()
                     .size_full()
@@ -622,19 +621,9 @@ pub fn sidebar_ground(t: &Theme) -> Option<AnyElement> {
                         linear_color_stop(g0, 0.),
                         linear_color_stop(g1, 1.),
                     ))
+                    // No depth numbers: behind the rows they sat where
+                    // counts go, and read as counts (ux 0.29).
                     .child(painter(move |b, w, _| paint_contours(&o, b, w)))
-                    .children(soundings_labels(
-                        &[
-                            (0.72, 64.),
-                            (0.22, 124.),
-                            (0.8, 184.),
-                            (0.14, 240.),
-                            (0.6, 300.),
-                            (0.3, 420.),
-                        ],
-                        label,
-                        &["12", "18", "24", "31", "37", "44"],
-                    ))
                     .into_any_element(),
             )
         }
@@ -680,25 +669,6 @@ pub fn sidebar_ground(t: &Theme) -> Option<AnyElement> {
             .children(top_el)
             .into_any_element(),
     )
-}
-
-/// Small italic depth numbers at `(x fraction, y)` positions.
-fn soundings_labels(at: &[(f32, f32)], color: Hsla, labels: &[&'static str]) -> Vec<AnyElement> {
-    at.iter()
-        .zip(labels.iter().cycle())
-        .map(|((x, y), l)| {
-            div()
-                .absolute()
-                .left(relative(*x))
-                .top(px(*y))
-                .italic()
-                .font_family("ETBembo")
-                .text_size(px(10.))
-                .text_color(color)
-                .child(*l)
-                .into_any_element()
-        })
-        .collect()
 }
 
 /// `texture` over a surface. With `gutter`, only in the left and right

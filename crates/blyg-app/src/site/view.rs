@@ -729,7 +729,7 @@ impl MainView {
                         div()
                             .id(SharedString::from(format!("site-from-{id}")))
                             .cursor_pointer()
-                            .text_color(p.accent)
+                            .text_color(p.accent_text())
                             .hover(|d| d.underline())
                             .child(pr.label)
                             .on_click(cx.listener(move |this, _, window, cx| this.site_start_from(id, window, cx)))
@@ -1136,7 +1136,7 @@ impl MainView {
                                 div()
                                     .id("site-release-notes")
                                     .cursor_pointer()
-                                    .text_color(p.accent)
+                                    .text_color(p.accent_text())
                                     .hover(|d| d.underline())
                                     .child("Release notes")
                                     .on_click(|_, _, cx| cx.open_url(site::STUDIO_RELEASES_URL)),

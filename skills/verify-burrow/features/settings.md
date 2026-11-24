@@ -18,7 +18,7 @@ Burrow › Settings… (⌘,), or the toolbar's settings button.
 | `settings-full` | the page at a fixed size with the blyg's changelog loaded |
 | `settings-full` + `BLYGGER_DEMO_SCROLL=bottom` | the end of the page |
 | `settings-count-read` | READ MARKS' own row, "Count an entry as read" (when I see it / when I open it / only when I mark it) and how time on screen is measured |
-| `settings-background-keys` | the keyboard on BACKGROUND's second rule (⇥ ×5, →): focus ring, ✓ / ○ off states, Withdrawn shown as fixed |
+| `settings-background-keys` | the keyboard on BACKGROUND's second rule (⇥ until the cursor is on BACKGROUND, below READ MARKS, then →): focus ring, ✓ / ○ off states, Withdrawn shown as fixed |
 | `tb-settings` | the toolbar's way in |
 
 ```sh

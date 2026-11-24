@@ -919,7 +919,7 @@ impl MainView {
                         .id("sub-own-name")
                         .mt(px(8.))
                         .cursor_pointer()
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .hover(|s| s.underline())
                         .child("Use the blyg's own name")
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -1483,7 +1483,7 @@ impl MainView {
                     .child(h.to_uppercase())
                     // Dropping a subscription on "Subscriptions" unfiles it.
                     .when(unfile, |d| {
-                        d.drag_over::<DraggedSub>(move |s, _, _, _| s.text_color(p.accent))
+                        d.drag_over::<DraggedSub>(move |s, _, _, _| s.text_color(p.accent_text()))
                             .on_drop(cx.listener(|this, d: &DraggedSub, _, cx| {
                                 this.file_subscription(&d.id, None, cx)
                             }))

@@ -822,7 +822,7 @@ impl MainView {
     // ------------------------------------------------------------ context
 
     /// The screen a command runs from.
-    fn ext_screen(&self, window: &Window, cx: &App) -> Screen {
+    pub(crate) fn ext_screen(&self, window: &Window, cx: &App) -> Screen {
         if self.notes.open && self.notes.has_keyboard(window, cx) {
             Screen::Notes
         } else if self.reading.view != crate::app::reading::View::Posts {
