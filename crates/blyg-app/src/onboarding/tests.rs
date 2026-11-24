@@ -340,16 +340,44 @@ fn setup_mode<'a>(
     setup_full(cx, config, seen, mode, false)
 }
 
-/// The tour with its sample extensions running (the bundled ones, as this
-/// test binary's children; see `extensions::test_launch`).
-fn setup_ext<'a>(cx: &'a mut TestAppContext) -> Env<'a> {
+/// Whether a tour test runs the tour's sample extensions (the bundled
+/// ones, as this test binary's children; see `extensions::test_launch`).
+/// They are four processes per test: only the tests whose steps show them
+/// run them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Samples {
+    Run,
+    /// The tour on the UI alone: no extension processes.
+    Without,
+}
+
+/// The tours whose steps show the sample extensions (the notes drawer, the
+/// reading slots, cross-post sites in the Publish sheet, the palette).
+fn samples_for(tour: &str) -> Samples {
+    match tour {
+        "writing" | "ai" | "lineage" | "blyg" => Samples::Without,
+        _ => Samples::Run,
+    }
+}
+
+/// An onboarded, connected window for a tour test.
+fn setup_tour<'a>(cx: &'a mut TestAppContext, samples: Samples) -> Env<'a> {
     setup_full(
         cx,
         CONNECTED,
         Some(env!("CARGO_PKG_VERSION")),
         Mode::Fake,
-        true,
+        samples == Samples::Run,
     )
+}
+
+/// Show the tutorial and, with `samples`, wait for its sample extensions.
+fn show_tutorial(e: &mut Env, samples: Samples) {
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    if samples == Samples::Run {
+        tour_extensions_ready(e);
+    }
 }
 
 /// `seen`: onboarded, having last launched that version.
@@ -1075,11 +1103,9 @@ fn walk_tour(e: &mut Env, name: &str) {
 
 /// A fresh window on the tour chooser, the tour's sample extensions up and
 /// the real backend's calls so far forgotten.
-fn on_the_chooser(cx: &mut TestAppContext) -> Env<'_> {
-    let mut e = setup_ext(cx);
-    e.cx.dispatch_action(super::ShowTutorial);
-    e.cx.run_until_parked();
-    tour_extensions_ready(&mut e);
+fn on_the_chooser(cx: &mut TestAppContext, samples: Samples) -> Env<'_> {
+    let mut e = setup_tour(cx, samples);
+    show_tutorial(&mut e, samples);
     e.real.take();
     e
 }
@@ -1123,7 +1149,7 @@ fn feature(id: &str) -> usize {
 /// steps' own keys (so every step does, in the tour it is in), all on
 /// sample data, and is remembered as walked.
 fn walk_feature_tour(cx: &mut TestAppContext, id: &str) {
-    let mut e = on_the_chooser(cx);
+    let mut e = on_the_chooser(cx, samples_for(id));
     walk_pick(&mut e, Pick::Feature(feature(id)));
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
     assert_eq!(state::AppState::load(e.dir.path()).tours_done, [id]);
@@ -1131,11 +1157,13 @@ fn walk_feature_tour(cx: &mut TestAppContext, id: &str) {
 
 /// Each step `which` picks out, entered in table order, rings something on
 /// screen that holds what its caption points at.
-fn steps_ring_something_on_screen(cx: &mut TestAppContext, which: impl Fn(&str) -> bool) {
-    let mut e = setup_ext(cx);
-    e.cx.dispatch_action(super::ShowTutorial);
-    e.cx.run_until_parked();
-    tour_extensions_ready(&mut e);
+fn steps_ring_something_on_screen(
+    cx: &mut TestAppContext,
+    samples: Samples,
+    which: impl Fn(&str) -> bool,
+) {
+    let mut e = setup_tour(cx, samples);
+    show_tutorial(&mut e, samples);
     let (vw, vh) = e.cx.update(|window, _| {
         let s = window.viewport_size();
         (f32::from(s.width), f32::from(s.height))
@@ -1220,8 +1248,11 @@ macro_rules! per_tour {
             $(
                 #[gpui_kit::test]
                 fn $tour(cx: &mut TestAppContext) {
-                    let n = feature(stringify!($tour));
-                    steps_ring_something_on_screen(cx, |id| steps::tour_of(id) == Some(n));
+                    let id = stringify!($tour);
+                    let n = feature(id);
+                    steps_ring_something_on_screen(cx, samples_for(id), |id| {
+                        steps::tour_of(id) == Some(n)
+                    });
                 }
             )*
         }
@@ -1242,7 +1273,7 @@ fn every_tour_has_its_own_tests() {
 /// sample data; it isn't one of the feature tours remembered as walked.
 #[gpui_kit::test]
 fn the_quick_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
-    let mut e = on_the_chooser(cx);
+    let mut e = on_the_chooser(cx, Samples::Run);
     walk_pick(&mut e, Pick::Quick);
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
     assert!(state::AppState::load(e.dir.path()).tours_done.is_empty());
@@ -1252,7 +1283,7 @@ fn the_quick_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
 /// from its start, and both are remembered.
 #[gpui_kit::test]
 fn tours_chain_one_after_another(cx: &mut TestAppContext) {
-    let mut e = on_the_chooser(cx);
+    let mut e = on_the_chooser(cx, samples_for("extensions"));
     walk_pick(&mut e, Pick::Feature(feature("ai")));
     walk_pick(&mut e, Pick::Feature(feature("extensions")));
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
@@ -1264,7 +1295,7 @@ fn tours_chain_one_after_another(cx: &mut TestAppContext) {
 /// What's new walks only 0.21.0's steps, then the end card.
 #[gpui_kit::test]
 fn whats_new_walks_on_its_own_keys(cx: &mut TestAppContext) {
-    let mut e = on_the_chooser(cx);
+    let mut e = on_the_chooser(cx, Samples::Without);
     e.view.update_in(e.cx, |v, window, cx| {
         v.start_whats_new(vec![&RELEASE_0_21], window, cx)
     });
@@ -1282,7 +1313,7 @@ fn whats_new_walks_on_its_own_keys(cx: &mut TestAppContext) {
 /// thing too.
 #[gpui_kit::test]
 fn steps_outside_the_feature_tours_ring_something_on_screen(cx: &mut TestAppContext) {
-    steps_ring_something_on_screen(cx, |id| steps::tour_of(id).is_none());
+    steps_ring_something_on_screen(cx, Samples::Without, |id| steps::tour_of(id).is_none());
 }
 
 static RELEASE_0_21: super::whats_new::Release = super::whats_new::Release {
@@ -1818,7 +1849,7 @@ fn an_update_remembers_the_version_once_seen(cx: &mut TestAppContext) {
 /// the state the step sets up, and after its key.
 #[gpui_kit::test]
 fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
-    let mut e = setup_ext(cx);
+    let mut e = setup_tour(cx, Samples::Run);
     let before = config_text(e.cx);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
@@ -1991,7 +2022,7 @@ fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
 /// Finishing the tour stops its extensions and puts the user's back.
 #[gpui_kit::test]
 fn the_tour_puts_the_users_extensions_back(cx: &mut TestAppContext) {
-    let mut e = setup_ext(cx);
+    let mut e = setup_tour(cx, Samples::Run);
     let mine = e
         .view
         .read_with(e.cx, |v, _| v.ext.host.as_ref().map(|h| h.status().len()));
@@ -2530,10 +2561,8 @@ fn the_extensions_tour_teaches_automatic_cross_posting() {
 /// the highlighted card, and doesn't ask for "fully" on screen.
 #[gpui_kit::test]
 fn the_date_step_highlights_the_newest_card(cx: &mut TestAppContext) {
-    let mut e = setup_ext(cx);
-    e.cx.dispatch_action(super::ShowTutorial);
-    e.cx.run_until_parked();
-    tour_extensions_ready(&mut e);
+    let mut e = setup_tour(cx, Samples::Without);
+    show_tutorial(&mut e, Samples::Without);
     enter(&mut e, "count-read");
     settle(&mut e);
     let newest = |e: &mut Env| {

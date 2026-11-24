@@ -50,6 +50,7 @@ fn child_name() -> String {
 fn cross_post_child() {
     let me = child_test("cross_post_child");
     if std::env::args().any(|a| a == me) {
+        super::children_tests::hold_alive_lock();
         let _ = blyg_ext_crosspost::run_stdio();
     }
 }
@@ -71,6 +72,7 @@ fn child_args(name: String) -> Vec<String> {
 fn markdown_notes_child() {
     let me = child_name();
     if std::env::args().any(|a| a == me) {
+        super::children_tests::hold_alive_lock();
         let _ = blyg_ext_notes::run_stdio();
     }
 }

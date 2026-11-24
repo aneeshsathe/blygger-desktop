@@ -208,7 +208,7 @@ impl MainView {
         let (wake, woken) = async_channel::bounded::<()>(1);
         let live = !cfg!(test);
         let sink = inbox.clone();
-        let host = Host::new(
+        let host = super::new_host(
             hc,
             Arc::new(BackendApi::new(self.backend.clone())),
             move |ev| {
