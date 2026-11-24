@@ -5,6 +5,16 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.29.1
+
+### The web app comes with the release again
+
+Each release attaches `Burrow-web-<version>.zip` again: the web app as one
+`burrow/` folder, covered by the release's signed checksums. Serving Burrow
+in a browser from your blyg no longer needs a build: download the zip,
+check it, and unzip it into your blyg's static files, as
+[Burrow in a browser](web-self-host.md) shows. The desktop app is unchanged.
+
 ## Burrow 0.29.0
 
 ### Burrow writes the Agentic feed's edition

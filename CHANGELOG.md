@@ -22,6 +22,19 @@ teaches something new in the tour, set the newest entry's `version` in
 Pending changes are fragments in `changes/unreleased/`; the release stitches
 them in here.
 
+## [0.29.1] - 2026-11-24
+
+The release attaches Burrow in a browser again, as a signed zip, so an owner
+can put it on their blyg without building it. The desktop app is unchanged.
+
+### Added
+- **Releases: the web app's zip is back.** Each release again attaches
+  `Burrow-web-<version>.zip` (and the version-less `Burrow-web.zip`), one
+  `burrow/` folder covered by the signed `SHA256SUMS`, so an owner can serve
+  Burrow in a browser from their blyg without building it
+  (`site/src/web-self-host.md`). 0.26.0 to 0.29.0 had none;
+  `.github/workflows/release.yml` builds it with `crates/blyg-web/serve.sh`.
+
 ## [0.29.0] - 2026-11-24
 
 Burrow writes your Agentic feed's edition with its own AI, Burrow in a browser
