@@ -209,6 +209,17 @@ fn side_panels_leave_the_pane_its_room(cx: &mut TestAppContext) {
     }
 }
 
+/// User testing (I2): at 800 px the notes drawer kept its 380 px and left
+/// the editor 200. In a narrow window it takes a smaller share (never under
+/// its minimum).
+#[test]
+fn the_notes_drawer_shares_a_narrow_window() {
+    use crate::app::notes::{MAX_SHARE, NARROW_SHARE, max_share};
+    assert_eq!(max_share(1100.), MAX_SHARE);
+    assert_eq!(max_share(800.), NARROW_SHARE);
+    const { assert!(800. * NARROW_SHARE < 380.) };
+}
+
 /// User testing (I2): over the notes drawer the browser pane's toolbar drew
 /// on the drawer's header, and the page beside it was a sliver. In a narrow
 /// room the pane takes the whole room; it never reaches past it.
