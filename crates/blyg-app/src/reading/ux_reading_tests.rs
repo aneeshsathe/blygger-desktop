@@ -302,4 +302,60 @@ mod app {
             assert!(!v.browser.open, "not as a web page");
         });
     }
+
+    /// The note's box lies inside `pane`'s (`None`: the window's), so its
+    /// words wrap there.
+    fn note_fits(cx: &mut VisualTestContext, pane: Option<&'static str>, what: &str) {
+        let note = cx
+            .debug_bounds("reading-note")
+            .unwrap_or_else(|| panic!("{what}: a note is drawn"));
+        let (left, right) = match pane {
+            Some(pane) => {
+                let b = cx
+                    .debug_bounds(pane)
+                    .unwrap_or_else(|| panic!("{what}: {pane} is drawn"));
+                (b.left().as_f32(), b.right().as_f32())
+            }
+            None => {
+                let w = cx.update(|window, _| window.viewport_size()).width;
+                (0., w.as_f32())
+            }
+        };
+        assert!(
+            note.left().as_f32() >= left && note.right().as_f32() <= right,
+            "{what}: the note runs past its pane, so it can't wrap: {note:?} in {left}..{right}"
+        );
+    }
+
+    /// User testing: on a blyg with no edition yet, the Agentic feed's
+    /// explanation ran off the pane on one line and couldn't be read. It
+    /// wraps, at the default width and at 800 px; so does Saved's empty
+    /// note in the list column.
+    #[gpui_kit::test]
+    fn empty_notes_wrap_inside_their_pane(cx: &mut TestAppContext) {
+        let (view, fake, cx) = setup(cx);
+        fake.set_agentic_edition(false);
+        view.update_in(cx, |v, window, cx| {
+            v.show_view(View::Reading, window, cx);
+            v.reading.mode = super::super::stream_vm::ReadMode::Reader;
+        });
+        for width in [None, Some(800.)] {
+            if let Some(w) = width {
+                cx.simulate_resize(gpui_kit::size(gpui_kit::px(w), gpui_kit::px(600.)));
+            }
+            view.update(cx, |v, cx| {
+                v.select_source(Source::Smart(Smart::Agentic), cx)
+            });
+            settle(cx);
+            assert!(
+                view.read_with(cx, |v, _| v.reading.agentic.edition().is_none()),
+                "no edition yet"
+            );
+            note_fits(cx, None, &format!("Agentic, no edition, {width:?}"));
+
+            view.update(cx, |v, cx| v.select_source(Source::Smart(Smart::Shelf), cx));
+            settle(cx);
+            note_fits(cx, Some("reader-list-pane"), &format!("Saved, empty, {width:?}"));
+        }
+    }
 }
