@@ -765,9 +765,9 @@ fn a_start_asks_for_every_module_and_the_wasm_at_once() {
         }
     }
     assert!(html.contains(r#"<link rel="modulepreload" href="pkg/blyg_web.js">"#));
-    assert!(html.contains(
-        r#"<link rel="preload" href="pkg/blyg_web_bg.wasm" as="fetch" type="application/wasm" crossorigin>"#
-    ));
+    // The wasm is asked for by net.js, the first module to run (a preload
+    // was fetched twice by WebKit: flow_tests.rs `the_wasm_is_fetched_once`).
+    assert!(include_str!("../www/net.js").contains("export const WASM = fetch("));
 }
 
 // ---------------------------------------------------------------- speed (0.18.1)

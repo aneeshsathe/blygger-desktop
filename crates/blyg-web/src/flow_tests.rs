@@ -277,3 +277,18 @@ fn your_posts_are_loading_not_missing_until_they_first_arrive() {
         "an empty query isn't a search"
     );
 }
+
+/// WebKit fetched the WebAssembly twice on every open (4.4 MB, 1.5 MB
+/// compressed, twice on a phone): it doesn't hand a `<link rel="preload"
+/// as="fetch">` to the app's own fetch. net.js, which runs first, asks for
+/// it once and app.js gives that answer to the wasm's init.
+#[test]
+fn the_wasm_is_fetched_once() {
+    let html = www("index.html");
+    assert!(
+        !html.contains(r#"<link rel="preload" href="pkg/blyg_web_bg.wasm""#),
+        "no preload WebKit fetches again"
+    );
+    assert!(www("net.js").contains("export const WASM = fetch("));
+    assert!(www("app.js").contains("init({ module_or_path: WASM })"));
+}
