@@ -19,6 +19,11 @@ impl MainView {
         let snapshot = crate::dev_flags::get().snapshot.path.is_some();
         if snapshot {
             window.resize(size(px(1100.), px(720.)));
+        } else if let Some(w) = crate::dev_flags::get().snapshot.width {
+            // `BLYGGER_SNAPSHOT_WIDTH` / `_HEIGHT` on a live scene: play it in
+            // a window of that size (a narrow-window UX pass).
+            let h = crate::dev_flags::get().snapshot.height.unwrap_or(720.);
+            window.resize(size(px(w), px(h)));
         }
         cx.spawn_in(window, async move |this, cx| {
             let exec = cx.background_executor().clone();
