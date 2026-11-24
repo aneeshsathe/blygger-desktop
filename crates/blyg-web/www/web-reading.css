@@ -114,6 +114,7 @@ a[data-wr-id] { text-decoration-style: dashed; }
   .wr-more { padding: 0; }
   .wr-more button { min-height: 44px; font-size: 1rem; padding: 6px 4px; }
   .wr-btn { min-height: 44px; min-width: 44px; font-size: .9rem; }
+  .wr-row input[type=radio], .wr-row input[type=checkbox] { width: 22px; height: 22px; flex: none; }
   .wr-row small, .wr-card small { font-size: .82rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
