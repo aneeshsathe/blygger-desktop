@@ -81,8 +81,8 @@ VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
 echo "$VERSION"
 ```
 
-The release must have a `Burrow-web-$VERSION.zip` asset. 0.19.0 and earlier
-didn't include one. For those, [build it yourself](#build-it-yourself-optional).
+The release must have a `Burrow-web-$VERSION.zip` asset. 0.19.0 and earlier,
+and 0.26.0 to 0.29.0, didn't include one. For those, [build it yourself](#build-it-yourself-optional).
 
 ## 2. Download and verify
 

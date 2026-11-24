@@ -3,9 +3,10 @@ name: Release
 # Merging a version bump to main releases it: when `version` in Cargo.toml
 # has no `v<version>` tag yet (and CHANGELOG.md has its `## [x.y.z]`
 # section), this builds, signs, tags that commit and publishes the release:
-# a universal macOS app (the `release` job, which also publishes) and a
+# a universal macOS app (the `release` job, which also publishes), a
 # Windows x64 zip (the `windows` job, whose zips the macOS job attaches and
-# lists in the signed SHA256SUMS).
+# lists in the signed SHA256SUMS) and the web app's zip (built in the
+# `release` job and listed in the same signed SHA256SUMS).
 # Otherwise a cheap Linux check skips it. Run it by hand (workflow_dispatch)
 # to retry a failed release.
 #
@@ -143,6 +144,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-universal
+          cache-directories: ~/blyg-web-tools
 
       - name: Check the tag, Cargo version, repo name and changelog agree
         id: meta
@@ -218,6 +220,29 @@ jobs:
           # Check the hashes the Windows job wrote against the files here.
           (cd dist && shasum -a 256 -c "$WIN/SHA256SUMS-windows")
           cat "$WIN/SHA256SUMS-windows" >> dist/SHA256SUMS
+          cat dist/SHA256SUMS
+
+      # The web app (crates/blyg-web), for owners who serve it from their own
+      # blyg at /burrow/ (site/src/web-self-host.md). The zip holds one
+      # `burrow/` folder, so unzipping it into a static-assets directory puts
+      # it at the right path. Built here (macOS) because serve.sh makes the
+      # home-screen icons with `sips`. Its lines join SHA256SUMS before it's
+      # signed; the desktop updaters look up only their own zip's line.
+      - name: Build and package the web app
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        # The runner's Apple clang has no wasm32 target; serve.sh then uses
+        # Homebrew's LLVM, installed here.
+        run: |
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          BLYG_WEB_TOOLS="$HOME/blyg-web-tools" ./crates/blyg-web/serve.sh --build-only
+          WEB="$RUNNER_TEMP/web"
+          rm -rf "$WEB" && mkdir -p "$WEB"
+          cp -R crates/blyg-web/dist "$WEB/burrow"
+          (cd "$WEB" && find burrow -exec touch -t 202001010000 {} + \
+            && find burrow -type f | LC_ALL=C sort | zip -qX -@ "$GITHUB_WORKSPACE/dist/Burrow-web-$VERSION.zip")
+          cp "dist/Burrow-web-$VERSION.zip" dist/Burrow-web.zip
+          (cd dist && shasum -a 256 "Burrow-web-$VERSION.zip" Burrow-web.zip) >> dist/SHA256SUMS
           cat dist/SHA256SUMS
 
       # In-app updates only install a release whose SHA256SUMS carries a valid
@@ -300,6 +325,8 @@ jobs:
             dist/Blygger-macos-universal.zip \
             dist/Burrow-"$VERSION"-windows-x64.zip \
             dist/Burrow-windows-x64.zip \
+            dist/Burrow-web-"$VERSION".zip \
+            dist/Burrow-web.zip \
             dist/SHA256SUMS \
             dist/SHA256SUMS.sig
 
