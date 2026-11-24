@@ -79,6 +79,8 @@ mod hoppers_tests;
 mod mark_all_tests; // --- unread counts / mark all read ---
 #[cfg(test)]
 mod opml_tests;
+#[cfg(test)]
+mod retry_reads_tests; // --- studio 0.71 --- Retry reads
 pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
