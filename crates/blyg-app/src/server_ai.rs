@@ -524,6 +524,9 @@ impl MainView {
                         this.close_sheet(window, cx)
                     }
                 }))
+                // --- ux 0.29 --- the rows scroll in a short window; the
+                // keys under them stay in view.
+                .min_h_0()
                 .flex()
                 .flex_col()
                 .child(
@@ -676,6 +679,8 @@ impl MainView {
         let judging = s.settings.judging();
         let mut rows = div()
             .id("server-ai-rows")
+            .flex_1()
+            .min_h_0()
             .max_h(px(470.))
             .overflow_y_scroll()
             .flex()
@@ -818,6 +823,7 @@ impl MainView {
                 .child(
                     crate::theme_ext::chip(div(), theme, true)
                         .id("server-ai-save")
+                        .debug_selector(|| "server-ai-save".into())
                         .px(px(10.))
                         .cursor_pointer()
                         .child(if s.busy { "Saving…" } else { "Save" })

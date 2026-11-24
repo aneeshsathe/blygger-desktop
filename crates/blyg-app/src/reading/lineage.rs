@@ -43,6 +43,8 @@ pub struct Sheet {
 // The stage, in its own pixels.
 const STAGE_W: f32 = 540.;
 const STAGE_H: f32 = 380.;
+/// The side panel's narrowest beside the graph; narrower, it goes under it.
+const SIDE_MIN_W: f32 = 260.;
 const CX: f32 = 270.;
 const CY: f32 = 190.;
 const HEX_R: f32 = 50.;
@@ -718,15 +720,19 @@ impl MainView {
                 crate::keymap::hint("Responses: what this Mac holds")
             })
             .child(crate::keymap::hint("⇧C catch up · ⌘J / esc closes"));
-        // --- lineage --- zoomed out: the neighbourhood map.
+        // --- lineage --- zoomed out: the neighbourhood map. --- ux 0.29 ---
+        // The side panel goes under the graph when there's no room for it
+        // beside (an 800 px window), rather than one letter wide.
         let body = match &s.map {
             Some(m) => div()
                 .flex()
+                .flex_wrap()
                 .gap(px(14.))
                 .child(self.render_lineage_map(m, cx))
                 .child(self.render_lineage_map_side(s, m)),
             None => div()
                 .flex()
+                .flex_wrap()
                 .gap(px(14.))
                 .child(self.render_lineage_stage(s, cx))
                 .child(self.render_lineage_side(s)),
@@ -1257,7 +1263,7 @@ impl MainView {
         };
         let side = div()
             .flex_1()
-            .min_w_0()
+            .min_w(px(SIDE_MIN_W))
             .flex()
             .flex_col()
             .text_size(px(12.5))
@@ -1346,20 +1352,28 @@ impl MainView {
                         .flex_col()
                         .gap(px(2.))
                         .text_size(px(12.))
-                        .children(lineage_vm::FACTS.iter().zip(facts).map(|(q, (ans, yes))| {
-                            div()
-                                .flex()
-                                .gap(px(8.))
-                                .child(div().w(px(150.)).flex_none().text_color(p.muted).child(*q))
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .when(yes, |d| d.font_weight(FontWeight::SEMIBOLD))
-                                        .when(!yes, |d| d.text_color(p.muted))
-                                        .child(ans),
-                                )
-                        })),
+                        .children(lineage_vm::FACTS.iter().zip(facts).enumerate().map(
+                            |(i, (q, (ans, yes)))| {
+                                // The answer goes under its question when the
+                                // row is too narrow for both.
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap_x(px(8.))
+                                    .child(
+                                        div().w(px(150.)).flex_none().text_color(p.muted).child(*q),
+                                    )
+                                    .child(
+                                        div()
+                                            .debug_selector(move || format!("lineage-fact-{i}"))
+                                            .flex_1()
+                                            .min_w(px(120.))
+                                            .when(yes, |d| d.font_weight(FontWeight::SEMIBOLD))
+                                            .when(!yes, |d| d.text_color(p.muted))
+                                            .child(ans),
+                                    )
+                            },
+                        )),
                 )
                 .child(match why {
                     Some(w) => div()
@@ -1368,6 +1382,7 @@ impl MainView {
                         .text_size(px(12.))
                         .child(w),
                     None => div()
+                        .debug_selector(|| "lineage-does-it".into())
                         .mt(px(8.))
                         .text_color(p.muted)
                         .text_size(px(12.))

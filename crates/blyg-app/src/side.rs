@@ -44,6 +44,19 @@ pub const PREVIEW_DEFAULT: f32 = 0.5;
 pub const EDITOR_MIN_PX: f32 = 320.;
 /// The preview's narrowest.
 pub const PREVIEW_MIN_PX: f32 = 260.;
+/// --- ux 0.29 --- ⌘Y's history: its side column, and the narrowest the
+/// version's text beside it gets.
+pub const VERSIONS_SIDE_PX: f32 = 290.;
+pub const VERSIONS_DOC_MIN_PX: f32 = 340.;
+
+/// --- ux 0.29 --- Whether the posts list (`list_w` of a row `content_w`
+/// wide) leaves the pane beside it at least `pane_min`. In a narrow window
+/// (or beside the notes drawer) the list makes way instead of squeezing the
+/// editor, ⌘Y's history or the preview to a sliver; it comes back when
+/// there's room.
+pub fn list_fits(content_w: f32, list_w: f32, pane_min: f32) -> bool {
+    content_w - list_w - 1. >= pane_min
+}
 
 /// A drawer's widths: its default, and the range a drag keeps it in.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -187,6 +200,29 @@ pub fn edge_handle(
 }
 
 impl MainView {
+    /// --- ux 0.29 --- Whether the Posts screen draws its list: the view
+    /// shows it, and the pane beside it keeps its minimum (`list_fits`).
+    pub(crate) fn side_list_shown(&self, window: &Window) -> bool {
+        let view = self.studio.view;
+        if !view.list_visible() {
+            return false;
+        }
+        if self.prefs.layout == LayoutPref::Stacked {
+            return true;
+        }
+        let content = f32::from((window.viewport_size().width - self.side_room()).max(px(0.)));
+        let preview = view.preview_visible();
+        let list = (content * if preview { 0.24 } else { 0.38 }).round();
+        let min = if self.reading.own.is_some() {
+            VERSIONS_DOC_MIN_PX + VERSIONS_SIDE_PX
+        } else if preview && !self.split.is_open() {
+            EDITOR_MIN_PX + PREVIEW_MIN_PX
+        } else {
+            EDITOR_MIN_PX
+        };
+        list_fits(content, list, min)
+    }
+
     /// How much of the window's width the docked drawers and the tab bar
     /// take, at `now` (the notes pane slides).
     pub(crate) fn side_room_at(&self, now: std::time::Instant) -> Pixels {

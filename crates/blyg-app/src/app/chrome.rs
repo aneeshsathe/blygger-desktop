@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// The room between a toast and the bar under it.
+const TOAST_GAP: f32 = 8.;
+
 impl MainView {
     pub(super) fn show_toast(
         &mut self,
@@ -400,13 +403,16 @@ impl MainView {
     }
 
     pub(super) fn render_toast(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        // The floor is what the bars recorded last frame; they record it
+        // again as they paint.
+        let floor = self.studio.guards.toast_floor.take();
         let t = self.toast.as_ref()?;
         let p = self.palette;
         let leaving = t.leaving;
         let sticky = self.studio.guards.sticky_toast == Some(t.id);
         let el = div()
             .id("toast")
-            .absolute()
+            .debug_selector(|| "toast".into())
             .when(sticky, |d| {
                 d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
                     this.studio.guards.sticky_toast = None;
@@ -414,9 +420,6 @@ impl MainView {
                     cx.notify();
                 }))
             })
-            // --- full editor: clear of the native preview ---
-            .right(self.studio_toast_right())
-            .bottom(px(STATUS_H + 12.))
             .max_w(px(420.))
             .px(px(12.))
             .py(px(9.))
@@ -431,16 +434,51 @@ impl MainView {
             .when_some(t.sub.clone(), |d, sub| {
                 d.child(div().opacity(0.7).child(sub))
             });
+        // --- ux 0.29 --- The toast sits in a box from the window's top
+        // down to the highest bar it must stay above (or the status bar),
+        // and left of the native preview: it wraps there instead of
+        // running under the preview, and covers no footer or compose bar.
+        let holder = div()
+            .absolute()
+            .top_0()
+            .left(px(14.))
+            // --- full editor: clear of the native preview ---
+            .right(self.studio_toast_right())
+            .map(|d| match floor {
+                Some(f) => d.h(px((f - TOAST_GAP).max(0.))),
+                None => d.bottom(px(STATUS_H + 12.)),
+            })
+            .flex()
+            .flex_col()
+            .justify_end()
+            .items_end();
         Some(
-            el.with_animation(
-                ElementId::NamedInteger("toast".into(), (t.id * 2 + leaving as usize) as u64),
-                Animation::new(Duration::from_millis(200)).with_easing(ease_out_quint()),
-                move |d, t| {
-                    let v = if leaving { 1.0 - t } else { t };
-                    d.opacity(v).mb(px(-8.0 * (1.0 - v)))
-                },
-            )
-            .into_any_element(),
+            holder
+                .child(el.with_animation(
+                    ElementId::NamedInteger("toast".into(), (t.id * 2 + leaving as usize) as u64),
+                    Animation::new(Duration::from_millis(200)).with_easing(ease_out_quint()),
+                    move |d, t| {
+                        let v = if leaving { 1.0 - t } else { t };
+                        d.opacity(v).mb(px(-8.0 * (1.0 - v)))
+                    },
+                ))
+                .into_any_element(),
         )
+    }
+
+    /// --- ux 0.29 --- A bar's marker: toasts stay above its top (drawn
+    /// over the bar, the size of the bar's box).
+    pub(crate) fn toast_floor_probe(&self) -> AnyElement {
+        let floor = self.studio.guards.toast_floor.clone();
+        canvas(
+            |_, _, _| (),
+            move |b, (), _, _| {
+                let top = b.top().as_f32();
+                floor.set(Some(floor.get().map_or(top, |f| f.min(top))));
+            },
+        )
+        .absolute()
+        .inset_0()
+        .into_any_element()
     }
 }

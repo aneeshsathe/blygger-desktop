@@ -49,6 +49,8 @@ pub struct AiView {
     pending: Option<(String, Vec<Option<ScopeProvenance>>)>,
     /// One-shot: the user chose "publish anyway" on the disclosure warning.
     publish_anyway: bool,
+    /// --- ux 0.29 --- The sheet's scroll, for its "more below" cue.
+    scroll: ScrollHandle,
 }
 
 struct Job {
@@ -1776,20 +1778,31 @@ impl MainView {
                 .items_start()
                 .child(
                     div()
-                        .id("ai-sheet")
-                        .occlude()
+                        .relative()
                         .w(px(width))
                         .max_w(relative(0.92))
                         .max_h(relative(0.86))
-                        .overflow_y_scroll()
-                        // --- themes --- the theme's sheet box.
-                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
-                        .px(px(18.))
-                        .py(px(16.))
-                        .font_family(ui_font.clone())
-                        .text_size(px(13.))
-                        .text_color(p.ink)
-                        .child(content),
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .id("ai-sheet")
+                                .occlude()
+                                .min_h_0()
+                                .track_scroll(&self.ai.scroll)
+                                .overflow_y_scroll()
+                                // --- themes --- the theme's sheet box.
+                                .map(|d| crate::theme_ext::sheet(d, &self.theme))
+                                .px(px(18.))
+                                .py(px(16.))
+                                .font_family(ui_font.clone())
+                                .text_size(px(13.))
+                                .text_color(p.ink)
+                                .child(content),
+                        )
+                        // --- ux 0.29 --- the list under the fold said
+                        // nothing (Settings › AI's last provider was cut).
+                        .children(crate::theme_ext::more_below(&self.ai.scroll, &p)),
                 )
                 .into_any_element(),
         )

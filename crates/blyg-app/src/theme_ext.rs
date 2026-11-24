@@ -184,6 +184,37 @@ pub fn sheet<E: Styled>(e: E, t: &Theme) -> E {
     .rounded_b(px(t.sheet_radius))
 }
 
+/// --- ux 0.29 --- "↓ more below" over the foot of a sheet that scrolls
+/// (`scroll` tracks it), while there is more under the fold: nothing else
+/// said a cut list went on. Its holder is `relative`.
+pub fn more_below(scroll: &gpui_kit::ScrollHandle, p: &Palette) -> Option<gpui_kit::AnyElement> {
+    use gpui_kit::{InteractiveElement, IntoElement, ParentElement, div};
+    let left = scroll.max_offset().y + scroll.offset().y;
+    (left > px(4.)).then(|| {
+        div()
+            .debug_selector(|| "more-below".into())
+            .absolute()
+            .bottom(px(8.))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded_full()
+                    .bg(p.bg)
+                    .border_1()
+                    .border_color(p.line)
+                    .text_size(px(11.))
+                    .text_color(p.muted)
+                    .child("↓ more below"),
+            )
+            .into_any_element()
+    })
+}
+
 /// A floating card (onboarding, the tour): like a sheet, rounded all round.
 pub fn card<E: Styled>(e: E, t: &Theme) -> E {
     let p = &t.palette;

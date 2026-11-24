@@ -263,8 +263,9 @@ impl Kit<'_> {
     }
 }
 
-/// The room a sheet leaves under itself, at most.
-pub(crate) const SHEET_BOTTOM_GAP: f32 = 12.;
+/// The room a sheet leaves under itself, at most: the status bar stays in
+/// view (--- ux 0.29 --- AI on your blyg's keys sat on it).
+pub(crate) const SHEET_BOTTOM_GAP: f32 = super::STATUS_H + 8.;
 
 impl MainView {
     /// The open sheet in its frame (or the Settings page), if one is up.
@@ -309,6 +310,10 @@ impl MainView {
                         .max_w(relative(0.92))
                         .max_h_full()
                         .overflow_y_scroll()
+                        // A sheet whose body scrolls on its own (`min_h_0`)
+                        // shrinks to fit, so its keys stay in view.
+                        .flex()
+                        .flex_col()
                         .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))

@@ -45,6 +45,9 @@ pub const TITLE_MAX: usize = 400;
 /// How many log rows the history pane shows.
 pub const HISTORY_ROWS: usize = 200;
 
+/// The history panel's width.
+pub(crate) const HISTORY_W: f32 = 270.;
+
 /// The history pane's words (upstream's).
 pub const HISTORY_TITLE: &str = "Browsing history";
 pub const HISTORY_PRIVATE: &str = "Where following links has taken you. Private to you.";
@@ -933,12 +936,23 @@ impl MainView {
         if !self.reading.browse.history_open || self.reading.opened.is_none() {
             return detail;
         }
+        // --- ux 0.29 --- the post keeps to its side of the panel (it drew
+        // through it when squeezed), and `pane_fit` leaves it its room.
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .flex()
-            .child(detail)
+            .child(
+                div()
+                    .debug_selector(|| "reading-post".into())
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .flex()
+                    .child(detail),
+            )
             .child(self.render_history_pane(cx))
             .into_any_element()
     }
@@ -1052,9 +1066,10 @@ impl MainView {
         div()
             .id("browse-history")
             .debug_selector(|| "browse-history".into())
-            .w(px(270.))
+            .w(px(HISTORY_W))
             .flex_none()
             .h_full()
+            .bg(p.bg)
             .flex()
             .flex_col()
             .rule_l(&p)

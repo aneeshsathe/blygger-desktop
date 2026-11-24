@@ -912,7 +912,7 @@ impl Render for MainView {
         // --- reading compose ---
         self.compose_frame(window, cx);
         // --- end reading compose ---
-        let show_list = self.studio.view.list_visible();
+        let show_list = self.side_list_shown(window); // --- side ---
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
         // --- side --- the docked drawers and the tab bar take the right.
