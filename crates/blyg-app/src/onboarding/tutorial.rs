@@ -1984,7 +1984,13 @@ impl MainView {
             let lineage = self.lineage_open() || step.region == Region::QuietSetting;
             let vp = window.viewport_size();
             let (w, h) = (f32::from(vp.width), f32::from(vp.height));
-            let ring = self.tutorial_ring(step.region, window, cx);
+            // A web view (the reader, the browser pane) draws over the card
+            // wherever they meet: the card moves only while none is up (the
+            // reader stays clear of the bottom left, tutorial_hides_reader).
+            let web = !self.tutorial_hides_reader(window)
+                || self.browser_rects(w, h).is_some()
+                || (self.reading.view != View::Reading && self.studio.view.preview_visible());
+            let ring = self.tutorial_ring(step.region, window, cx).filter(|_| !web);
             match card_corner(ring, w, h, card_h_for(caption.chars().count())) {
                 Corner::BottomLeft if lineage => Corner::BottomRight,
                 c => c,
