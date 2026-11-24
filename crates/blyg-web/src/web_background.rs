@@ -88,7 +88,9 @@ impl Burrow {
         let r = self.rd.rows.iter().find(|r| key_of(r) == key);
         let b = r.and_then(|r| r.background.clone()).unwrap_or_default();
         json(&json!({
-            "served": self.bg_served() && r.is_some(),
+            // Your own posts get no Background controls: they're yours to
+            // withdraw, not to file away from yourself.
+            "served": self.bg_served() && r.is_some_and(|r| !is_own_row(r)),
             "on": r.is_some_and(|r| r.is_background()),
             "placement": b.placement.map(Placement::as_str),
             "blyg": b.blyg,
@@ -103,6 +105,14 @@ impl Burrow {
     pub fn wr_bg_act(&self, key: &str, action: &str) -> String {
         if !self.bg_served() {
             return not_served();
+        }
+        if self
+            .rd
+            .rows
+            .iter()
+            .any(|r| key_of(r) == key && is_own_row(r))
+        {
+            return json(&json!({ "error": "Your own posts aren't moved to Background" }));
         }
         let Some((k, _, on, _)) = self.bg_row_key(key) else {
             return json(&json!({ "error": "That post isn't here any more" }));

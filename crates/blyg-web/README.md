@@ -98,14 +98,16 @@ runs the bindings natively. Those tests and the included `vm.rs`,
   the demo the offline switch and the reset (`www/hub.js`).
 - The shelf: 📚 marks shelved posts, which come first, with a line under
   them. ⌥⌘B shelves or unshelves the open post, ⌘B lists the shelf. It
-  holds 50 at most, others' posts too (+ Add to shelf in Reading, and the
-  Shelf lens). With studio 0.61 it syncs with your blyg (`src/shelf.rs`).
+  holds 50 at most, others' posts too (+ Save in Reading, and the Saved
+  source); the page calls it Saved, as the studio does. With studio 0.61 it syncs with your blyg (`src/shelf.rs`).
 - ⌘K links a post at the caret, ⇧⌘K quotes one (threads only).
 - The editor bar under the editor is the phone's, described below. It works
   with a mouse: drag or scroll it sideways, or use the ‹ › arrows.
 
-Browsers keep ⌘N, ⌘T and ⌘L for themselves, so the page also takes ⌃ or ⌥
-wherever Burrow uses ⌘.
+Browsers keep ⌘N, ⌘T and ⌘L for themselves, so the page binds ⌃ (⌥ works
+too) wherever Burrow uses ⌘, and every hint on the page says ⌃: the key
+help, tooltips, the HUD and Blyg's list read one table, `www/keys.js`, and
+the Rust's hints are spelled the same way (`src/keymap.rs`).
 
 ## On a phone
 

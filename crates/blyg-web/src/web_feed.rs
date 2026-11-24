@@ -146,6 +146,7 @@ impl Burrow {
         json!({
             "value": order.as_str(),
             "label": order.label(),
+            "note": order_note(order),
             "shown": feed::follows_feed(MODE, &self.wr.source),
             "options": ReaderOrder::ALL.iter().map(|o| json!({
                 "value": o.as_str(),
@@ -153,6 +154,18 @@ impl Burrow {
                 "on": *o == order,
             })).collect::<Vec<_>>(),
         })
+    }
+}
+
+/// One line under the order control: what the chosen order does
+/// (blygger-studio's `src/feeds/reader-order.ts`, other repo: blygger-studio).
+fn order_note(order: ReaderOrder) -> &'static str {
+    match order {
+        ReaderOrder::PaceLayered => {
+            "The newest post goes on top and sinks the rest; a new version climbs one place, \
+             and pinned posts sink slower."
+        }
+        ReaderOrder::Newest => "Newest first, by each post's own date.",
     }
 }
 

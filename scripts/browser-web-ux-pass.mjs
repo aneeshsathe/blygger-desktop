@@ -25,6 +25,11 @@ const local = (u) => {
   return u;
 };
 const ORIGIN = local(env('LIVE_ORIGIN'));
+// The path-mounted studio's proxy and its mount ("/notes"): the app is at
+// ORIGIN_M + MOUNT + "/burrow/".
+const ORIGIN_M = local(env('LIVE_ORIGIN_M'));
+const MOUNT = env('LIVE_MOUNT');
+if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(MOUNT)) throw new Error(`not a mount: ${MOUNT}`);
 const SHOTS = env('UX_SHOTS');
 const require = createRequire(`${env('PLAYWRIGHT_DIR')}/`);
 const { chromium } = require('playwright');
@@ -76,10 +81,14 @@ const b = client(env('LIVE_URL_B'), 'LIVE_TOKEN_B_FILE');
 // ------------------------------------------------------------------ seed
 // Invented sample content only. Bursts would otherwise send most of b's
 // posts to Background (studio 0.69's `superseded` rule), so it's off on a.
+// Posts are made about a second apart, so every one has its own time (the
+// first pass made them within 2 s, and the Feed's order couldn't be judged):
+// b's first half, then a's own, then b's second half.
 const t0 = Date.now();
 await a.call('PATCH', '/settings', { backgroundRules: { superseded: false } }, { ok: true });
 const topics = ['tide pools', 'kelp forests', 'sea otters', 'barnacles', 'sand dunes', 'lichen', 'salt marshes', 'estuaries'];
-for (let i = 0; i < 24; i++) {
+const apart = () => sleep(1050);
+async function bPost(i) {
   const t = topics[i % topics.length];
   if (i % 4 === 0) {
     await b.post(`# Field notes ${i + 1}: a longer look at ${t} through a whole season of invented walks\n\n` +
@@ -87,14 +96,18 @@ for (let i = 0; i < 24; i++) {
   } else {
     await b.post(`Sample note B${String(i + 1).padStart(2, '0')}: a short invented thought about ${t}.`);
   }
+  await apart();
 }
+for (let i = 0; i < 12; i++) await bPost(i);
+// a's own posts: published fragments and a thread, a draft, a withdrawn one.
+for (let i = 1; i <= 5; i++) { await a.post(`Own post A0${i}: invented notes on example topic ${i}.`); await apart(); }
+await a.post('# My invented essay on rock pools\n\nIt starts here. ' + 'Invented sentences go on. '.repeat(20), 'thread');
+await apart();
+for (let i = 12; i < 24; i++) await bPost(i);
 // The awkward ones: a very long unbroken word, a wide code block, a table.
 await b.post('Unbroken: ' + 'Supercalifragilisticexpialidocious'.repeat(5) + ' and then normal words again.');
 await b.post('# Code sample thread\n\nA wide code block:\n\n```\nconst invented = ["' + 'x'.repeat(160) + '"];\n```\n\n| column one | column two | column three | column four |\n|---|---|---|---|\n| invented cell | another invented cell | a third | a fourth one |', 'thread');
 
-// a's own posts: published fragments and a thread, a draft, a withdrawn one.
-for (let i = 1; i <= 5; i++) await a.post(`Own post A0${i}: invented notes on example topic ${i}.`);
-await a.post('# My invented essay on rock pools\n\nIt starts here. ' + 'Invented sentences go on. '.repeat(20), 'thread');
 await a.draft('Unfinished draft about mudflats, not yet published.');
 const toWithdraw = await a.draft('A post I will withdraw later.');
 await a.call('POST', `/items/${toWithdraw.id}/publish`, { expectedRevision: toWithdraw.revision });
@@ -253,12 +266,34 @@ try {
       });
     }
     await step(p, 'feed-again', 'back to the Feed', () => pg.click('[data-src="smart:all"]'));
+    const top = () => pg.$$eval('#d-stream .card', (cs) => cs.slice(0, 12).map((c) => (c.querySelector('.ex i')?.innerText || '').replace(/:.*/, '').slice(0, 24)));
     await step(p, 'order-chrono', 'Feed order: chronological', async () => {
       const b = await pg.$('[data-order="newest"]');
       if (!b) throw new Error('no order control');
       await b.click();
+      await sleep(400);
+      p.chrono = await top();
     });
-    await step(p, 'order-pace', 'Feed order: pace-layered', async () => { const b = await pg.$('[data-order="pace-layered"]'); if (!b) throw new Error('no order control'); await b.click(); });
+    obs.feedOrder = { chronological: p.chrono };
+    await step(p, 'order-pace', 'Feed order: pace-layered', async () => {
+      const b = await pg.$('[data-order="pace-layered"]'); if (!b) throw new Error('no order control'); await b.click();
+      await sleep(400);
+      obs.feedOrder.paceLayered = await top();
+    });
+    console.log(`    feed order: chronological ${JSON.stringify(obs.feedOrder.chronological)}; pace-layered ${JSON.stringify(obs.feedOrder.paceLayered)}`);
+    await step(p, 'own-post', 'open one of your own posts: no ● Unread, no Background', async () => {
+      await pg.fill('#omni', 'Own post A03');
+      await pg.click('#d-stream .card');
+      await sleep(300);
+      obs.ownPost = {
+        unreadShown: await pg.isVisible('#d-ractions [data-ra="unread"]'),
+        backgroundShown: !!(await pg.$('#d-post .wr-bg')),
+        by: await text(pg, '#d-post .by'),
+      };
+      console.log(`    own post: ${JSON.stringify(obs.ownPost)}`);
+    });
+    await pg.fill('#omni', '');
+    await pg.press('#omni', 'Escape');
     await step(p, 'lens-threads', 'lens Threads', () => pg.click('[data-lens="thread"]'));
     await step(p, 'lens-all', 'lens All', () => pg.click('[data-lens="all"]'));
     await step(p, 'search', 'search "kelp" in Reading', async () => { await pg.click('#omni'); await pg.keyboard.type('kelp'); });
@@ -282,6 +317,13 @@ try {
       await inp.fill('not a url at all');
       await pg.keyboard.press('Enter');
       await sleep(1500);
+    });
+    await step(p, 'subscribe-bare', 'subscribe to a bare host (no https://)', async () => {
+      const inp = await pg.$('#wr-body input');
+      if (!inp) throw new Error('no URL field');
+      await inp.fill(`localhost:${new URL(b.base).port}`);
+      await pg.keyboard.press('Enter');
+      await sleep(2500);
     });
     await closePanel(pg);
     await step(p, 'mentions', '@ Mentions', () => pg.click('#d-wr-sources [data-go="mentions"]'));
@@ -447,6 +489,91 @@ try {
     await step(p, 'reading-settings', 'Read › ⚙ Reading', async () => { await pg.evaluate(() => document.querySelector('#p-wrBar').scrollTo(1e4, 0)); await pg.tap('#p-wrBar [data-go="reading"]'); });
     await closePanel(pg);
     await p.ctx.close();
+  }
+  // ================================================================ a path-mounted blyg (desktop, then phone)
+  {
+    const APP = `${ORIGIN_M}${MOUNT}/burrow/`;
+    const first = await browser.newContext();
+    const login = await first.request.post(`${ORIGIN_M}${MOUNT}/studio/login`, {
+      form: { password: secret('LIVE_PASSWORD_FILE') }, headers: { origin: ORIGIN_M }, maxRedirects: 0,
+    });
+    if (login.status() >= 400) throw new Error(`Studio sign-in at ${MOUNT} failed (${login.status()})`);
+    const mSession = await first.storageState();
+    await first.close();
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: mSession });
+    const pg = await ctx.newPage();
+    pg.setDefaultTimeout(5000);
+    const p = { name: 'mount-desk', page: pg, ctx, mobile: false, viewport: { width: 1440, height: 900 }, bad: [], errors: [], last: Date.now() };
+    pg.on('response', (res) => { if (res.status() >= 400) p.bad.push(`${res.request().method()} ${new URL(res.url()).pathname} → ${res.status()}`); });
+    pg.on('requestfailed', (req) => p.bad.push(`${req.method()} ${new URL(req.url()).pathname} → failed (${req.failure()?.errorText})`));
+    pg.on('pageerror', (e) => p.errors.push(`page error: ${e.message}`));
+    pg.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') p.errors.push(`console ${m.type()}: ${m.text().slice(0, 300)}`); });
+    await pg.goto(APP);
+    // Seed through the page itself: the session, same origin, {mount}/api.
+    const seeded = await pg.evaluate(async ({ mount, bBase }) => {
+      const api = async (method, path, body) => {
+        const r = await fetch(`${mount}/api${path}`, { method, credentials: 'same-origin', headers: { accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+        return { status: r.status, body: await r.json().catch(() => null) };
+      };
+      const out = [];
+      for (let i = 1; i <= 3; i++) {
+        const d = await api('POST', '/items', { mode: 'blank', contentMd: `Mounted note M0${i}: invented words under a path mount.`, kind: 'fragment' });
+        out.push(d.status);
+        if (d.body?.id) out.push((await api('POST', `/items/${d.body.id}/publish`, { expectedRevision: d.body.revision })).status);
+      }
+      let s = await api('POST', '/subscriptions', { url: bBase });
+      if (s.body?.needsConfirm) s = await api('POST', '/subscriptions', { url: bBase, confirm: true });
+      out.push(s.status);
+      return out;
+    }, { mount: MOUNT, bBase: b.base });
+    console.log(`    mount seed answers: ${seeded.join(' ')}`);
+    await step(p, 'open', `first open of ${MOUNT}/burrow/`, async () => {
+      await pg.goto(APP);
+      await pg.waitForSelector('#list .row', { timeout: 30_000 });
+    });
+    await sleep(4000);
+    await step(p, 'settled', 'after the first refresh');
+    await step(p, 'reading', 'Reading (⌃2): the subscription’s posts arrive', async () => {
+      await pg.keyboard.press(`${mod}+2`);
+      for (let t = 0; t < 40 && (await pg.$$('#d-stream .card')).length < 5; t++) await sleep(1500);
+    });
+    await step(p, 'open-card', 'open the first card', () => pg.click('#d-stream .card'));
+    await step(p, 'write', 'write a post in the omnibar, then publish (⌃⏎, ⏎)', async () => {
+      await pg.keyboard.press(`${mod}+1`);
+      await pg.click('#omni'); await pg.keyboard.type('A post written under the mount');
+      await pg.keyboard.press('Enter');
+      await pg.click('#ed'); await pg.keyboard.press('End'); await pg.keyboard.type('\n\nInvented words.');
+      await sleep(2500);
+      await pg.keyboard.press(`${mod}+Enter`);
+      await sleep(300);
+      await pg.keyboard.press('Enter');
+      await sleep(3000);
+    });
+    const onBlyg = await pg.evaluate(async (mount) => {
+      const r = await fetch(`${mount}/api/items?limit=100`, { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      const j = await r.json();
+      const it = (j.items || []).find((i) => (i.contentMd || '').includes('under the mount'));
+      return it ? `${it.status} v${it.version}` : 'not on the blyg';
+    }, MOUNT);
+    obs.mount = { seeded, published: onBlyg };
+    await step(p, 'published', `on the blyg: ${onBlyg}`);
+    await step(p, 'blyg-tab', '⌃3 Blyg', () => pg.keyboard.press(`${mod}+3`));
+    await ctx.close();
+
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, storageState: mSession });
+    const pp = await pctx.newPage();
+    pp.setDefaultTimeout(5000);
+    const q = { name: 'mount-phone', page: pp, ctx: pctx, mobile: true, viewport: { width: 390, height: 844 }, bad: [], errors: [], last: Date.now() };
+    pp.on('response', (res) => { if (res.status() >= 400) q.bad.push(`${res.request().method()} ${new URL(res.url()).pathname} → ${res.status()}`); });
+    pp.on('pageerror', (e) => q.errors.push(`page error: ${e.message}`));
+    pp.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') q.errors.push(`console ${m.type()}: ${m.text().slice(0, 300)}`); });
+    await step(q, 'open', `the phone at ${MOUNT}/burrow/`, async () => {
+      await pp.goto(APP);
+      await pp.waitForFunction(() => document.querySelector('#p-loading.gone') && document.querySelectorAll('#p-list .prow').length > 0, null, { timeout: 60_000 });
+    });
+    await step(q, 'read-tab', 'tap Read', async () => { await pp.tap('.tab[data-tab="read"]'); await sleep(1500); });
+    await step(q, 'saved-tab', 'tap Saved', () => pp.tap('.tab[data-tab="shelf"]'));
+    await pctx.close();
   }
 } finally {
   await browser.close();

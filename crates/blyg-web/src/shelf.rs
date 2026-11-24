@@ -98,11 +98,11 @@ impl WebStore {
             }
             (true, None) => match self.item(id) {
                 Some(it) if it.status == Status::Withdrawn => {
-                    Err("Withdrawn posts can't go on the shelf".into())
+                    Err("Withdrawn posts can't be saved".into())
                 }
                 None => Err("No such post".into()),
                 Some(_) if self.shelf.len() >= SHELF_MAX => Err(format!(
-                    "Your shelf is full ({SHELF_MAX} posts). Take one off first."
+                    "Saved is full ({SHELF_MAX} posts). Remove one first."
                 )),
                 Some(_) => {
                     self.shelf.push(Shelved::Own(id.0.clone()));
@@ -134,7 +134,7 @@ impl WebStore {
                 Ok(true)
             }
             (true, None) if self.shelf.len() >= SHELF_MAX => Err(format!(
-                "Your shelf is full ({SHELF_MAX} posts). Take one off first."
+                "Saved is full ({SHELF_MAX} posts). Remove one first."
             )),
             (true, None) => {
                 self.shelf.push(Shelved::Entry(e.clone()));
@@ -381,12 +381,7 @@ impl Burrow {
                 self.rows_changed();
                 self.refresh();
                 json(&Outcome::Toast {
-                    message: if on {
-                        "Added to shelf"
-                    } else {
-                        "Removed from shelf"
-                    }
-                    .into(),
+                    message: if on { "Saved" } else { "Removed from Saved" }.into(),
                 })
             }
             Err(message) => json(&Outcome::Toast { message }),

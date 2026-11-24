@@ -1,8 +1,9 @@
 //! The helpers the shared view-models call as `crate::keymap::…` (the real
 //! ones are in `crates/blyg-app/src/keymap.rs`, beside the GPUI key table).
-//! There they respell macOS keys for Windows; here they respell the few
+//! There they respell macOS keys for Windows; here they respell the
 //! strings that name the Mac, since this copy of Burrow lives in a browser
-//! tab. Keys keep their ⌘ glyphs: the page accepts ⌃ for ⌘ too.
+//! tab, and its keys as the page binds them: ⌃ where the Mac says ⌘
+//! (`www/keys.js` is the page's own table, in the same spelling).
 //!
 //! Windows' spelling ([`crate::platform_text::Platform::Windows`]) is only
 //! ever asked for by the shared view-models' own tests: a plain glyph
@@ -27,21 +28,64 @@ pub fn hint(text: &'static str) -> &'static str {
     if let Some(w) = browser_words(text) {
         return w;
     }
-    #[cfg(test)]
-    if Platform::spelling() == Platform::Windows {
-        return Box::leak(windows_hint(text).into_boxed_str());
+    match Platform::spelling() {
+        Platform::Mac => text,
+        // Each respelling is made once and kept: a hint is one of a few
+        // dozen static strings.
+        p => {
+            thread_local! {
+                static MADE: std::cell::RefCell<std::collections::HashMap<(&'static str, bool), &'static str>> =
+                    Default::default();
+            }
+            MADE.with(|m| {
+                *m.borrow_mut()
+                    .entry((text, p == Platform::Windows))
+                    .or_insert_with(|| {
+                        let s = if p == Platform::Windows {
+                            windows_hint(text)
+                        } else {
+                            browser_hint(text)
+                        };
+                        Box::leak(s.into_boxed_str())
+                    })
+            })
+        }
     }
-    text
 }
 
 /// `hint` for text built at runtime.
 pub fn hint_owned(text: String) -> String {
     let text = text.replace("on this Mac", "in this browser");
-    if Platform::spelling() == Platform::Windows {
-        windows_hint(&text)
-    } else {
-        text
+    match Platform::spelling() {
+        Platform::Mac => text,
+        Platform::Windows => windows_hint(&text),
+        Platform::Browser => browser_hint(&text),
     }
+}
+
+/// Each run of macOS modifier glyphs as the page binds it: ⌘ becomes ⌃,
+/// in the Mac's order (⌃⌥⇧): `⌥⌘Z` → `⌃⌥Z`, `⇧⌘⌫` → `⌃⇧⌫`.
+fn browser_hint(text: &str) -> String {
+    const ORDER: [char; 3] = ['⌃', '⌥', '⇧'];
+    let mut out = String::with_capacity(text.len());
+    let mut run: Vec<char> = Vec::new();
+    let flush = |run: &mut Vec<char>, out: &mut String| {
+        run.sort_by_key(|c| ORDER.iter().position(|o| o == c));
+        run.dedup();
+        out.extend(run.drain(..));
+    };
+    for c in text.chars() {
+        match c {
+            '⌘' | '⌃' => run.push('⌃'),
+            '⌥' | '⇧' => run.push(c),
+            _ => {
+                flush(&mut run, &mut out);
+                out.push(c);
+            }
+        }
+    }
+    flush(&mut run, &mut out);
+    out
 }
 
 /// Whether `action` has no key when spelled as `p`. Every action keeps
@@ -98,9 +142,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_browser_keeps_the_macs_keys_and_says_browser() {
+    fn the_browser_says_browser_and_binds_control() {
         assert_eq!(hint("saved on this Mac"), "saved in this browser");
         assert_eq!(hint("⌥⌘1"), "⌥⌘1");
+        assert_eq!(browser_hint("⌥⌘1 and ⇧⌘K"), "⌃⌥1 and ⌃⇧K");
+        assert_eq!(browser_hint("⌃⇧Y"), "⌃⇧Y");
         assert_eq!(
             hint_owned("kept on this Mac".into()),
             "kept in this browser"

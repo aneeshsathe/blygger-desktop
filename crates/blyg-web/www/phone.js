@@ -9,7 +9,7 @@ import {
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, swipePosts, arrive, cardHtml, draw, drawMore, onNearEnd, settle,
-  shelfNote, shelfButton,
+  shelfNote, shelfButton, publishState,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -110,6 +110,7 @@ export function render({ loadEditor = false } = {}) {
     const so = $('#p-stubof');
     so.hidden = !c.stub_of; so.textContent = c.stub_of ?? '';
     conflictBanner($('#p-conflict'), c, () => { render({ loadEditor: true }); touched(); });
+    publishState($('#p-bar'), c);
     if (previewing) schedulePreview();
   }
   $('#p-mode').textContent = V.mode === 'live' ? 'Live' : 'Demo';
@@ -127,7 +128,7 @@ export function render({ loadEditor = false } = {}) {
 function renderList() {
   draw($('#p-shelf'), V.shelf.length
     ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
-    : '<span class="empty">Hold a post to shelve it</span>');
+    : '<span class="empty">Hold a post to save it</span>');
   const query = V.query.trim();
   // --- web-parity --- the filters (hidden with no posts, and while searching).
   const pf = filterChips();
@@ -279,7 +280,7 @@ function barTool(name) {
 }
 function toggleShelf() {
   const o = outcome(S.B.toggle_shelf());
-  if (/shelf/.test(o.message || '')) touched();
+  if (/Saved/.test(o.message || '')) touched();
 }
 
 // ---------------------------------------------------------------- shelf
@@ -292,8 +293,8 @@ function renderShelfSheet() {
         <button type="button" class="opt2" data-shelf="${esc(r.id)}">${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>
         <button type="button" class="ic" data-up="${esc(r.id)}" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button>
         <button type="button" class="ic" data-down="${esc(r.id)}" data-i="${i}" aria-label="Move down" ${i < rows.length - 1 ? '' : 'disabled'}>▼</button>
-        <button type="button" class="ic" data-off="${esc(r.id)}" aria-label="Take off the shelf">✕</button></div>`).join('')
-    : '<p class="muted">None of your own posts are on the shelf. Hold a post in Write, or tap 📚 in the editor. Others\u2019 posts you shelve are under Read › Shelf.</p>';
+        <button type="button" class="ic" data-off="${esc(r.id)}" aria-label="Remove from Saved">✕</button></div>`).join('')
+    : '<p class="muted">None of your own posts are saved. Hold a post in Write, or tap 📚 Save in the editor. Others\u2019 posts you save are in Read, under Saved.</p>';
 }
 function openShelved(id) {
   closeSheet({ refocus: false });
@@ -333,6 +334,8 @@ function openReading(key, { keepOrder = false } = {}) {
   readKey = key;
   stepButtons();
   renderPost($('#p-postBody'), p);
+  // Your own posts are never unread: no ● Unread for them.
+  $('#v-post [data-pa="unread"]').hidden = !!p.own;
   shelfButton($('#p-shelfRA'), key); // --- shelf sync ---
   opened(key, $('#p-postBody')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#v-post .pscroll').scrollTop = 0;
@@ -448,7 +451,7 @@ export function initPhone() {
       hold.fired = true;
       const on = r.dataset.shelved !== 'true';
       const o = outcome(S.B.set_on_shelf(r.dataset.id, on));
-      if (o.action === 'nothing') { toast(on ? 'On your shelf 📚' : 'Taken off your shelf'); navigator.vibrate?.(10); touched(); }
+      if (o.action === 'nothing') { toast(on ? 'Saved 📚' : 'Removed from Saved'); navigator.vibrate?.(10); touched(); }
     }, 550) };
   });
   list.addEventListener('pointermove', (e) => { if (hold && Math.hypot(e.clientX - hold.at.x, e.clientY - hold.at.y) > 8) clearTimeout(hold.t); });
@@ -528,7 +531,7 @@ export function initPhone() {
     if (b.dataset.shelf) { openShelved(b.dataset.shelf); return; }
     if (b.dataset.up) S.B.move_on_shelf(b.dataset.up, +b.dataset.i - 1);
     else if (b.dataset.down) S.B.move_on_shelf(b.dataset.down, +b.dataset.i + 1);
-    else if (b.dataset.off) { outcome(S.B.set_on_shelf(b.dataset.off, false)); toast('Taken off your shelf'); }
+    else if (b.dataset.off) { outcome(S.B.set_on_shelf(b.dataset.off, false)); toast('Removed from Saved'); }
     touched();
     renderShelfSheet();
   });

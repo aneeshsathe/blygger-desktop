@@ -21,6 +21,10 @@
 # keeps the one there), two `wrangler dev --local` studios through
 # scripts/e2e-wrangler.sh, dev-proxy.py in front of `a`, and only the PIDs
 # started here are stopped. Re-run it after fixes and compare the shots.
+#
+# A third studio, `m`, runs path-mounted (MOUNT=/notes, as a blyg on a
+# shared domain is), behind its own dev-proxy serving the app at
+# /notes/burrow/: the "mount" personas sign in, seed and use it there.
 set -euo pipefail
 
 die() { printf 'web-ux-pass: %s\n' "$*" >&2; exit 1; }
@@ -37,9 +41,12 @@ CTL="$ROOT/scripts/e2e-wrangler.sh"
 BLYG_E2E_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/burrow-web-ux.XXXXXX")"
 export BLYG_E2E_SCRATCH
 PROXY_PID=""
+PROXY_M_PID=""
+MOUNT=/notes
 
 cleanup() {
   [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null || true
+  [ -n "$PROXY_M_PID" ] && kill "$PROXY_M_PID" 2>/dev/null || true
   "$CTL" stop-all || true
   if [ -z "${BLYG_E2E_KEEP:-}" ]; then
     rm -rf "$BLYG_E2E_SCRATCH"
@@ -65,8 +72,10 @@ PORT_A="$("$CTL" free-port)"
 PORT_B="$("$CTL" free-port)"
 [ "$PORT_A" != "$PORT_B" ] || PORT_B="$("$CTL" free-port)"
 printf 'web-ux-pass: starting the studio on :%s and :%s…\n' "$PORT_A" "$PORT_B" >&2
+PORT_M="$("$CTL" free-port)"
 "$CTL" start a "$PORT_A"
 "$CTL" start b "$PORT_B"
+"$CTL" start m "$PORT_M" "MOUNT=$MOUNT"
 umask 077
 "$CTL" mint-token "$PORT_A" >"$BLYG_E2E_SCRATCH/token-a"
 "$CTL" mint-token "$PORT_B" >"$BLYG_E2E_SCRATCH/token-b"
@@ -83,7 +92,18 @@ for _ in $(seq 100); do
   sleep 0.1
 done
 
+PORT_PM="$("$CTL" free-port)"
+python3 "$ROOT/crates/blyg-web/dev-proxy.py" --port "$PORT_PM" --upstream "127.0.0.1:$PORT_M" --mount "$MOUNT" \
+  >"$BLYG_E2E_SCRATCH/proxy-m.log" 2>&1 &
+PROXY_M_PID=$!
+for _ in $(seq 100); do
+  curl -fsS -o /dev/null "http://localhost:$PORT_PM$MOUNT/burrow/" 2>/dev/null && break
+  kill -0 "$PROXY_M_PID" 2>/dev/null || { cat "$BLYG_E2E_SCRATCH/proxy-m.log" >&2; die "dev-proxy (mount) exited"; }
+  sleep 0.1
+done
+
 LIVE_ORIGIN="http://localhost:$PORT_P" \
+LIVE_ORIGIN_M="http://localhost:$PORT_PM" LIVE_MOUNT="$MOUNT" \
 LIVE_URL_A="http://127.0.0.1:$PORT_A" LIVE_URL_B="http://127.0.0.1:$PORT_B" \
 LIVE_TOKEN_A_FILE="$BLYG_E2E_SCRATCH/token-a" LIVE_TOKEN_B_FILE="$BLYG_E2E_SCRATCH/token-b" \
 LIVE_PASSWORD_FILE="$BLYG_E2E_SCRATCH/password" PLAYWRIGHT_DIR="$PW" UX_SHOTS="$UX_SHOTS" \

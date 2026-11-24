@@ -796,9 +796,13 @@ impl Burrow {
         json(&Value::Object(out))
     }
 
-    /// Whether to ask `GET /api/changes` before this refresh: not for
-    /// `CHANGES_RECHECK` after it answered 404 (contract 6 has none).
+    /// Whether to ask `GET /api/changes` before this refresh: not where
+    /// the capabilities, once read, don't list it (contract 6 has none),
+    /// and not for `CHANGES_RECHECK` after it answered 404.
     pub fn changes_due(&self, now_ms: f64) -> bool {
+        if self.wr_ops_known() && !self.can(crate::parity::CHANGES_OPERATION) {
+            return false;
+        }
         self.cond.changes_due(now_ms)
     }
 

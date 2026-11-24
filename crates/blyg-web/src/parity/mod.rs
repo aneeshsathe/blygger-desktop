@@ -36,6 +36,9 @@ pub const STALE_OPERATION: &str = "listStaleThreads";
 pub const REFRESH_OPERATION: &str = "refreshItem";
 /// Probe one thread's quotes at their blygs (`updates.rs`).
 pub const FRESHNESS_OPERATION: &str = "getItemFreshness";
+/// `GET /api/changes`, the change counters (contracts before 6): asked only
+/// where the capabilities list it (`live.rs` `changes_due`).
+pub const CHANGES_OPERATION: &str = "getChanges";
 
 /// The operations the web gates a feature on that `answer` (`GET
 /// /api/capabilities`) lists: each asked of it by name with `offers`, so
@@ -52,6 +55,7 @@ pub(crate) fn offered(answer: &Value) -> HashSet<&'static str> {
     ask(STALE_OPERATION, offers(answer, STALE_OPERATION));
     ask(REFRESH_OPERATION, offers(answer, REFRESH_OPERATION));
     ask(FRESHNESS_OPERATION, offers(answer, FRESHNESS_OPERATION));
+    ask(CHANGES_OPERATION, offers(answer, CHANGES_OPERATION));
     ask(
         blyg_core::shelf::GET_OPERATION,
         offers(answer, blyg_core::shelf::GET_OPERATION),

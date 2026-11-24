@@ -102,7 +102,11 @@ if [[ "${WASM_OPT:-0}" == 1 ]]; then
     -o "$DIST/pkg/blyg_web_bg.wasm" "$DIST/pkg/blyg_web_bg.wasm"
 fi
 cp "$HERE"/www/* "$DIST/"
-cp "$ROOT"/docs/prototype/*.woff "$DIST/fonts/"
+# ET Book as the desktop app bundles it: its › and ‹ are real guillemets
+# (the faces in docs/prototype draw them as the ffl and ffi ligatures).
+cp "$ROOT"/crates/blyg-app/assets/fonts/et-book/et-book-roman-line-figures.ttf \
+  "$ROOT"/crates/blyg-app/assets/fonts/et-book/et-book-bold-line-figures.ttf \
+  "$ROOT"/crates/blyg-app/assets/fonts/et-book/et-book-display-italic-old-style-figures.ttf "$DIST/fonts/"
 
 # Icons for the installed app (the repo's app icon). The home-screen icon
 # on iOS is the tile alone, full bleed; iOS rounds it itself.

@@ -181,8 +181,34 @@ struct Args {
     via: String,
 }
 
+/// What the Agentic feed says before its first edition, here: what it is,
+/// what writes one, and where that's coming from.
+pub const AGENTIC_EMPTY: &str = "No edition yet. The Agentic feed is a digest of your \
+     reading, in sections, that an assistant writes on your blyg; each edition shows here. \
+     Nothing has written one yet: Burrow on the desktop can write editions for you (its \
+     setting comes in Burrow 0.29), and an outside assistant you've given a token can \
+     write one now.";
+
 fn args(s: &str) -> Args {
-    serde_json::from_str(s).unwrap_or_default()
+    let mut a: Args = serde_json::from_str(s).unwrap_or_default();
+    a.url = with_scheme(&a.url);
+    a
+}
+
+/// An address as people type it ("blyg.example.com", "localhost:8787/t/x")
+/// with `https://` put in front; one that names its scheme, or words that
+/// can't be a host, as typed (trimmed).
+pub(crate) fn with_scheme(url: &str) -> String {
+    let url = url.trim();
+    let host = url.split(['/', '?', '#']).next().unwrap_or("");
+    let bare = !url.contains("://")
+        && !url.chars().any(char::is_whitespace)
+        && (host.contains('.') || host.starts_with("localhost"));
+    if bare {
+        format!("https://{url}")
+    } else {
+        url.to_string()
+    }
 }
 
 fn toast(message: impl Into<String>) -> String {
@@ -599,7 +625,10 @@ impl Burrow {
         if self.wr.source == Source::default() && self.wr.lens.is_none() {
             return None;
         }
-        let base = svm::empty_label(&self.wr.source);
+        let base = match self.wr.source {
+            Source::Smart(Smart::Agentic) => AGENTIC_EMPTY,
+            ref s => svm::empty_label(s),
+        };
         Some(match self.wr.lens {
             None => base.into(),
             Some(Kind::Thread) => format!("No threads here. {base}"),

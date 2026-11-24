@@ -159,19 +159,19 @@ export function shake(el) {
 }
 /** Show what an `Outcome` from Rust says; returns it parsed. */
 // --- shelf sync --- where the shelf lives, for its sheet (src/shelf.rs).
-/** A line for the shelf's sheet: synced, waiting, or this browser's. */
+/** A line for Saved's sheet: synced, waiting, or this browser's. */
 export function shelfNote() {
   const s = S.B?.shelf_state?.();
   if (!S.live) return '';
   return s === 'synced' ? 'Synced with your blyg.'
     : s === 'waiting' ? 'Changed here · syncing with your blyg…'
-    : 'In this browser only: your blyg doesn’t keep a shelf.';
+    : 'In this browser only: your blyg doesn’t keep Saved.';
 }
-/** "+ Add to shelf" on a reading post: its label and pressed state. */
+/** "+ Save" on a reading post: its label and pressed state. */
 export function shelfButton(btn, key) {
   if (!btn || !key) return;
   const on = !!S.B.reading_shelved(key);
-  btn.textContent = on ? '− Remove from shelf' : '+ Add to shelf';
+  btn.textContent = on ? '✓ Saved' : '+ Save';
   btn.setAttribute('aria-pressed', String(on));
 }
 // --- end shelf sync ---
@@ -321,6 +321,17 @@ export const BAR_PAGES = [
 BAR_PAGES[2].tools[3] = ['upload', '🖼', 'Image: upload one, with alt text'];
 BAR_PAGES[3].tools.unshift(['more', '⋯ Post', 'This post: image, versions, TK, withdraw'], ['gen', '✦ Write TK', 'Generate the TK text on your blyg']);
 // --- end web-writing ---
+
+/** Publish in the editor bar says when there's nothing new to publish (a
+    published post without edits): dimmed, with why in its tooltip. */
+export function publishState(bar, c) {
+  const b = bar?.querySelector('[data-tool="publish"]');
+  if (!b) return;
+  const done = !!c && c.published && !c.has_edits;
+  b.classList.toggle('idle', done);
+  b.setAttribute('aria-disabled', String(done));
+  b.title = done ? `${c.version}: nothing new to publish` : 'Publish';
+}
 
 /** Build the bar into `host`. `act(name)` runs a tool; returns the bar. */
 export function editorBar(host, act) {
@@ -536,6 +547,8 @@ export function swipeCards(list, { onRight, onTap }) {
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.axis && Math.hypot(dx, dy) > 8) d.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
     if (d.axis !== 'x') return;
+    // Your own posts are never read or unread: no swipe to mark them.
+    if (dx > 0 && d.base === 0 && d.c.classList.contains('own')) return;
     d.dx = dx;
     d.c.classList.add('dragging');
     try { d.c.setPointerCapture(d.id); } catch {}
@@ -570,6 +583,17 @@ export function swipeCards(list, { onRight, onTap }) {
     closeAll();
     onTap(c.dataset.key);
   });
+  // From the keyboard: ⏎ or space opens the focused card, ↑↓ move between cards.
+  list.addEventListener('keydown', (e) => {
+    const c = e.target.closest?.('.card');
+    if (!c || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(c.dataset.key); c.focus({ preventScroll: true }); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const cards = $$('.card', list);
+      const n = cards[cards.indexOf(c) + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (n) { e.preventDefault(); n.focus(); n.scrollIntoView({ block: 'nearest' }); }
+    }
+  });
   return { closeAll };
 }
 
@@ -585,9 +609,9 @@ export function settle(c) {
     Quote / Reply / Hopper actions under its right. */
 export function cardHtml(r) {
   return `<div class="swipewrap">
-    <div class="bgL" aria-hidden="true">✓ Read</div>
+    ${r.own ? '' : '<div class="bgL" aria-hidden="true">✓ Read</div>'}
     <div class="acts" aria-label="Actions"><button type="button" data-act="quote" data-key="${esc(r.key)}">❝<small>Quote</small></button><button type="button" data-act="reply" data-key="${esc(r.key)}">↩<small>Reply</small></button><button type="button" data-act="hopper" data-key="${esc(r.key)}">⊕<small>Hopper</small></button></div>
-    <div class="card${r.unread ? ' unread' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-label="${esc(r.who)}: ${esc(r.title)}">
+    <div class="card${r.unread ? ' unread' : ''}${r.own ? ' own' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-label="${esc(r.who)}: ${esc(r.title)}">
       <div class="who">${r.unread ? '<span class="dot" aria-label="unread"></span>' : ''}<b>${esc(r.who)}</b> <span>${esc(r.host)} · ${esc(r.when)}</span>${r.glyph ? `<span class="glyph">${esc(r.glyph)}</span>` : ''}${r.badge && r.badge !== 'new' ? `<span class="badge">${esc(r.badge)}</span>` : ''}${(r.why || []).map((w) => `<span class="badge why">${esc(w)}</span>`).join('')}</div>
       <div class="ex"><i>${esc(r.title)}</i>${r.excerpt ? ' ' + esc(r.excerpt) : ''}</div>
       ${r.hoppers.length ? `<div class="hop">⊕ ${r.hoppers.map(esc).join(', ')}</div>` : ''}

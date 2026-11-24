@@ -2,21 +2,25 @@
 //! compiles unchanged (`vm.rs`, `reading/vm.rs`): app text written in macOS
 //! terms, read with [`Text::get`].
 //!
-//! The browser has one spelling, the Mac's (the page takes ⌃ for ⌘ too),
-//! so outside tests [`Platform::spelling`] is always [`Platform::Mac`].
-//! Windows' spelling is here only so the shared view-models' own tests,
-//! which pin both platforms' wording (`spelled_as`), run in this crate as
-//! they do in blyg-app.
+//! The browser has one spelling of its own, [`Platform::Browser`]: the
+//! Mac's glyphs with ⌃ where the Mac says ⌘, since the browser keeps ⌘N,
+//! ⌘T and ⌘L and the page binds ⌃ (it takes ⌘ too where it can). Outside
+//! tests [`Platform::spelling`] is always [`Platform::Browser`]. The Mac's
+//! and Windows' spellings are here so the shared view-models' own tests,
+//! which pin both platforms' wording (`spelled_as`, the Mac's by default),
+//! run in this crate as they do in blyg-app.
 
 /// The platform whose wording the text uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     Mac,
     Windows,
+    /// The page's own: ⌃ for ⌘ (`keymap::hint`).
+    Browser,
 }
 
 impl Platform {
-    /// The spelling the text uses: the Mac's, in a browser on any system.
+    /// The spelling the text uses: the browser's, on any system.
     #[inline]
     pub fn spelling() -> Platform {
         #[cfg(test)]
@@ -25,7 +29,7 @@ impl Platform {
         }
         #[cfg(not(test))]
         {
-            Platform::Mac
+            Platform::Browser
         }
     }
 }
@@ -95,7 +99,7 @@ impl Text {
     /// The text as written for `p`, before respelling.
     pub fn source(self, p: Platform) -> &'static str {
         match p {
-            Platform::Mac => self.mac,
+            Platform::Mac | Platform::Browser => self.mac,
             Platform::Windows => self.windows.unwrap_or(self.mac),
         }
     }
@@ -106,9 +110,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_browser_spells_text_as_the_mac_does() {
+    fn the_browser_spells_text_with_the_keys_it_binds() {
         assert_eq!(Platform::spelling(), Platform::Mac);
         assert_eq!(ui_text("⌘⏎ publishes").get(), "⌘⏎ publishes");
+        assert_eq!(
+            spelled_as(Platform::Browser, || ui_text("⌘⏎ publishes").get()),
+            "⌃⏎ publishes"
+        );
         assert_eq!(
             spelled_as(Platform::Windows, || ui_text("⌘⏎ publishes").get()),
             "Ctrl+Enter publishes"

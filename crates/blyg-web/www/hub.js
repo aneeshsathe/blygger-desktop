@@ -12,6 +12,7 @@
 import { $, S, esc, draw, applyTheme } from './core.js';
 import { go } from './web-reading.js';
 import * as Wr from './writing.js';
+import { KEYS } from './keys.js';
 
 const use = {}; // per layout: { shelf(), offline(), reset() }
 /** A layout hands over what is its own (the shelf sheet, the demo's switches). */
@@ -45,7 +46,7 @@ function html(V) {
       ${row('history', '⟲', 'History', 'The posts you peeked at')}
     </section>
     <section aria-labelledby="hub-h3"><h3 class="hub-h" id="hub-h3">Writing</h3>
-      ${row('shelf', '📚', 'Your shelf', 'Posts you keep at hand, in your order', desk ? '⌘B' : '')}
+      ${row('shelf', '📚', 'Saved', 'Posts you keep at hand, in your order', desk ? KEYS.saved : '')}
     </section>
     <section aria-labelledby="hub-h4"><h3 class="hub-h" id="hub-h4">Theme</h3>
       <div class="hub-themes" role="group" aria-label="Theme">${themes}</div>

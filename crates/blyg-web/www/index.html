@@ -43,6 +43,7 @@
 <link rel="modulepreload" href="web-reading.js">
 <link rel="modulepreload" href="writing.js">
 <link rel="modulepreload" href="hub.js">
+<link rel="modulepreload" href="keys.js">
 <link rel="modulepreload" href="parity.js">
 <link rel="modulepreload" href="env.js">
 </head>
@@ -102,9 +103,9 @@
           <button type="button" data-ra="unread" title="Mark unread">● Unread</button>
           <!-- web-writing --><button type="button" id="d-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
           <!-- The less common keepers, behind one button (as the desktop app). -->
-          <span class="ra-more"><button type="button" id="d-moreRA" aria-haspopup="menu" aria-expanded="false" aria-controls="d-moreMenu" title="Hopper, shelf, link">⋯ More</button><span class="ra-menu" id="d-moreMenu" role="menu" hidden>
+          <span class="ra-more"><button type="button" id="d-moreRA" aria-haspopup="menu" aria-expanded="false" aria-controls="d-moreMenu" title="Hopper, save, link">⋯ More</button><span class="ra-menu" id="d-moreMenu" role="menu" hidden>
             <button type="button" role="menuitem" data-ra="hopper" title="Put it in a hopper">⊕ Hopper</button>
-            <button type="button" role="menuitem" data-ra="shelf" id="d-shelfRA" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button>
+            <button type="button" role="menuitem" data-ra="shelf" id="d-shelfRA" aria-pressed="false" title="Keep it in Saved">+ Save</button>
             <button type="button" role="menuitem" data-ra="link" title="Copy a [[link]] to it">[[ Copy link</button>
           </span></span>
           <span class="flex"></span>
@@ -119,7 +120,7 @@
     </div>
     <div class="body bbody" id="bbody" hidden><div class="bscroll" id="d-hub"></div></div>
     <div class="sb" id="sb">
-      <button type="button" class="kind" id="kind" title="Fragment ⇄ thread (⌘T)"></button>
+      <button type="button" class="kind" id="kind" title="Fragment ⇄ thread (⌃T)"></button>
       <span class="cnt" id="cnt"></span>
       <span class="ban" id="ban"></span>
       <span class="sync" id="sync"><b></b><span></span></span>
@@ -131,17 +132,8 @@
     <div class="loading" id="loading">Loading Burrow…</div>
   </div>
 
-  <p class="keys">
-    <kbd>⏎</kbd> open or create · <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>esc</kbd> back to search ·
-    <kbd>⌘</kbd><kbd>N</kbd> new post · <kbd>⌘</kbd><kbd>L</kbd> search · <kbd>⌘</kbd><kbd>⏎</kbd> publish ·
-    <kbd>⌘</kbd><kbd>T</kbd> fragment ⇄ thread · <kbd>⌘</kbd><kbd>E</kbd> preview · <kbd>⌘</kbd><kbd>D</kbd> make draft ·
-    <kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd> delete draft · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>Z</kbd> discard changes ·
-    <kbd>⌘</kbd><kbd>K</kbd> link · <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> quote ·
-    <kbd>⌘</kbd><kbd>B</kbd> shelf · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> shelve or unshelve ·
-    <kbd>⌃</kbd><kbd>⇧</kbd><kbd>Y</kbd> versions ·
-    <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading · <kbd>⌃</kbd><kbd>3</kbd> Blyg ·
-    <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> mark all read (Reading) · <kbd>⌃</kbd><kbd>⌥</kbd><kbd>F</kbd> next filter (Posts)
-    <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
+  <p class="keys"><span id="keyhelp"></span>
+    <br><span class="note">Browsers keep Command-N, -T and -L for themselves, so the page uses <kbd>⌃</kbd> (<kbd>⌥</kbd> works too). <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
   </p>
 </main>
 </div>
@@ -153,7 +145,7 @@
     <div class="ptop"><h1 class="pt">Burrow</h1><span class="modebadge" id="p-mode"></span></div>
     <label class="psearch">⌕ <input id="p-q" type="search" placeholder="Search or start a post" autocomplete="off" enterkeyhint="go" aria-label="Search or start a post"></label>
     <div class="pscroll" id="p-writeScroll">
-      <div class="plbl">📚 Shelf</div>
+      <div class="plbl">📚 Saved</div>
       <div class="shelfstrip" id="p-shelf"></div>
       <div class="plbl">Posts</div>
       <!-- web-parity --><div class="pfilter" id="p-pfilter" role="group" aria-label="Show" hidden></div><!-- end web-parity -->
@@ -163,7 +155,7 @@
 
   <!-- EDITOR -->
   <section class="pview off-r" id="v-edit" aria-label="Editor">
-    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><button type="button" class="ic lbl" id="p-shelfBtn" aria-pressed="false" title="Shelve or unshelve"><span aria-hidden="true">📚</span> Shelf</button><button type="button" class="ic lbl" id="p-prevBtn" aria-pressed="false" title="Preview"><span aria-hidden="true">👁</span> Preview</button><!-- web-writing --><button type="button" class="ic lbl" id="p-wmenu" title="This post: image, TK, versions, withdraw, discard, delete"><span aria-hidden="true">⋯</span> Post</button><!-- end web-writing --></div>
+    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><button type="button" class="ic lbl" id="p-shelfBtn" aria-pressed="false" title="Save or unsave"><span aria-hidden="true">📚</span> Save</button><button type="button" class="ic lbl" id="p-prevBtn" aria-pressed="false" title="Preview"><span aria-hidden="true">👁</span> Preview</button><!-- web-writing --><button type="button" class="ic lbl" id="p-wmenu" title="This post: image, TK, versions, withdraw, discard, delete"><span aria-hidden="true">⋯</span> Post</button><!-- end web-writing --></div>
     <div class="stubof" id="p-stubof" hidden></div>
     <div class="conflict" id="p-conflict" role="alert" hidden></div>
     <div class="ped">
@@ -190,10 +182,10 @@
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
       <button type="button" class="ic step" id="p-prevPost" aria-label="Previous post" title="Previous post (or swipe right)">‹</button><button type="button" class="ic step" id="p-nextPost" aria-label="Next post" title="Next post (or swipe left)">›</button><button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
     <div class="pstrip" id="p-pacts" role="toolbar" aria-label="This post">
-      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing --><button type="button" id="p-moreBtn" aria-expanded="false" aria-controls="p-pmore" title="Hopper, shelf, link">⋯ More</button>
+      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing --><button type="button" id="p-moreBtn" aria-expanded="false" aria-controls="p-pmore" title="Hopper, save, link">⋯ More</button>
     </div>
     <!-- The less common keepers: a second row under "⋯ More" (as the desktop app's menu). -->
-    <div class="pstrip pmore" id="p-pmore" role="group" aria-label="More for this post" hidden><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button></div>
+    <div class="pstrip pmore" id="p-pmore" role="group" aria-label="More for this post" hidden><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it in Saved">+ Save</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button></div>
     <div class="pscroll"><article class="post" id="p-postBody"></article></div>
     <div class="pmenu" id="p-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
   </section>
@@ -207,7 +199,7 @@
   <nav class="tabs" id="p-tabs" aria-label="Sections">
     <button type="button" class="tab on" data-tab="write"><span aria-hidden="true">✎</span>Write</button>
     <button type="button" class="tab" data-tab="read"><span aria-hidden="true">❦</span>Read <b class="tabn" id="p-tabn"></b></button>
-    <button type="button" class="tab" data-tab="shelf"><span aria-hidden="true">📚</span>Shelf</button>
+    <button type="button" class="tab" data-tab="shelf"><span aria-hidden="true">📚</span>Saved</button>
     <button type="button" class="tab" data-tab="blyg"><span aria-hidden="true">⚙</span>Blyg</button>
   </nav>
   <button type="button" class="fab" id="p-fab" aria-label="Quick capture" title="Quick capture">＋</button>
@@ -222,7 +214,7 @@
   <div class="psheet" id="sh-pub" role="dialog" aria-label="Publish"><div class="grab"></div><h4 id="p-pubH">Publish</h4>
     <textarea class="cap short" id="p-pubNote" placeholder="A note for this version (optional)"></textarea>
     <div class="row2"><span class="flex"></span><button type="button" id="p-pubCancel">Cancel</button><button type="button" class="pri" id="p-pubGo">Publish</button></div></div>
-  <div class="psheet" id="sh-shelf" role="dialog" aria-label="Your shelf"><div class="grab"></div><h4>📚 Your shelf</h4><p class="muted" id="p-shelfNote"></p><div class="pscroll sheetlist" id="p-shelfSheet"></div>
+  <div class="psheet" id="sh-shelf" role="dialog" aria-label="Saved"><div class="grab"></div><h4>📚 Saved</h4><p class="muted" id="p-shelfNote"></p><div class="pscroll sheetlist" id="p-shelfSheet"></div>
     <div class="row2"><span>▲▼ reorder · ✕ takes it off · 50 at most</span></div></div>
   <div class="psheet" id="sh-hop" role="dialog" aria-label="Hoppers"><div class="grab"></div><h4>⊕ Put it in a hopper</h4><div class="pscroll sheetlist" id="p-hopList"></div></div>
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>

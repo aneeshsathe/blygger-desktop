@@ -19,7 +19,7 @@
 
 #![forbid(unsafe_code)]
 
-use blyg_core::{Item, Kind, LocalId, Status, SyncStatus};
+use blyg_core::{FRAGMENT_LIMIT, Item, Kind, LocalId, Status, SyncStatus};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -93,7 +93,7 @@ pub mod fake {
 
 use store::WebStore;
 use studio::resolver::{StoreResolver, render_kind};
-use vm::{EnterAction, ListModel, PublishDecision};
+use vm::{EnterAction, ListModel, PublishDecision, SyncDot};
 
 /// The preview's own stylesheet when no blyg's is at hand. Copied from
 /// `crates/blyg-app/src/studio/style_cache.rs` (`BUILTIN_CSS`), which also
@@ -500,7 +500,7 @@ impl Burrow {
                 version: String::new(),
                 permalink: None,
                 status: "new",
-                new_post: Some(NEW_NOTE.into()),
+                new_post: Some(keymap::hint(NEW_NOTE).into()),
                 shelved: false,
                 stub_of: None,
                 conflict: None,
@@ -522,7 +522,7 @@ impl Burrow {
                     permalink: it.permalink.clone(),
                     status: status_name(it.status),
                     new_post: (self.new_post.is_some() && it.status == Status::Scratch)
-                        .then(|| NEW_NOTE.into()),
+                        .then(|| keymap::hint(NEW_NOTE).into()),
                     shelved: self.store.is_shelved(&it.local_id),
                     stub_of: self.stub_label(&it),
                     conflict: self.conflict_view(&it.local_id),
@@ -541,7 +541,7 @@ impl Burrow {
         } else {
             self.sync
         };
-        let (label, dot) = vm::sync_label(sync, self.publishing);
+        let (label, dot) = self.status_of_open(sync);
         let origin = self.origin_str();
         json(&View {
             title: vm::window_title(Some(&origin)),
@@ -567,6 +567,26 @@ impl Burrow {
             shelf_len,
             shelf: self.shelf_rows(now),
         })
+    }
+
+    /// The status bar's sync label and dot, for the open post: a scratch
+    /// note is never sent, so it's never "synced"; a conflict is a choice
+    /// to make, not a failure. Otherwise `vm::sync_label`.
+    fn status_of_open(&self, sync: SyncStatus) -> (String, SyncDot) {
+        let open = self.current_item();
+        if !self.publishing {
+            if open.as_ref().is_some_and(|i| i.conflict)
+                || (sync == SyncStatus::Error && !self.store.live.conflicts.is_empty())
+            {
+                return (CONFLICT_LABEL.into(), SyncDot::Amber);
+            }
+            if open.as_ref().is_some_and(|i| i.status == Status::Scratch)
+                && !matches!(sync, SyncStatus::Offline { .. })
+            {
+                return (SCRATCH_LABEL.into(), SyncDot::Grey);
+            }
+        }
+        vm::sync_label(sync, self.publishing)
     }
 
     /// The omnibar changed: filter live, the selection jumps to the first
@@ -758,7 +778,14 @@ impl Burrow {
                     .into(),
             });
         }
-        json(&match vm::publish_decision(&it) {
+        // A fragment over the limit shakes, scratch or not: publishing it
+        // would quietly make it a thread (the README's rule; ⌘T says so).
+        let decision = if it.over_limit() {
+            PublishDecision::Shake
+        } else {
+            vm::publish_decision(&it)
+        };
+        json(&match decision {
             PublishDecision::Shake => Outcome::Shake {
                 message: keymap::hint(
                     "Too long to publish as a fragment. Press ⌘T to make it a thread.",
@@ -822,11 +849,15 @@ impl Burrow {
                 message: why.into(),
             });
         }
-        self.store.promote(&it.local_id, &rfc(now_ms));
+        let kind = self.store.promote(&it.local_id, &rfc(now_ms));
         self.touched();
         self.keep_open(&it.local_id);
         json(&Outcome::Toast {
-            message: "Saved as a draft".into(),
+            message: if kind == Some(Kind::Thread) && it.kind == Kind::Fragment {
+                format!("Saved as a draft · now a thread: over {FRAGMENT_LIMIT} characters")
+            } else {
+                "Saved as a draft".into()
+            },
         })
     }
 
@@ -1008,6 +1039,10 @@ impl Burrow {
 }
 
 const NEW_NOTE: &str = "New note · saved in this browser · ⌘D draft · ⌘⏎ publish";
+/// The status bar on a scratch note: kept here, never sent.
+const SCRATCH_LABEL: &str = "on this device only";
+/// The status bar while the blyg holds a newer copy of a post you edited.
+const CONFLICT_LABEL: &str = "edited elsewhere · choose a copy";
 
 fn capitalise(s: &str) -> String {
     let mut c = s.chars();

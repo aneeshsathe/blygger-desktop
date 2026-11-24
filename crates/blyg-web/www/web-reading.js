@@ -159,10 +159,14 @@ function sourcesHtml(d, { manage = true } = {}) {
 }
 // --- reader order --- the Feed's order (src/web_feed.rs), where the list
 // follows it. Labels come from the Rust and are escaped all the same.
+// Where the list doesn't follow it, the control keeps its place, unseen,
+// so the sources under it don't jump as you change source.
 function orderHtml(o) {
-  if (!o || !o.shown) return '';
-  const b = (x) => `<button type="button" data-order="${esc(x.value)}" class="${x.on ? 'on' : ''}" aria-pressed="${!!x.on}">${esc(x.label)}</button>`;
-  return `<div class="wr-lens wr-order" role="group" aria-label="Feed order">${o.options.map(b).join('')}</div>`;
+  if (!o) return '';
+  const off = !o.shown;
+  const b = (x) => `<button type="button" data-order="${esc(x.value)}" class="${x.on ? 'on' : ''}" aria-pressed="${!!x.on}"${off ? ' tabindex="-1"' : ''}>${esc(x.label)}</button>`;
+  return `<div class="wr-orderbox${off ? ' unseen' : ''}"${off ? ' aria-hidden="true"' : ''}><div class="wr-lens wr-order" role="group" aria-label="Feed order">${o.options.map(b).join('')}</div>
+    ${o.note ? `<small class="wr-order-note">${esc(o.note)}</small>` : ''}</div>`;
 }
 async function chooseOrder(value) {
   const o = JSON.parse(S.B.wr_set_reader_order(value));
@@ -182,6 +186,7 @@ function markAllOffered() { return !(S.live && S.B.wr_ops_known() && !S.B.wr_can
 // --- end web-parity ---
 function chooseSource(key) {
   S.B.wr_set_source(key);
+  use[S.layout]?.sourceChanged?.(); // the reader pane follows the list
   if (key === 'mentions') ensure('lens').then(() => S.render());
   for (const s of ['#p-stream', '#d-stream']) { const el = $(s); if (el) el.scrollTop = 0; }
   S.render();
@@ -312,7 +317,7 @@ const SCREENS = {
     const radios = (which, legend) => `<fieldset class="wr-fs"><legend>${legend}</legend>${c.modes.map((m) => `<label class="wr-row wr-radio"><input type="radio" name="cl-${which}" data-cl="${which}" value="${m.value}" ${c[which] === m.value ? 'checked' : ''}><div class="wr-l"><b>${esc(m.label)}</b><small>${esc(m.hint)}</small></div></label>`).join('')}</fieldset>`;
     return `<label class="wr-row wr-radio"><input type="checkbox" data-site-pref ${siteOn() ? 'checked' : ''}>
         <div class="wr-l"><b>Open posts on the author's site</b><small>A post you open also opens its own page, as its author styled it, in a new tab. This browser only.</small></div></label>
-      ${c.served ? `${radios('reader', 'In your reader, show of a changelog')}${radios('page', 'On your post pages, show')}
+      ${c.served ? `${radios('reader', 'In your reader, show')}${radios('page', 'On your post pages, show')}
         <p class="wr-muted">Saved on your blyg. A summary is written from the notes by its change-notes model, labelled as AI, and only when you open a post.</p>`
         : !c.known && S.live ? loadingP : '<p class="wr-muted">Your blyg needs blygger-studio 0.58 or later to show more of a changelog.</p>'}
       ${bgRulesHtml()}`;
@@ -360,7 +365,7 @@ const SCREENS = {
     const p = screen.preview;
     return `<form class="wr-form" data-form="subscribe">
         <label class="wr-field">A blyg's or a feed's address
-          <input name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://blyg.example.com" autofocus value="${esc(screen.url ?? '')}"></label>
+          <input name="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="blyg.example.com" autofocus value="${esc(screen.url ?? '')}"></label>
         ${p ? `<div class="wr-card"><div class="wr-l"><b>${esc(p.title || p.origin || '')}</b>
             <small>${p.kind === 'rss' ? 'a feed' : p.kind === 'hopper' ? 'a hopper' : 'a blyg'}${p.origin ? ` · ${esc(p.origin)}` : ''}</small>
             ${p.feedUrl ? `<small class="wr-muted">${esc(p.feedUrl)}</small>` : ''}
@@ -420,7 +425,7 @@ const SCREENS = {
   'peek-url'() {
     return `<form class="wr-form" data-form="peek">
         <label class="wr-field">A post's address on its blyg
-          <input name="peekurl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://blyg.example.com/t/…" autofocus></label>
+          <input name="peekurl" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://blyg.example.com/t/…" autofocus></label>
         <div class="wr-acts"><button type="submit" class="wr-btn pri">Peek</button></div>
         <p class="wr-muted">Read a post from a blyg you don't follow, without subscribing. Links in posts you read open here too.</p>
       </form>`;

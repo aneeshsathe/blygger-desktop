@@ -165,9 +165,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .row2 .warn{color:var(--c-warn)}.row2 .over{color:var(--c-over);font-weight:600}
 .row2 button{border:1px solid var(--pline);background:var(--pbg);color:var(--pink);border-radius:10px;padding:0 .8rem;min-height:44px;font:.9rem var(--ui);cursor:pointer}
 .row2 button.pri{background:var(--pacc);border-color:var(--pacc);color:#fff}
-.ptoast{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 3.6rem);transform:translate(-50%,-8px);background:var(--pink);color:var(--pbg);font:.82rem/1.4 var(--ui);padding:.45rem .85rem;border-radius:16px;opacity:0;transition:.2s;z-index:80;max-width:calc(100% - 2rem);text-align:center;pointer-events:none}
+/* Phone toasts sit above the tab bar (or the editor bar), clear of the
+   search box and the first line you're writing. */
+.ptoast{position:absolute;left:50%;bottom:calc(var(--tabh) + 5.2rem);transform:translate(-50%,-8px);background:var(--pink);color:var(--pbg);font:.82rem/1.4 var(--ui);padding:.45rem .85rem;border-radius:16px;opacity:0;transition:.2s;z-index:80;max-width:calc(100% - 2rem);text-align:center;pointer-events:none}
 .ptoast.show{opacity:.95;transform:translate(-50%,0)}
 .ptoast small{opacity:.75}
+.ptoast a{color:inherit;text-decoration:underline}
+#phone[data-view="edit"] .ptoast,#phone[data-view="post"] .ptoast,#phone.kb .ptoast{bottom:calc(env(safe-area-inset-bottom) + 6.5rem)}
 .ploading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--pbg);color:var(--pmuted);font:italic 1.1rem var(--fbody);z-index:90;padding:2rem;text-align:center}
 .ploading.gone{display:none}
 .ploading.err{color:var(--c-over);font:.9rem var(--ui)}
@@ -194,3 +198,16 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @keyframes from-l{from{transform:translateX(-28px);opacity:.3}to{transform:none;opacity:1}}
 .post.from-r{animation:from-r .2s ease-out}.post.from-l{animation:from-l .2s ease-out}
 .ic.step{min-width:2.2rem;font-size:1.25rem;color:var(--pmuted)}.ic.step:disabled{opacity:.3}
+
+/* Tap targets of 44 px at least (the 0.29 pass measured the ones below):
+   the editor bar's page dots, the kind button, the post's ‹ ›, the
+   filter chips, the "Showing …" ✕, Publish, and the settings' radios. */
+#phone .edbar .pgdot{width:44px;height:44px;margin:-16px 0 -12px}
+#phone .edbar .pri{min-height:44px}
+#phone .edstat .kindbtn{min-height:44px;padding:0 .5rem 0 0}
+#phone .ic.step{min-width:44px}
+#phone .pfilter .pf{min-height:44px}
+#phone .wr-chip button{min-width:44px;min-height:44px}
+#phone .wr-row input[type=radio],#phone .wr-row input[type=checkbox]{width:22px;height:22px;flex:none}
+/* The filter chips scroll sideways: their right edge fades to say so. */
+#phone .pfilter{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 2rem),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 2rem),transparent);padding-right:2rem}

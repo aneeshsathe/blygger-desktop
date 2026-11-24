@@ -13,6 +13,9 @@ use wasm_bindgen::prelude::*;
 use crate::reading::vm as rvm;
 use crate::{Burrow, Outcome, at, json, rfc, vm};
 
+/// Your post's mark in Reading while its working copy isn't what's public.
+const UNPUBLISHED: &str = "unpublished edits";
+
 /// One reading row's key, `"subscription id|remote id"`.
 pub fn key_of(r: &ReadingItem) -> String {
     format!("{}|{}", r.subscription_id, r.remote_id)
@@ -44,6 +47,8 @@ struct ReadRow {
     /// --- contacts --- In the Mentions feed: why the row is there
     /// ("named you", "quoted you"…). Empty elsewhere.
     why: Vec<&'static str>,
+    /// Your own post: never read or unread, so no read controls.
+    own: bool,
 }
 
 #[derive(Serialize)]
@@ -75,6 +80,8 @@ struct ReadPost {
     unread: bool,
     /// A thread can take a quote; Quote opens a new thread either way.
     web_url: Option<String>,
+    /// Your own post: no ● Unread, no Background.
+    own: bool,
 }
 
 #[derive(Serialize)]
@@ -197,6 +204,17 @@ impl Burrow {
         self.list.set_query("", self.results(""));
         self.list.select(&id);
         self.touched();
+    }
+
+    /// A row of yours whose working copy has edits you haven't published:
+    /// its text is the working copy, so it's labelled as such (the
+    /// desktop's `vm::version_label`), never as the public version alone.
+    fn own_has_edits(&self, r: &ReadingItem) -> bool {
+        blyg_core::own::is_own_row(r)
+            && self.store.raw().iter().any(|i| {
+                i.server_id.as_ref().is_some_and(|s| *s.0 == *r.remote_id)
+                    && vm::has_unpublished_edits(i)
+            })
     }
 
     /// Live mode: the reading list in the one list order
@@ -353,7 +371,12 @@ impl Burrow {
                     host: rvm::host(&r.origin),
                     when: rvm::when_label(r, now),
                     unread: r.is_unread(),
-                    badge: rvm::badge(r),
+                    badge: if self.own_has_edits(r) {
+                        Some(UNPUBLISHED.into())
+                    } else {
+                        rvm::badge(r)
+                    },
+                    own: blyg_core::own::is_own_row(r),
                     excerpt: self.excerpt_of(r, &title),
                     title,
                     glyph: glyph(r),
@@ -454,11 +477,16 @@ impl Burrow {
             key: key.to_string(),
             title: rvm::post_title(&r),
             by: format!(
-                "{} · {} · {} · v{}",
+                "{} · {} · {} · v{}{}",
                 author(&r),
                 rvm::host(&r.origin),
                 rvm::when_label(&r, now),
-                r.version
+                r.version,
+                if self.own_has_edits(&r) {
+                    format!(" · {UNPUBLISHED}")
+                } else {
+                    String::new()
+                }
             ),
             html,
             lineage,
@@ -467,6 +495,7 @@ impl Burrow {
             kind: vm::kind_label(r.kind),
             unread: false,
             web_url: rvm::web_url(&r),
+            own: blyg_core::own::is_own_row(&r),
         })
     }
 
@@ -671,7 +700,7 @@ impl Burrow {
     pub fn toggle_shelf(&mut self) -> String {
         let Some(id) = self.current_id() else {
             return json(&Outcome::Toast {
-                message: "Open a post to shelve it".into(),
+                message: "Open a post to save it".into(),
             });
         };
         let on = !self.store.is_shelved(&id);
@@ -680,9 +709,9 @@ impl Burrow {
                 self.keep_open(&id);
                 json(&Outcome::Toast {
                     message: if on {
-                        "On your shelf 📚"
+                        "Saved 📚"
                     } else {
-                        "Taken off your shelf"
+                        "Removed from Saved"
                     }
                     .into(),
                 })

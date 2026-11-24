@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Serve Burrow's web build the way a blyg serves it, for development only.
 
-    python3 crates/blyg-web/dev-proxy.py [--port 8791] [--upstream 127.0.0.1:8790]
+    python3 crates/blyg-web/dev-proxy.py [--port 8791] [--upstream 127.0.0.1:8790] [--mount /notes]
 
-`dist/` is served at /burrow/; every other path (/api/*, /studio/*, the
-blyg's public pages) is forwarded to a LOCAL blyg Worker (`wrangler dev`,
+`dist/` is served at {mount}/burrow/ (/burrow/ at the root mount); every
+other path ({mount}/api/*, {mount}/studio/*, the blyg's public pages) is
+forwarded, as it is, to a LOCAL blyg Worker (`wrangler dev`,
 throwaway state) with the browser's own Host, Origin and Sec-Fetch-* headers,
 so the owner API's same-origin guard sees exactly what it would see on a real
 blyg: the page and the API share one origin, and a cross-origin request is
 still refused. Open http://localhost:<port>/burrow/ and sign in at
 http://localhost:<port>/studio/login.
+
+A path-mounted blyg (the studio's MOUNT, e.g. "/notes") serves its own
+paths under the mount; start its Worker with that MOUNT and pass the same
+--mount here.
 
 Never point this at a real blyg. It refuses any upstream that isn't a
 loopback address. It logs the method, path and status of each request,
@@ -30,6 +35,7 @@ import ipaddress
 import mimetypes
 import os
 import posixpath
+import re
 import socket
 import sys
 import urllib.parse
@@ -64,20 +70,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     gz = {}  # path -> (mtime, gzipped bytes)
     dist = os.path.join(HERE, "dist")
     upstream = ("127.0.0.1", 8790)
+    mount = ""
 
     def log_message(self, fmt, *args):  # method, path, status only
         sys.stderr.write("%s\n" % (fmt % args))
 
     def _any(self):
         path = urllib.parse.urlsplit(self.path).path
-        if path in ("/", "/burrow"):
+        app = self.mount + "/burrow/"
+        if path in ("/", self.mount, self.mount + "/", app[:-1]):
             self.send_response(302)
-            self.send_header("Location", "/burrow/")
+            self.send_header("Location", app)
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if path.startswith("/burrow/"):
-            self._static(path[len("/burrow/"):])
+        if path.startswith(app):
+            self._static(path[len(app):])
         else:
             self._forward()
 
@@ -174,14 +182,18 @@ def main():
     ap.add_argument("--port", type=int, default=8791)
     ap.add_argument("--upstream", default="127.0.0.1:8790")
     ap.add_argument("--dist", default=os.path.join(HERE, "dist"))
+    ap.add_argument("--mount", default="", help='the blyg\'s path mount, e.g. "/notes" (default: the root)')
     a = ap.parse_args()
+    if a.mount and not re.fullmatch(r"(/[A-Za-z0-9._~-]+)+", a.mount.rstrip("/")):
+        sys.exit("dev-proxy: --mount is a path like /notes")
+    Handler.mount = a.mount.rstrip("/")
     host, _, port = a.upstream.rpartition(":")
     if not loopback(host):
         sys.exit("dev-proxy: the upstream must be a local blyg (a loopback address), never a real one")
     Handler.upstream = (host, int(port))
     Handler.dist = a.dist
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
-    print(f"Burrow at http://localhost:{a.port}/burrow/ · local blyg at {a.upstream}", flush=True)
+    print(f"Burrow at http://localhost:{a.port}{Handler.mount}/burrow/ · local blyg at {a.upstream}", flush=True)
     srv.serve_forever()
 
 

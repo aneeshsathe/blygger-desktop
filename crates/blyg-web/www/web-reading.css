@@ -110,10 +110,10 @@ a[data-wr-id] { text-decoration-style: dashed; }
   .wr-src { min-height: 44px; padding: 6px 4px; font-size: 1rem; }
   .wr-sources.in-sheet .wr-h { padding-left: 4px; }
   .wr-lens { margin: 10px 0 4px; }
-  .wr-lens button { min-height: 36px; font-size: .9rem; }
+  .wr-lens button { min-height: 44px; font-size: .9rem; }
   .wr-more { padding: 0; }
   .wr-more button { min-height: 44px; font-size: 1rem; padding: 6px 4px; }
-  .wr-btn { min-height: 40px; font-size: .9rem; }
+  .wr-btn { min-height: 44px; min-width: 44px; font-size: .9rem; }
   .wr-row small, .wr-card small { font-size: .82rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -138,3 +138,24 @@ a[data-wr-id] { text-decoration-style: dashed; }
 .wr-token{border-color:var(--c-accent)}
 .wr-tok{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,"SF Mono",Menlo,monospace;word-break:break-all;margin:.5rem 0;padding:.5rem;border:1px solid var(--c-line);border-radius:6px;background:transparent;color:inherit;resize:none}
 /* --- end web-parity --- */
+
+/* Posts' tables and code, in both layouts: a table keeps its columns apart
+   (rules and padding) and scrolls sideways inside the post when wider than
+   it; a wide code block scrolls with a bar you can see (headless and touch
+   browsers hide overlay bars, so the end of a line read as cut off). */
+.item-content table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto;
+  margin: 0 0 .85em; font: .86em/1.45 var(--fui, system-ui, sans-serif); }
+.item-content th, .item-content td { padding: .35em .7em; border-bottom: 1px solid var(--c-line, #ebe6d6);
+  text-align: left; vertical-align: top; }
+.item-content th { font-weight: 600; border-bottom-width: 2px; }
+.item-content tr:last-child td { border-bottom: 0; }
+.item-content pre { overflow-x: auto; max-width: 100%; padding: .6em .75em; border-radius: 6px;
+  background: color-mix(in srgb, var(--c-ink, #111) 5%, transparent); scrollbar-width: thin;
+  scrollbar-color: var(--c-muted, #8a867c) transparent; }
+.item-content pre::-webkit-scrollbar { height: 8px; }
+.item-content pre::-webkit-scrollbar-thumb { background: var(--c-muted, #8a867c); border-radius: 4px; }
+.item-content pre::-webkit-scrollbar-track { background: transparent; }
+
+/* The Feed's order: what it does under it, and its place kept when hidden. */
+.wr-orderbox.unseen { visibility: hidden; }
+.wr-order-note { display: block; margin: 0 12px 4px; color: var(--c-muted); font: 11px/1.35 Inter, system-ui, sans-serif; }

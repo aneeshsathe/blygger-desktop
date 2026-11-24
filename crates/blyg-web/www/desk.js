@@ -8,7 +8,7 @@ import {
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, swipePosts, arrive, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
-  shelfNote, shelfButton,
+  shelfNote, shelfButton, publishState,
 } from './core.js';
 // --- web-reading ---
 import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
@@ -17,6 +17,7 @@ import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { KEYS, capsOf, helpHtml } from './keys.js';
 import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
@@ -46,7 +47,7 @@ export function render({ loadEditor = false } = {}) {
   // --- end web-parity ---
   list.innerHTML = V.rows.length
     ? V.rows.map((r, i) => `<div class="row${r.selected ? ' sel' : ''}${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" role="option" aria-selected="${r.selected}" data-id="${esc(r.id)}">
-        ${r.shelved ? '<span class="shelfmark" title="On your shelf">📚</span>' : ''}<span class="ti">${r.title_html}</span>
+        ${r.shelved ? '<span class="shelfmark" title="Saved">📚</span>' : ''}<span class="ti">${r.title_html}</span>
         <span class="meta">${r.dot ? `<span class="dot" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}${esc(r.kind)}
         <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span><span>${esc(r.when)}</span></span></div>`).join('')
     : !V.query.trim() && pf.on !== 'all' ? `<div class="empty">${esc(pf.empty)} ⌃⌥F shows the next filter.</div>` // --- web-parity ---
@@ -95,6 +96,7 @@ export function render({ loadEditor = false } = {}) {
   sy.querySelector('span').textContent = V.sync;
   $('#ver').textContent = c ? `${c.shelved ? '📚 ' : ''}${c.version}` : '';
   postActions(c);
+  publishState($('#d-bar'), c);
   if (previewing) schedulePreview();
   renderReading();
   if (view === 'blyg') drawHub($('#d-hub'), V);
@@ -110,15 +112,15 @@ function postActions(c) {
     `<button type="button" data-pa="${act}" title="${esc(title)}"${pressed !== undefined ? ` aria-pressed="${pressed}"` : ''}${on === false ? ' disabled' : ''}>${label}</button>`;
   const real = c && c.status !== 'new';
   const html = !c ? '' : [
-    b('shelf', c.shelved ? '📚 Shelved' : '📚 Shelve', 'Shelve or unshelve (⌥⌘B)', { pressed: c.shelved, on: real }),
-    b('preview', '👁 Preview', 'Preview beside the editor (⌘E)', { pressed: previewing }),
+    b('shelf', c.shelved ? '📚 Saved' : '📚 Save', `Save or unsave (${KEYS.save})`, { pressed: c.shelved, on: real }),
+    b('preview', '👁 Preview', `Preview beside the editor (${KEYS.preview})`, { pressed: previewing }),
     b('image', '🖼 Image', 'Add an image, with alt text', { on: real }),
     b('gen', '✦ Write TK', 'Have your blyg write this post’s [TK] scopes', { on: real }),
-    c.status === 'scratch' ? b('draft', '✎ Make draft', 'Keep this note as a draft (⌘D)') : '',
-    c.published ? b('history', '⟲ Versions', 'Versions: view, diff, restore, pin (⌃⇧Y)') : '',
-    c.has_edits ? b('discard', '↺ Discard changes', `Back to the published version (⌥⌘Z)`) : '',
+    c.status === 'scratch' ? b('draft', '✎ Make draft', `Keep this note as a draft (${KEYS.draft})`) : '',
+    c.published ? b('history', '⟲ Versions', `Versions: view, diff, restore, pin (${KEYS.versions})`) : '',
+    c.has_edits ? b('discard', '↺ Discard changes', `Back to the published version (${KEYS.discard})`) : '',
     c.status === 'public' ? b('withdraw', '⊘ Withdraw…', 'Take it back from your blyg (confirmed)') : '',
-    real && !c.published ? b('delete', c.status === 'scratch' ? '✕ Delete note…' : '✕ Delete draft…', 'Gone for good, after a confirmation (⇧⌘⌫)') : '',
+    real && !c.published ? b('delete', c.status === 'scratch' ? '✕ Delete note…' : '✕ Delete draft…', `Gone for good, after a confirmation (${KEYS.del})`) : '',
   ].join('');
   host.hidden = !html;
   draw(host, html);
@@ -183,8 +185,10 @@ function togglePreview() {
 }
 
 // ---------------------------------------------------------------- hud / sheet
-function hud(keys) {
-  const h = $('#hud'); h.innerHTML = keys.map((k) => `<kbd>${k}</kbd>`).join('');
+/** Show the keys just pressed: a chord from keys.js (`KEYS.publish`), or
+    a single key (`'esc'`, `'↓'`). */
+function hud(chord) {
+  const h = $('#hud'); h.innerHTML = capsOf(chord).map((k) => `<kbd>${esc(k)}</kbd>`).join('');
   const c = h.innerHTML; setTimeout(() => { if (h.innerHTML === c) h.innerHTML = ''; }, 1100);
 }
 let sheetOpen = null; // { onEnter, back }
@@ -218,7 +222,7 @@ function toggleKind() {
 }
 function toggleShelf() {
   const o = outcome(S.B.toggle_shelf());
-  if (/shelf/.test(o.message || '')) touched();
+  if (/Saved/.test(o.message || '')) touched();
 }
 function askPublish() {
   const o = outcome(S.B.publish_check(), shakeEl());
@@ -260,12 +264,12 @@ function askDiscard() {
 }
 function makeDraft() {
   const o = outcome(S.B.make_draft(now()), shakeEl());
-  if (o.message === 'Saved as a draft') touched();
+  if (o.message?.startsWith('Saved as a draft')) touched();
 }
 function openPermalink() {
   const c = V.current;
   toast(c?.permalink
-    ? `On a real blyg, ⌘O opens ${esc(c.permalink.replace(/^https?:\/\//, ''))}. This one is pretend.`
+    ? `On a real blyg, ${KEYS.open} opens ${esc(c.permalink.replace(/^https?:\/\//, ''))}. This one is pretend.`
     : 'Not published yet');
 }
 /** ⌘K / ⇧⌘K: pick a post to link or quote at the caret. */
@@ -287,13 +291,13 @@ function askPick(quote) {
     if (insertPick(ed, b.dataset.pick, b.dataset.label, quote)) toast(quote ? 'Quoted · it shows in the preview' : 'Linked');
   }
 }
-/** ⌘B: the shelf, in order. */
+/** ⌃B: Saved (your posts), in order. */
 function askShelf() {
   const rows = V.shelf;
   const note = shelfNote();
-  openSheet(`<h4>📚 Your shelf</h4>${note ? `<p class="muted">${esc(note)}</p>` : ''}${rows.length
+  openSheet(`<h4>📚 Saved</h4>${note ? `<p class="muted">${esc(note)}</p>` : ''}${rows.length
     ? `<div class="picks">${rows.map((r, i) => `<button type="button" class="opt2" data-shelf="${esc(r.id)}"><span class="n">${i + 1}</span> ${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>`).join('')}</div>`
-    : '<p>None of your own posts are on the shelf. ⌥⌘B shelves the open post. Others\u2019 posts you shelve are under Reading › Shelf.</p>'}
+    : `<p>None of your own posts are saved. ${KEYS.save} saves the open post. Others\u2019 posts you save are in Reading, under Saved.</p>`}
     <div class="sk"><span><kbd>⏎</kbd> the first</span><span><kbd>esc</kbd> close</span></div>`,
   () => { const b = $('#sheet [data-shelf]'); if (b) openShelved(b.dataset.shelf); });
   $('#sheet').onclick = (e) => { const b = e.target.closest('[data-shelf]'); if (b) openShelved(b.dataset.shelf); };
@@ -312,7 +316,7 @@ function setView(v) {
   $('#rbody').hidden = v !== 'reading';
   $('#bbody').hidden = v !== 'blyg';
   $('#sb').style.visibility = v === 'posts' ? '' : 'hidden';
-  omni.placeholder = v === 'posts' ? 'Search or start writing…' : v === 'reading' ? 'Search what you read…' : 'Search your posts…';
+  omni.placeholder = v === 'posts' ? 'Search or start writing…' : v === 'reading' ? 'Search what you read… · ↑↓ step through posts · Tab to the list' : 'Search your posts…';
   omni.value = v === 'posts' ? V?.query ?? '' : v === 'reading' ? rq : '';
   render();
 }
@@ -347,6 +351,8 @@ function openReading(key, { keepOrder = false } = {}) {
   if (!p) return;
   rcur = key;
   renderPost($('#d-post'), p);
+  // Your own posts are never unread: no ● Unread for them.
+  $('#d-ractions [data-ra="unread"]').hidden = !!p.own;
   opened(key, $('#d-post')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#d-ractions').hidden = false;
   shelfButton($('#d-shelfRA'), key); // --- shelf sync ---
@@ -393,7 +399,16 @@ function readAction(a, key = rcur, passage = '') {
 
 // ---------------------------------------------------------------- events
 export function initDesk() {
-  wrUse('desk', { openReading: (k) => { setView('reading'); openReading(k); } }); // --- web-reading --- --- end web-reading ---
+  $('#keyhelp').innerHTML = helpHtml(); // keys.js: one table for every hint
+  wrUse('desk', {
+    openReading: (k) => { setView('reading'); openReading(k); },
+    // A new source: the pane no longer shows a post the list doesn't hold.
+    sourceChanged: () => {
+      rcur = null;
+      $('#d-post').innerHTML = '<p class="muted">Pick a post to read it.</p>';
+      $('#d-ractions').hidden = true;
+    },
+  }); // --- web-reading --- --- end web-reading ---
   omni.addEventListener('focus', () => { if (view === 'posts') { mode = 'search'; render(); } });
   omni.addEventListener('input', () => {
     if (view === 'blyg') setView('posts');
@@ -407,19 +422,25 @@ export function initDesk() {
         e.preventDefault();
         stepPost(e.key === 'ArrowDown' ? 1 : -1, { slide: false });
       } else if (e.key === 'Escape') { omni.value = ''; rq = ''; rlimit = RPAGE; render(); }
+      else if (e.key === 'Tab' && !e.shiftKey) {
+        // Tab goes on to the list (the open card, else the first), not
+        // through the sources pane first; ⇧Tab from a card reaches it.
+        const c = $(`#d-stream .card[data-key="${CSS.escape(rcur ?? '')}"]`) || $('#d-stream .card');
+        if (c) { e.preventDefault(); c.focus(); }
+      }
       return;
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       S.B.move_selection(e.key === 'ArrowDown' ? 1 : -1);
-      render({ loadEditor: true }); hud([e.key === 'ArrowDown' ? '↓' : '↑']);
+      render({ loadEditor: true }); hud(e.key === 'ArrowDown' ? '↓' : '↑');
     } else if (e.key === 'Enter' && !(e.metaKey || e.ctrlKey)) {
-      e.preventDefault(); hud(['⏎']);
+      e.preventDefault(); hud('⏎');
       const o = JSON.parse(S.B.enter(now()));
       if (o.action === 'create') { omni.value = ''; toast('New draft created'); openSelected(); touched(); }
       else if (o.action === 'open') openSelected();
     } else if (e.key === 'Escape') {
-      omni.value = ''; S.B.set_query(''); render({ loadEditor: true }); hud(['esc']);
+      omni.value = ''; S.B.set_query(''); render({ loadEditor: true }); hud('esc');
     }
   });
   ed.addEventListener('focus', () => {
@@ -505,27 +526,27 @@ export function initDesk() {
   document.addEventListener('keydown', (e) => {
     if (sheetOpen || !S.B || S.layout !== 'desk') return;
     if (S.writing?.isOpen()) return; // --- web-writing ---
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyY') { e.preventDefault(); hud(['⌃', '⇧', 'Y']); Wr.openHistory(); return; } // --- web-writing ---
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyY') { e.preventDefault(); hud(KEYS.versions); Wr.openHistory(); return; } // --- web-writing ---
     const mod = e.metaKey || e.ctrlKey || e.altKey;
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;
-    if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(['⌃', code.slice(-1)]); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
-    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyF' && view === 'posts') { e.preventDefault(); hud(['⌃', '⌥', 'F']); toast(esc(pickFilter('next', mode === 'edit'))); render({ loadEditor: mode !== 'edit' }); } // --- web-parity ---
-    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyA' && view === 'reading') { e.preventDefault(); hud(['⌃', '⌥', 'A']); wrGo('markall'); } // --- web-parity ---
-    else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(['⌃', '3']); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
-    else if (mod && e.key === 'Enter') { e.preventDefault(); hud(['⌘', '⏎']); askPublish(); }
-    else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(['⇧', '⌘', '⌫']); askDelete(); }
-    else if (mod && e.altKey && cmd && code === 'KeyZ') { e.preventDefault(); hud(['⌥', '⌘', 'Z']); askDiscard(); }
-    else if (mod && e.altKey && cmd && code === 'KeyB') { e.preventDefault(); hud(['⌥', '⌘', 'B']); toggleShelf(); }
-    else if (mod && !e.shiftKey && code === 'KeyB') { e.preventDefault(); hud(['⌘', 'B']); askShelf(); }
-    else if (mod && code === 'KeyK') { e.preventDefault(); hud(e.shiftKey ? ['⇧', '⌘', 'K'] : ['⌘', 'K']); askPick(e.shiftKey); }
-    else if (mod && !e.shiftKey && code === 'KeyT') { e.preventDefault(); hud(['⌘', 'T']); toggleKind(); }
-    else if (mod && !e.shiftKey && code === 'KeyL') { e.preventDefault(); hud(['⌘', 'L']); if (view === 'posts') toSearch(); else omni.focus(); }
-    else if (mod && !e.shiftKey && code === 'KeyE') { e.preventDefault(); hud(['⌘', 'E']); togglePreview(); }
-    else if (mod && !e.shiftKey && code === 'KeyN') { e.preventDefault(); hud(['⌘', 'N']); newPost(); }
-    else if (mod && !e.shiftKey && code === 'KeyD') { e.preventDefault(); hud(['⌘', 'D']); makeDraft(); }
-    else if (mod && !e.shiftKey && code === 'KeyO') { e.preventDefault(); hud(['⌘', 'O']); openPermalink(); }
-    else if (e.key === 'Escape' && document.activeElement === ed) { hud(['esc']); toSearch(); }
+    if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(code === 'Digit1' ? KEYS.posts : KEYS.reading); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyF' && view === 'posts') { e.preventDefault(); hud(KEYS.filter); toast(esc(pickFilter('next', mode === 'edit'))); render({ loadEditor: mode !== 'edit' }); } // --- web-parity ---
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyA' && view === 'reading') { e.preventDefault(); hud(KEYS.markAll); wrGo('markall'); } // --- web-parity ---
+    else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(KEYS.blyg); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
+    else if (mod && e.key === 'Enter') { e.preventDefault(); hud(KEYS.publish); askPublish(); }
+    else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(KEYS.del); askDelete(); }
+    else if (mod && e.altKey && cmd && code === 'KeyZ') { e.preventDefault(); hud(KEYS.discard); askDiscard(); }
+    else if (mod && e.altKey && cmd && code === 'KeyB') { e.preventDefault(); hud(KEYS.save); toggleShelf(); }
+    else if (mod && !e.shiftKey && code === 'KeyB') { e.preventDefault(); hud(KEYS.saved); askShelf(); }
+    else if (mod && code === 'KeyK') { e.preventDefault(); hud(e.shiftKey ? KEYS.quote : KEYS.link); askPick(e.shiftKey); }
+    else if (mod && !e.shiftKey && code === 'KeyT') { e.preventDefault(); hud(KEYS.kind); toggleKind(); }
+    else if (mod && !e.shiftKey && code === 'KeyL') { e.preventDefault(); hud(KEYS.search); if (view === 'posts') toSearch(); else omni.focus(); }
+    else if (mod && !e.shiftKey && code === 'KeyE') { e.preventDefault(); hud(KEYS.preview); togglePreview(); }
+    else if (mod && !e.shiftKey && code === 'KeyN') { e.preventDefault(); hud(KEYS.newPost); newPost(); }
+    else if (mod && !e.shiftKey && code === 'KeyD') { e.preventDefault(); hud(KEYS.draft); makeDraft(); }
+    else if (mod && !e.shiftKey && code === 'KeyO') { e.preventDefault(); hud(KEYS.open); openPermalink(); }
+    else if (e.key === 'Escape' && document.activeElement === ed) { hud('esc'); toSearch(); }
   });
 
   // chrome

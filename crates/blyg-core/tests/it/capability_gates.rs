@@ -311,7 +311,17 @@ fn studio_069_reads_and_writes_follow_their_own_operations() {
 #[test]
 fn the_gated_operations_are_the_contracts() {
     let known = crate::common::contract::current().operation_ids();
+    // A retired gate names an operation the contract dropped on purpose
+    // (`retired_gates_name_operations_the_current_contract_lacks` checks it).
+    let retired = |c: &str| {
+        GATES
+            .iter()
+            .any(|g| g.constant == c && g.guards == Guards::Retired)
+    };
     for (constant, ops) in operation_constants(&product_sources()) {
+        if retired(&constant) {
+            continue;
+        }
         assert!(
             !ops.is_empty(),
             "crates/{constant} names no operation: a gate constant is the operationId (a string \
