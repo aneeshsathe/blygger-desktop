@@ -29,6 +29,10 @@ mod tour; // --- onboarding --- the tour's sample extensions
 #[path = "tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "picker_tabs_tests.rs"]
+mod picker_tabs_tests; // --- picker sources ---
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
